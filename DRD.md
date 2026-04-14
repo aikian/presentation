@@ -60,19 +60,35 @@
 
 ### 2.5 Specification
 
-| 항목 | 상세 내용 |
-|------|----------|
-| 운영체제 | Windows 10 이상 / Chrome 최신 버전 |
-| 영상 분석 | Google MediaPipe Hand / Face / Pose Landmarker (브라우저 실행) |
-| AI 코칭 | Google Gemini API |
-| 슬라이드 처리 | python-pptx (PPT), pdf2image + poppler (PDF) |
-| 영상 녹화 | MediaRecorder API (브라우저) |
-| 제스처 인식 조건 | 동일 제스처 10프레임 이상 유지 시 동작 (오인식 방지) |
-| 보고서 생성 | reportlab 기반 PDF 자동 생성 |
-| 프론트엔드 | React |
-| 백엔드 | FastAPI (Python) |
-| 데이터베이스 | Supabase (PostgreSQL + Storage) |
-| 배포 | 프론트엔드 Vercel, 백엔드 Railway |
+| 기능 | 상세 기능 | 상세 설명 |
+|------|----------|----------|
+| 사용자 관리 | 회원가입 / 로그인 | 이메일 기반 인증 및 사용자 계정 관리 |
+|  | 발표 기록 저장 | 발표 결과 및 PDF 보고서 DB 저장 |
+|  | 히스토리 조회 | 이전 발표 결과 조회 기능 제공 |
+| 발표 실행 | 파일 업로드 | PPT (python-pptx), PDF (pdf2image) 지원 |
+|  | 발표 시간 설정 | 목표 발표 시간 입력 및 기준값 설정 |
+|  | 영상 녹화 | MediaRecorder API를 이용한 발표 영상 녹화 |
+| 제스처 제어 | 슬라이드 제어 | 주먹 제스처 인식 시 이전/다음 슬라이드 이동 |
+|  | 레이저 포인터 | 손바닥 인식 시 마우스 포인터 제어 |
+|  | 인식 조건 | 동일 제스처 10프레임 이상 유지 시 동작 |
+| 시선 분석 | 정면 응시율 계산 | Face Landmarker 기반 시선 방향 추정 |
+|  | 시선 분산 측정 | 프레임별 시선 좌표 변동 분석 |
+| 자세 분석 | 어깨 기울기 분석 | Pose Landmarker 어깨 좌표 기반 기울기 계산 |
+|  | 상체 흔들림 분석 | 시간에 따른 좌표 변동량 측정 |
+| 제스처 분석 | 손 움직임 분석 | Hand Landmarker 기반 제스처 패턴 분석 |
+|  | 제스처 빈도 측정 | 발표 중 제스처 사용 횟수 계산 |
+| AI 피드백 | 문제 구간 캡처 | 기준값 초과 시 자동 이미지 캡처 |
+|  | AI 코칭 생성 | Google Gemini API 기반 텍스트 생성 |
+|  | 피드백 구성 | 이미지 + 텍스트 2단 레이아웃 제공 |
+| 시간 분석 | 슬라이드 시간 측정 | 슬라이드 전환 시 타임스탬프 기록 |
+|  | 시간 점수 산출 | 목표 시간 대비 오차 기반 점수 계산 |
+| 보고서 생성 | PDF 생성 | ReportLab 기반 자동 보고서 생성 |
+|  | 시각화 | Matplotlib 그래프 포함 |
+| 시스템 환경 | 프론트엔드 | React 기반 웹 인터페이스 |
+|  | 백엔드 | FastAPI 기반 API 서버 |
+|  | 데이터베이스 | Supabase (PostgreSQL + Storage) |
+|  | 배포 | Vercel(Frontend), Railway(Backend) |
+|  | 실행 환경 | Windows 10 이상, Chrome 최신 브라우저 |
 
 ---
 
