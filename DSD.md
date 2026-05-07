@@ -270,6 +270,38 @@ MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹
 // JPEG 압축 품질 설정값
 // 발표 종료 처리 순서: stop → Blob 수집 → 이미지 업로드 → 영상 메모리 해제
 
+1. 초기화
+   (1) MediaRecorder 초기화
+       MediaRecorder(stream, {
+          mimeType: "video/webm; codecs=vp8,  opus",
+          videoBitsPerSecond: 1500000,
+          audioBitsPerSecond: 128000
+       });
+   (2) chunk 배열 초기화
+   
+2. 녹화 시작
+   (1) start(1000)
+   (2) ondatavailable:
+       event.data.size > 0이면 chunk.push
+
+3. 캡쳐:
+   캡쳐 트리거마다:
+   (1) canvas.drawImage(video, 0, 0)
+   (2) 캡쳐 이미지 추가
+       cansvas.toBlob(
+       (blob) =>
+       "image/jpeg"
+       jpegQuality=0.8
+       )
+
+4. 발표 종료
+   (1) stop()
+   (2) onstop 이벤트:
+       - 모든 chunk -> 하나의 Blob으로 병합
+       - Blob 처리 완료 상태로 전환
+   (3) 이미지 업로드
+   (4) 메모리 해제
+   
 ---
 
 ### 3.5 AI 코칭 모듈 (Gemini API)
@@ -314,7 +346,10 @@ MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹
 
 | 함수 | 입력 | 출력 |
 |------|------|------|
-|  |  |  |
+| initSlides() |  | 슬라이드 이미지 배열 가져오기 -> 초기 상태 설정 -> 첫 슬라이드 렌더링 -> 타임 스탬프 기록 시작 |
+| nextSlide() | slideIndex | slideIndex+1 |
+| prevSlide() | slideIndex | slideIndex-1 |
+| getSlideTimings() | slideIndex | 해댕 슬라이드에서 SlideLog의 duration |
 
 #### 알고리즘
 
