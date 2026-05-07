@@ -293,36 +293,36 @@ flowchart TD
 // 발표 종료 처리 순서: stop → Blob 수집 → 이미지 업로드 → 영상 메모리 해제
 
 1. 초기화</br>
-   (1) MediaRecorder 초기화</br>
-       MediaRecorder(stream, {
-          mimeType: "video/webm; codecs=vp8,  opus",</br>
-          videoBitsPerSecond: 1500000,</br>
-          audioBitsPerSecond: 128000</br>
-       });</br>
+&emsp;   (1) MediaRecorder 초기화</br>
+&emsp; &emsp;  MediaRecorder(stream, {</br>
+&emsp; &emsp; &ensp; mimeType: "video/webm; codecs=vp8,  opus",</br>
+&emsp; &emsp; &ensp; videoBitsPerSecond: 1500000,</br>
+&emsp; &emsp; &ensp; audioBitsPerSecond: 128000</br>
+&emsp; &emsp;       });</br>
    (2) chunk 배열 초기화</br>
    
 2. 녹화 시작</br>
-   (1) start(1000)</br>
-   (2) ondatavailable:</br>
-       event.data.size > 0이면 chunk.push</br>
+&emsp;   (1) start(1000)</br>
+&emsp;   (2) ondatavailable:</br>
+&emsp; &emsp;       event.data.size > 0이면 chunk.push</br>
 
 3. 캡쳐:</br>
-   캡쳐 트리거마다:</br>
-   (1) canvas.drawImage(video, 0, 0)</br>
-   (2) 캡쳐 이미지 추가</br>
-       cansvas.toBlob(</br>
-       (blob) =></br>
-       "image/jpeg"</br>
-       jpegQuality=0.8</br>
-       )
+&emsp;   캡쳐 트리거마다:</br>
+&emsp;   (1) canvas.drawImage(video, 0, 0)</br>
+&emsp;   (2) 캡쳐 이미지 추가</br>
+&emsp; &emsp;       cansvas.toBlob(</br>
+&emsp; &emsp;       (blob) =></br>
+&emsp; &emsp;       "image/jpeg"</br>
+&emsp; &emsp;       jpegQuality=0.8</br>
+&emsp; &emsp;       )
 
 4. 발표 종료</br>
-   (1) stop()</br>
-   (2) onstop 이벤트:</br>
-       - 모든 chunk -> 하나의 Blob으로 병합</br>
-       - Blob 처리 완료 상태로 전환</br>
-   (3) 이미지 업로드</br>
-   (4) 메모리 해제</br>
+&emsp;   (1) stop()</br>
+&emsp;   (2) onstop 이벤트:</br>
+&emsp; &emsp;       - 모든 chunk -> 하나의 Blob으로 병합</br>
+&emsp; &emsp;       - Blob 처리 완료 상태로 전환</br>
+&emsp;   (3) 이미지 업로드</br>
+&emsp;   (4) 메모리 해제</br>
    
 ---
 
@@ -399,21 +399,21 @@ class SlideLog{
 // SlideLog 배열 누적 방식
 
 1. 초기화</br>
-   (1) SlideLog 배열 초기화</br>
-   (2) 변수 startTime에 performance.now()를 가지고 상대 시간을 저장</br>
-   (3) 현재 인덱스를 currentIndex에 저장</br>
-   (4) enterTime에 performance.now()를 통해 상대시간 저장</br>
+&emsp;   (1) SlideLog 배열 초기화</br>
+&emsp;   (2) 변수 startTime에 performance.now()를 가지고 상대 시간을 저장</br>
+&emsp;   (3) 현재 인덱스를 currentIndex에 저장</br>
+&emsp;   (4) enterTime에 performance.now()를 통해 상대시간 저장</br>
    
 2. 시간 기록(슬라이드 전환 이벤트)</br>
-   (1) 변수 now에 performance.now()를 통해 상대 시간 저장</br>
-   (2) SlideLog 배열에 기록 누적 저장</br>
-       slideIndex: currentIndex</br>
-       enterTime: enterTime-startTime</br>
-       exitTime: now-startTime</br>
-       duration: now-enterTime</br>
-   (3) enterTime에 now 저장</br>
+&emsp;   (1) 변수 now에 performance.now()를 통해 상대 시간 저장</br>
+&emsp;   (2) SlideLog 배열에 기록 누적 저장</br>
+&emsp; &emsp;       slideIndex: currentIndex</br>
+&emsp; &emsp;       enterTime: enterTime-startTime</br>
+&emsp; &emsp;       exitTime: now-startTime</br>
+&emsp; &emsp;       duration: now-enterTime</br>
+&emsp;   (3) enterTime에 now 저장</br>
        currentIndex를 currentIndex+1로 변경</br>
-   (4) 마지막 슬라이드 처리(isLast)
+&emsp;   (4) 마지막 슬라이드 처리(isLast)
 
 ---
 
