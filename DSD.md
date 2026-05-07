@@ -243,7 +243,7 @@
 
 #### 기능 설명
 
-// MediaRecorder API로 전 구간 녹화 + Canvas API로 문제 순간 캡처
+// MediaRecorder API로 전 구간 녹화 + Canvas API로 문제 순간 캡
 // 발표 종료 후 캡처 이미지 Storage 업로드, 원본 영상 삭제 정책 명시
 
 #### 블록 다이어그램
