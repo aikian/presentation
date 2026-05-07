@@ -368,8 +368,20 @@ class SlideLog{
 
 1. 초기화
    (1) SlideLog 배열 초기화
-   (2) 
-3. 시간 기록
+   (2) 변수 startTime에 performance.now()를 가지고 상대 시간을 저장
+   (3) 현재 인덱스를 currentIndex에 저장
+   (4) enterTime에 performance.now()를 통해 상대시간 저장
+   
+2. 시간 기록(슬라이드 전환 이벤트)
+   (1) 변수 now에 performance.now()를 통해 상대 시간 저장
+   (2) SlideLog 배열에 기록 누적 저장
+       slideIndex: currentIndex
+       enterTime: enterTime-startTime
+       exitTime: now-startTime
+       duration: now-enterTime
+   (3) enterTime에 now 저장
+       currentIndex를 currentIndex+1로 변경
+   (4) 마지막 슬라이드 처리(isLast)
 
 ---
 
@@ -451,30 +463,59 @@ class SlideLog{
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-|  |  |  |  |
+| id | Int | PK | 테이블 인덱스 번호 |
+| userId | varchar | NOT NULL | 사용자 아이디 |
+| password | varchar | NOT NULL | 비밀번호 |
+| email | varchar |  | 이메일 주소 |
 
 #### sessions
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-|  |  |  |  |
+| session_id | Int | PK | 세션 아이디 |
+| user_id | Int | FK | 세션과 사용자 매칭 |
+| title | varchar | NOT NULL | 발표 제목 |
+| sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
+| slideLog | JSONB | NOT NULL | 시간 로그 배열 |
 
 #### analysis_results
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-|  |  |  |  |
+| analysis_id | Int | PK | 분석 결과 테이블 인덱스 |
+| user_id | Int | FK | 분석 결과와 사용자 매칭 |
+| analysis_data | JSONB | NOT NULL | 분석 결과들을 JSONB 형태로 저장 |
 
 #### reports
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-|  |  |  |  |
+| report_id | Int | PK | report 테이블 인덱스 |
+| user_id | Int | FK | 보고서와 사용자 매칭 |
+| report_url | varchar | NOT NULL | 보고서 링크 |
 
 ### 4.3 Supabase Storage 구조
 
 // 버킷 구조와 파일 경로 규칙을 트리 형식으로 표현
 // RLS 정책 한 줄 요약 포함 — 본인 소유 파일만 접근, 공개 URL 미사용 등
+
+bucket
+|
+|---- sessions
+         |---- id
+                |---- slides/
+                |        |---- slide1
+                |        |---- slide2
+                |
+                |---- captures/
+                |        |---- capture1
+                |        |---- capture2
+                |
+                |---- reports/
+                         |---- report.pdf
+
+RLS 정책 요약:
+ 본인 소유 파일만 접근 가능, 공개 URL 미사용
 
 ---
 
