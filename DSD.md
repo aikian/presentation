@@ -255,6 +255,12 @@ MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹
 // 캡처 트리거 판단 → drawImage() → JPEG 저장 → captureBuffer 누적
 // 발표 종료 → stop() → Blob 수집 → Storage 업로드 → 원본 메모리 해제
 
+```mermaid
+flowchart TD
+    A[사용자] --> B[GitHub MD 파일]
+    B --> C[Mermaid 렌더링]
+    C --> D[블록 다이어그램 출력]
+
 #### 입출력 파라미터
 
 // 캡처 트리거 임계값 표로 정리
