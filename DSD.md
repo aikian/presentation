@@ -278,7 +278,13 @@ flowchart TD
 
 | 지표 | 트리거 조건 | 쿨다운 |
 |------|-----------|--------|
-|  |  |  |
+| 시선 이탈 | 코 벡터가 화면 중심에서 ±25° 이상 | 5초 |
+| 손 동작 인식 | 특정 손 제스처가 2초 이상 지속 -> 슬라이드 전환 | 4초 |
+| 어깨 기울기 및 흔들림 | 어깨 기울기 > 15° | 5초 |
+| 손과 얼굴의 거리(가림 판단) | hand-face 거리 > threshold | 3초 |
+| 상체 흔들림 | | |
+| 상체 중심 | | |
+
 
 #### 알고리즘
 
@@ -501,7 +507,6 @@ class SlideLog{
 | session_id | Int | PK | 세션 아이디 |
 | user_id | Int | FK | 세션과 사용자 매칭 |
 | title | varchar | NOT NULL | 발표 제목 |
-| sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 | slideLog | JSONB | NOT NULL | 시간 로그 배열 |
 
 #### analysis_results
@@ -510,7 +515,7 @@ class SlideLog{
 |--------|------|------|------|
 | analysis_id | Int | PK | 분석 결과 테이블 인덱스 |
 | user_id | Int | FK | 분석 결과와 사용자 매칭 |
-| analysis_data | JSONB | NOT NULL | 분석 결과들을 JSONB 형태로 저장 |
+| sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 
 #### reports
 
@@ -528,7 +533,7 @@ class SlideLog{
 bucket
 |
 |---- sessions
-         |---- id
+         |---- user_id
                 |---- slides/
                 |        |---- slide1
                 |        |---- slide2
