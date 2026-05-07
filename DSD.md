@@ -335,6 +335,8 @@ MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹
 
 // Storage에서 슬라이드 이미지 로드 → 렌더링 → 제스처 이벤트 수신 → 전환 + 타임스탬프 기록
 
+Storage에서 슬라이드 이미지를 로드해서 SlideViewer를 통해 렌더링을 함. 발표 중에 발표자의 손 제스처를 수신 받아서 슬라이드를 전환시키고 타임스탬프를 기록함.
+
 #### 블록 다이어그램
 
 // 흐름: 슬라이드 이미지 배열 → SlideViewer → 제스처 이벤트 수신 → 인덱스 업데이트 + SlideLog 기록
@@ -351,10 +353,23 @@ MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹
 | prevSlide() | slideIndex | slideIndex-1 |
 | getSlideTimings() | slideIndex | 해댕 슬라이드에서 SlideLog의 duration |
 
+SlideLog 구조:
+class SlideLog{
+    slideIndex,
+    enterTime,
+    exitTime,
+    duration
+}
+
 #### 알고리즘
 
 // 슬라이드 전환 시 performance.now()로 타임스탬프 기록
 // SlideLog 배열 누적 방식
+
+1. 초기화
+   (1) SlideLog 배열 초기화
+   (2) 
+3. 시간 기록
 
 ---
 
