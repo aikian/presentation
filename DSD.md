@@ -179,27 +179,95 @@
 
 #### 기능 설명
 
-// 파일 업로드 → 슬라이드 변환 → Storage 저장 흐름 + 목표 시간 설정 + 웹캠 사전 점검 요약
+발표 환경 설정 모듈은 발표 시작 전 웹캠·마이크 권한 확인, 슬라이드 업로드, 목표 발표 시간 설정, 분석 준비 상태 점검 기능을 담당한다.
+
+사용자는 발표 시작 전에 PPT 또는 PDF 슬라이드를 업로드하고 목표 발표 시간을 설정할 수 있으며, 시스템은 웹캠 연결 상태와 MediaPipe 분석 가능 여부를 확인한다.
+
+현재 1차 프로토타입에서는 웹캠 기반 비언어 분석을 우선 구현하며, 마이크 입력은 향후 음성 분석 기능 확장을 고려하여 권한 상태만 확인한다.
+
+업로드된 슬라이드 파일은 발표 세션과 연결되어 Supabase Storage에 저장되며, 발표 중 슬라이드 표시와 보고서 생성 과정에서 공통으로 사용된다.
+
+본 모듈은 발표 분석이 안정적으로 수행될 수 있도록 브라우저 권한 상태와 입력 장치 상태를 사전에 점검하며, 설정 완료 후 발표 세션을 생성한다.
+
 
 #### 블록 다이어그램
 
-// 그림 권장
-// 흐름: 파일 업로드 → 확장자 분기(PPT/PDF) → 변환(python-pptx / pdf2image) → Storage 저장
+```mermaid
+flowchart LR
+    User["사용자"] --> Upload["슬라이드 업로드"]
+
+    Upload --> Branch{"파일 형식 확인"}
+
+    Branch -->|"PPT/PPTX"| PPT["python-pptx 변환"]
+    Branch -->|"PDF"| PDF["pdf2image 변환"]
+
+    PPT --> Storage["Supabase Storage 저장"]
+    PDF --> Storage
+
+    Storage --> Session["발표 세션 연결"]
+
+    User --> Webcam["웹캠 권한 확인"]
+    User --> Mic["마이크 권한 확인"]
+    User --> Time["목표 발표 시간 설정"]
+
+    Webcam --> Check["환경 상태 점검"]
+    Mic --> Check
+    Session --> Check
+    Time --> Check
+
+    Check --> Ready["발표 시작 준비 완료"]
+```
 
 #### 입출력 파라미터
 
-// /slides/upload, convert_ppt(), convert_pdf() 각각 입출력을 표로
-
 | 함수 | 입력 | 출력 |
 |------|------|------|
-|  |  |  |
+| `/slides/upload` | multipart/form-data(PPT/PDF), sessionId | storagePath, slideCount |
+| `convert_ppt()` | PPT/PPTX 파일 | PNG 슬라이드 이미지 리스트 |
+| `convert_pdf()` | PDF 파일 | 페이지 이미지 리스트 |
+| `checkWebcam()` | MediaDevices API | 웹캠 사용 가능 여부 |
+| `createSession()` | PresentationSessionConfig | sessionId |
+
+
+발표 환경 설정 완료 후, 해당 설정을 기반으로 다음 세션 생성 데이터가 활용된다.
+
+`PresentationSessionConfig`는 발표 시작 전 사용자가 설정한 환경 정보 및 세션 초기 설정값을 저장하는 데이터 구조이며, 발표 세션 생성과 분석 초기화 과정의 공통 입력으로 사용한다.
+
+```text
+PresentationSessionConfig {
+   targetTimeSec: number
+   slideFileName: string
+   webcamEnabled: boolean
+   microphoneEnabled: boolean
+}
+```
 
 #### 알고리즘
 
-// 1. 확장자 확인 후 분기
-// 2. PPT: python-pptx로 파싱 → PIL 이미지 렌더링
-// 3. PDF: pdf2image convert_from_bytes(), DPI 설정값 명시
-// 4. Storage 업로드 경로 규칙 — slides/{session_id}/slide_{n}.png
+1. 사용자가 발표 환경 설정 화면에 진입하면 브라우저 권한 상태를 확인한다.
+2. `getUserMedia()`를 사용하여 웹캠 및 마이크 접근 권한을 요청한다.
+3. 사용자가 슬라이드 파일을 업로드하면 파일 확장자를 확인하여 PPT/PPTX와 PDF 형식으로 분기 처리한다.
+
+4. PPT/PPTX 처리
+   - `python-pptx`를 사용하여 슬라이드 정보를 파싱한다.
+   - 각 슬라이드를 이미지 형태로 렌더링하기 위해 PIL(Python Imaging Library) 기반 변환 과정을 수행한다.
+   - 변환된 슬라이드는 PNG 형식으로 저장한다.
+
+5. PDF 처리
+   - `pdf2image`의 `convert_from_bytes()` 함수를 사용하여 PDF 페이지를 이미지로 변환한다.
+   - 변환 품질과 처리 속도의 균형을 위해 기본 DPI는 150으로 설정한다.
+   - 변환된 페이지 이미지는 PNG 형식으로 저장한다.
+
+6. 생성된 슬라이드 이미지는 다음 규칙으로 Supabase Storage에 업로드한다.
+
+```text
+slides/{session_id}/slide_{n}.png
+```
+
+7. 목표 발표 시간을 입력받아 세션 설정값으로 저장한다.
+8. MediaPipe Worker 초기화 가능 여부와 입력 장치 상태를 점검한다.
+9. 모든 필수 조건이 충족되면 발표 시작 버튼을 활성화한다.
+10. 발표 시작 시 세션 정보를 FastAPI 서버로 전달하여 발표 세션을 생성한다.
 
 ---
 
@@ -428,42 +496,196 @@
 
 ## 5. API 명세
 
-// 공통 사항 먼저 명시:
-// Base URL / 인증 헤더 형식 / 공통 에러 코드 (400·401·403·404·500)
+본 시스템은 FastAPI 기반 REST API 서버를 통해 클라이언트와 데이터를 통신한다.
+대부분의 API 데이터는 JSON 형식으로 송수신하며, 슬라이드 및 캡처 이미지 업로드는 multipart/form-data 형식을 사용한다.
+발표 관련 데이터는 발표 세션(Session) 단위로 관리하며, 사용자 인증 및 계정 정보는 Supabase Authentication 기반으로 처리한다.
+데이터베이스 및 사용자 인증 기능은 Supabase를 사용한다.
 
-### 5.1 인증 API
+발표 중 실시간 영상 분석은 브라우저 내부에서 수행하며, 서버에는 발표 종료 후 집계 데이터와 캡처 이미지, 보고서 생성 요청만 전달한다.
+REST API는 발표 세션 관리, 분석 결과 저장, 보고서 생성 및 조회 기능을 담당한다.
 
-// /auth/signup, /auth/login, /auth/logout
-// 가능하면 각 엔드포인트 Request Body / Response Body 예시도 추가
+### 5.1 공통사항
+#### 1. Base URL
+`/api`
 
+모든 API는 `/api ` 경로를 기준으로 동작한다.
+
+#### 2. 인증 방식  -> 로그인 기능 작성되면 수정 필요
+본 시스템은 Supabase Authentication을 이용하여 회원가입 및 로그인 기능을 제공한다.
+인증 완료 후 발급된 JWT 기반 Access Token을 사용하며, 인증이 필요한 API 요청 시 Authorization 헤더에 포함한다.
+```http
+Authorization: Bearer {access_token}
+```
+
+#### 3. 공통 응답 형식
+성공 응답은 다음 형식을 사용한다.
+```JSON
+{
+   "status": "success",
+   "data": {}
+}
+```
+실패 응답은 다음 형식을 사용한다.
+```JSON
+{
+   "status": "error",
+   "message": "Invalid request"
+}
+```
+
+#### 4. 공통 에러 코드
+| 상태코드 | 설명 |
+| --- | --- |
+| 400 | 잘못된 요청 |
+| 401 | 인증 실패 |
+| 403 | 접근 권한 없음 |
+| 404 | 요청한 리소스를 찾을 수 없음 |
+| 500 | 서버 내부 오류 |
+
+### 5.2 인증 API -> 로그인 기능 작성되면 수정 필요
+인증 API는 사용자 회원가입, 로그인, 로그아웃 및 사용자 인증 상태 확인 기능을 담당한다.
+사용자 인증은 Supabase Authentication 기반으로 처리하며, 로그인 성공 시 JWT Access Token을 반환한다.
+
+#### API 목록
 | 메서드 | 경로 | 설명 | 인증 |
-|--------|------|------|------|
-|  |  |  |  |
+|---|---|---|---|
+| POST | `/api/auth/signup` | 회원가입 | X |
+| POST | `/api/auth/login` | 로그인 | X |
+| POST | `/api/auth/logout` | 로그아웃 | O |
+| GET | `/api/auth/me` | 현재 사용자 정보 조회 | O |
+
+#### 로그인
+##### Request Body
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+##### Response Body
+```json
+{
+  "status": "success",
+  "access_token": "jwt_token"
+}
+```
 
 ### 5.2 발표 세션 API
+발표 세션 API는 발표 시작 전 세션 생성, 슬라이드 업로드, 발표 설정 저장 기능을 담당한다.
+업로드된 슬라이드는 Supabase Storage에 저장되며, 발표 진행 중 분석 결과와 연결된다.
 
-// /sessions CRUD + /sessions/{id}/slides 업로드
-
+#### API 목록
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions` | 발표 세션 생성 | O |
+| GET | `/api/sessions/{id}` | 발표 세션 조회 | O |
+| DELETE | `/api/sessions/{id}` | 발표 세션 종료 | O |
+| POST | `/api/sessions/{id}/slides` | 발표 슬라이드 업로드 | O |
+
+#### 발표 세션 생성
+##### Request Body
+```JSON
+{
+   "target_time": 300
+}
+```
+##### Response Body
+```JSON
+{
+   "status": "success",
+   "session_id": "s001"
+}
+```
+
+#### 슬라이드 업로드
+슬라이드 파일은 multipart/form-data 형식으로 업로드하며, PPT 또는 PDF 파일을 허용한다.
+업로드된 파일은 서버에서 슬라이드 이미지로 변환된 뒤 Supabase Storage에 저장한다.
+
+##### Response Body
+```JSON
+{
+   "status": "uploaded",
+   "slide_count": 10
+}
+```
 
 ### 5.3 분석 결과 API
+분석 결과 API는 발표 중 생성되는 FrameData와 문제 순간 캡처 이미지를 저장한다.
+클라이언트는 일정 주기마다 분석 결과를 FastAPI 서버로 전송하며, 서버는 이를 세션 단위로 저장한다.
 
-// /sessions/{id}/analysis 저장·조회 + /sessions/{id}/captures 업로드
+발표 종료 후에는 FrameData를 집계하여 SessionSummary를 생성하며, 이는 AI 코칭 및 PDF 보고서 생성의 입력으로 사용된다.
 
+#### API 목록
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions/{id}/analysis` | 분석 데이터 저장 | O |
+| GET | `/api/sessions/{id}/analysis` | 분석 결과 조회 | O |
+| POST | `/api/sessions/{id}/captures` | 문제 순간 캡처 업로드 | O |
+
+#### 분석 데이터 저장
+##### Request Body
+```JSON
+{
+   "timestamp": 1710000000,
+   "gaze_score": 0.82,
+   "posture_score": 0.74,
+   "gesture_score": 0.69
+}
+```
+##### Response Body
+```JSON
+{
+   "status": "saved"
+}
+```
+#### 문제 순간 캡처 업로드
+캡처 이미지는 `multipart/form-data` 형식으로 업로드하며, 문제 발생 시점의 `timestamp`와 `category` 정보를 함께 저장한다.
+
+##### Response Body
+```JSON
+{
+   "status": "uploaded",
+   "capture_id": "c001"
+}
+```
+
 
 ### 5.4 보고서 API
 
-// POST /sessions/{id}/report → Gemini 호출 + PDF 생성 (처리 시간 김)
-// 비동기 처리 방식 사용할지 (polling 방식 등) 결정해서 명시
+보고서 API는 발표 종료 후 SessionSummary와 캡처 이미지를 기반으로 AI 코칭 보고서를 생성한다.
+보고서 생성 과정에는 Gemini API 호출 및 PDF 생성이 포함되므로 비동기 방식으로 처리한다.
 
+클라이언트는 보고서 생성 요청 후 pooling 방식으로 상태 조회 API를 호출하여 진행 상태를 확인한다.
+
+#### API 목록
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions/{id}/report` | 보고서 생성 요청 | O |
+| GET | `/api/sessions/{report_id}` | 보고서 생성 상태 조회 | O |
+| GET | `/api/reports/{report_id}/download` | PDF 보고서 다운로드 | O |
+
+#### 보고서 생성 요청
+##### Response Body
+```JSON
+{
+   "status": "processing",
+   "report_id": "r001"
+}
+```
+#### 보고서 상태 조회
+##### Response Body (생성 중)
+```JSON
+{
+   "status": "processing"
+}
+```
+##### Response Body (완료)
+```JSON
+{
+   "status": "complted",
+   "report_url": "/reports/r001.pdf"
+}
+```
 
 ---
 
