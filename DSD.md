@@ -149,10 +149,11 @@
 
 #### 기능 설명
 
-// 회원가입 / 로그인 / 로그아웃 / 히스토리 조회 기능 한 단락 요약
-// JWT 방식 채택 이유 한 줄 추가
+회원 관리 모듈은 사용자 계정의 생성(회원가입), 인증(로그인), 세션 종료(로그아웃) 및 발표 분석 히스토리 조회 기능을 제공한다. 사용자는 안전하게 계정을 관리하고, JWT 기반 인증을 통해 보호된 서비스에 접근할 수 있다.
+JWT 방식 채택 이유: 서버 상태를 유지하지 않는 Stateless 구조로 확장성과 보안성이 뛰어나기 때문.
 
 #### 블록 다이어그램
+<img width="351" height="145" alt="image" src="https://github.com/user-attachments/assets/1d05e5fc-7069-4392-bedf-6f20a6f1f624" />
 
 // 그림 권장
 // 흐름: 회원가입·로그인 Handler → UserService → JWTService → Supabase(users 테이블)
@@ -163,15 +164,36 @@
 // 엔드포인트별 입력 / 출력 / 에러 케이스를 표로 정리
 // 대상: /auth/signup, /auth/login, /auth/logout, /users/history
 
-| 엔드포인트 | 입력 | 출력 | 에러 |
-|-----------|------|------|------|
-|  |  |  |  |
+| 엔드포인트          | 입력                    | 출력           | 프론트 처리          |
+| --------------      | ---------------------   | ------------   | --------------- |
+| /auth/signup        | email, password, name   | user           | 성공/실패 메시지 UI    |
+| /auth/login         | email, password         | token, user    | 로그인 성공 → 페이지 이동 |
+| /auth/logout        | Authorization header    | success        | 상태 초기화          |
+| /users/history      | page, size              | history list   | 리스트 렌더링 + 정렬    |
+
 
 #### 알고리즘
 
 // 비밀번호 해싱 방식 (bcrypt, salt rounds 몇으로 할지)
 // JWT payload 구조 (필드명, 만료 시간)
+{
+  "sub": "user_id",
+  "email": "user@example.com",
+  "name": "사용자이름",
+  "iat": 1717000000,
+  "exp": 1717086400,
+  "type": "access"
+}
+exp: 24시간
+type: access / refresh 구분
+
 // 토큰 검증 흐름 간략히
+클라이언트 요청 (Authorization: Bearer token)
+        ↓
+JWTService.verifyToken()
+        ↓
+유효 → 요청 처리
+무효 → 401 Unauthorized
 
 ---
 
@@ -352,26 +374,56 @@
 ### 3.8 PDF 보고서 생성 모듈
 
 #### 기능 설명
-
+PDF 보고서 생성 모듈은 분석 결과 데이터를 기반으로 시각화된 리포트를 생성하고, 프론트엔드에서는 이를 미리보기 및 다운로드 기능으로 제공한다. 사용자는 리포트를 확인하고 파일로 저장할 수 있다.
 // 입력: ScoreResult + CoachingResult[] + SlideLog[]
 // 출력: PDF → Supabase Storage 저장 → 다운로드 URL 반환
 // 사용 라이브러리: ReportLab (레이아웃) + Matplotlib (그래프)
 
 #### 블록 다이어그램
+입력 데이터
+(ScoreResult, CoachingResult[], SlideLog[])
+        ↓
+Matplotlib (차트 생성)
+        ↓
+ReportLab (PDF 생성)
+        ↓
+Supabase Storage (업로드)
+        ↓
+다운로드 URL 반환
 
 // ★ 그림 필수 ★ — PDF 페이지 레이아웃 스케치
 // 1페이지: 표지 (점수 요약 + 레이더 차트)
+┌──────────────────────────────┐
+│ 발표 분석 리포트              │
+│                              │
+│ 점수 요약 (숫자)              │
+│                              │
+│      [레이더 차트]            │
+│                              │
+└──────────────────────────────┘
 // 2페이지: 카테고리별 바 차트 + 슬라이드별 시간 그래프
+┌──────────────────────────────┐
+│ 카테고리별 점수 (바 차트)      │
+│                              │
+│ 슬라이드별 시간 그래프         │
+│                              │
+└──────────────────────────────┘
 // 3페이지~: 코칭 섹션 반복 (좌: 캡처 이미지 / 우: 코칭 텍스트, 2단 레이아웃)
+┌───────────────┬───────────────┐
+│  캡처 이미지   │   코칭 텍스트  │
+│               │               │
+│               │               │
+└───────────────┴───────────────┘
 // 실제 여백·비율 비례하게 표현하면 구현할 때 훨씬 편함
 
 #### 입출력 파라미터
 
 // 표: 페이지 번호 / 포함 내용 / 사용 라이브러리
-
-| 페이지 | 내용 | 라이브러리 |
-|--------|------|----------|
-|  |  |  |
+| 페이지 | 내용                | 라이브러리                 |
+| ---    | -------------       | ---------------------      |
+| 1      | 표지 + 레이더 차트   | ReportLab, Matplotlib      |
+| 2      | 바 차트 + 시간 그래프 | ReportLab, Matplotlib      |
+| 3~N    | 코칭 반복            | ReportLab                  |
 
 #### 알고리즘
 
@@ -473,27 +525,54 @@
 
 // 그림 권장 — 페이지 트리 또는 플로우차트
 // 각 경로에 Protected 여부 + 이동 트리거 표기 (로그인 성공, 발표 종료 등)
+Landing (/)
+   ↓ 로그인
+Login (/login)
+   ↓ 성공
+Dashboard (/dashboard) [Protected]
+   ├─ Practice (/practice)
+   ├─ Analyze (/analyze)
+   ├─ Report (/report)
+   ├─ History (/history)
+   └─ Profile (/profile)
 
-| 경로 | 페이지명 | 인증 필요 |
-|------|---------|---------|
-|  |  |  |
+| 경로         | 페이지명    | 인증 필요 |
+| ----------   | -------     | ----- |
+| /            | Landing     | X     |
+| /login       | 로그인      | X      |
+| /dashboard   | 대시보드    | O      |
+| /practice    | 발표 연습   | O      |
+| /analyze     | 분석        | O     |
+| /report      | 보고서      | O      |
+| /history     | 히스토리    | O      |
 
 ### 6.2 상태 관리 설계
 
 // Context API 4개(Auth / Session / Analysis / Report) 각각의 주요 상태 필드와 역할을 표로
 
-| Context | 주요 상태 필드 | 역할 |
-|---------|-------------|------|
-|  |  |  |
+| Context  | 주요 상태 필드                             | 역할           |
+| -------- | -----------------------------------------  | ---------       |
+| Auth     | user, token, isAuthenticated               | 로그인 상태 관리 |
+| Session  | sessionId, isRecording, elapsedTime        | 발표 세션 관리   |
+| Analysis | scoreResult, coachingList, slideLogs       | 분석 결과 저장   |
+| Report   | reportUrl, isGenerating                    | PDF 상태 관리    |
+
 
 ### 6.3 주요 컴포넌트 명세
 
 // 핵심 컴포넌트 위주로 표 작성
 // WebcamAnalyzer / SlideViewer / GestureOverlay / TimerBar / ReportViewer / CoachingCard / RadarChart
 
-| 컴포넌트 | 위치(페이지) | 역할 | 주요 Props |
-|----------|------------|------|-----------|
-|  |  |  |  |
+| 컴포넌트           | 위치         | 역할         | 주요 Props    |
+| --------------    | ----------    | -------       | ----------- |
+| WebcamAnalyzer    | /practice     | 영상 분석      | isRecording |
+| SlideViewer       | /practice     | 슬라이드 표시  | slides      |
+| GestureOverlay    | /practice     | 제스처 표시    | landmarks   |
+| TimerBar          | /practice     | 시간 표시      | elapsedTime |
+| ReportViewer      | /report       | PDF 표시       | url         |
+| CoachingCard      | /analyze      | 코칭 내용      | text        |
+| RadarChart        | /dashboard    | 점수 시각화     | data        |
+
 
 ---
 
