@@ -246,7 +246,26 @@
 // MediaRecorder API로 전 구간 녹화 + Canvas API로 문제 순간 캡
 // 발표 종료 후 캡처 이미지 Storage 업로드, 원본 영상 삭제 정책 명시
 
-MediaRecorder API를 통해 발표 전 과정을 녹화를 하도록 한다. 녹화 중에는 실시간으로 사용자의 얼굴, 손동작, 자세 등을 분석하여 트리거 조건에 만족하면 해당 구간을 Canvas API로 캡쳐한다. 이후 발표가 종료 되면 캡쳐 이미지를 Storage에 업로드를 하고, 원본 영상을 지우므로써 개인정보를 보호한다.
+&emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 특정 트리거 조건을 만족했을 때 해당 순간을 캡쳐하여 분석 데이터로 활용하는 것이다. 
+&emsp;특정 트리거는 발표 중 발생한 문제 상황 및 분석이 필요한 이벤트를 탐지하고 분석하기 위해 사용된다.
+
+본 모듈의 주요 기능은 다음과 같다.
+ 1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
+ 2. Canvas API를 활용한 실시간 조건 기반 문제 순간 캡쳐 기능
+ 3. Supabase Storage에 녹화 영상과 캡쳐 이미지 저장 및 관리 기능
+
+**오류 처리**</br>
+&emsp;  녹화 중 오류가 발생하면 녹화 중단 및 스트림 종료한다. 수집된 데이터는 Storage에 임시 저장되어 손실을 방지한다.
+
+**데이터 활용 및 삭제**</br>
+&emsp;  녹화된 영상과 캡쳐 이미지는 이후 발표 평가 및 문제 구간 분석을 위한 데이터로 활용된다.
+
+&emsp;  분석 완료 후 녹화 영상은 개인정보 보호를 위해 삭제된다.
+
+**고려 사항 및 주의점**</br>
+&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported(mimeType)을 통해 지원 여부를 확인해야 한다.
+
+&emsp; 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 chunk 단위로 데이터를 Storage에 임시 저장하여 안정성을 확보하고 분석 후 임시 저장된 데이터는 개인정보를 위해 삭제한다.
 
 #### 블록 다이어그램
 
@@ -292,37 +311,49 @@ flowchart TD
 // JPEG 압축 품질 설정값
 // 발표 종료 처리 순서: stop → Blob 수집 → 이미지 업로드 → 영상 메모리 해제
 
-1. 초기화</br>
-&emsp;   (1) MediaRecorder 초기화</br>
-&emsp; &emsp;  MediaRecorder(stream, {</br>
-&emsp; &emsp; &ensp; mimeType: "video/webm; codecs=vp8,  opus",</br>
-&emsp; &emsp; &ensp; videoBitsPerSecond: 1500000,</br>
-&emsp; &emsp; &ensp; audioBitsPerSecond: 128000</br>
-&emsp; &emsp;       });</br>
-   (2) chunk 배열 초기화</br>
-   
-2. 녹화 시작</br>
-&emsp;   (1) start(1000)</br>
-&emsp;   (2) ondatavailable:</br>
-&emsp; &emsp;       event.data.size > 0이면 chunk.push</br>
+**녹화 설정:**
+  1. navigator.mediaDevices.getUserMedia()를 호출하여 stream 가져오기
+  2. MediaRecorder 생성
+      - mimeType: "video/webm; codecs=vp8, opus"
+      - videoBitsPerSecond: 1500000
+      - audioBitsPerSecond: 128000
+  3. 녹화 데이터 저장을 위한 chunk 배열 초기화
+  4. video.srcObject를 통해 웹캠 스트림과 비디오 요소를 연결
+  5. 프래임 캡쳐를 위한 canvas 준비 
+ 
+**녹화 시작:**
+  1. MediaRecorder.start(timeslice)를 호출하여 녹화 시작
+     - timeslice: 1000ms
+        -> 1초 단위로 데이터를 생성
+  2. ondataavailable 이벤트로 실시간으로 생성되는 영상 데이터를 chunk 단위로 수집한다. 
+      - event.data.size > 0이면 chunks.push(event.data) 수행
+  3. 수집된 chunk 데이터는 메모리 사용량 증가 및 데이터 손실 방지를 위해 일정 단위로 Storage에 임시 저장한다.
 
-3. 캡쳐:</br>
-&emsp;   캡쳐 트리거마다:</br>
-&emsp;   (1) canvas.drawImage(video, 0, 0)</br>
-&emsp;   (2) 캡쳐 이미지 추가</br>
-&emsp; &emsp;       cansvas.toBlob(</br>
-&emsp; &emsp;       (blob) =></br>
-&emsp; &emsp;       "image/jpeg"</br>
-&emsp; &emsp;       jpegQuality=0.8</br>
-&emsp; &emsp;       )
+**프레임 캡쳐:**</br>
+&emsp; 캡쳐 트리거 마다:
 
-4. 발표 종료</br>
-&emsp;   (1) stop()</br>
-&emsp;   (2) onstop 이벤트:</br>
-&emsp; &emsp;       - 모든 chunk -> 하나의 Blob으로 병합</br>
-&emsp; &emsp;       - Blob 처리 완료 상태로 전환</br>
-&emsp;   (3) 이미지 업로드</br>
-&emsp;   (4) 메모리 해제</br>
+  1. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
+  2. canvas.toBlob()을 사용하여 이미지 데이터를 Blob 형태로 변환
+     - 이미지 형식: "image/jpeg",
+     - 품질 설정: jpegQuality=0.8
+  3. 생성된 Blob을 captureBuffer버퍼에 저장
+
+**녹화 종료:**
+  1. stop()으로 녹화 종료
+  2. onstop 이벤트:
+      1. 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
+      2. Blob 업로드 가능한 상태로 전환
+  3. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
+  4. captureBuffer의 이미지들을 Storage에 업로드
+
+**녹화 중 오류 처리:**
+  1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
+  2. 오류 발생 시 다음 실행:
+       (1) 현재까지의 chunk와 캡처 데이터를 Storage에 임시 저장
+       (2) stop()을 통해 녹화 종료
+       (3) track.stop()으로 리소스 해제
+   3. 이후 재녹화 시작
+
    
 ---
 
@@ -357,7 +388,7 @@ flowchart TD
 
 // Storage에서 슬라이드 이미지 로드 → 렌더링 → 제스처 이벤트 수신 → 전환 + 타임스탬프 기록
 
-Storage에서 슬라이드 이미지를 로드해서 SlideViewer를 통해 렌더링을 함. 발표 중에 발표자의 손 제스처를 수신 받아서 슬라이드를 전환시키고 타임스탬프를 기록함.
+Storage에 저장된 슬라이드 이미지를 로드하여 <img> 태그로  웹 화면에 표시한다. 발표 중 발표자의 제스처를 실시간으로 인식하여 슬라이드를 전환하고 각 슬라이드 전환 시간을 타임스탬프로 기록한다.
 
 #### 블록 다이어그램
 
@@ -398,22 +429,28 @@ class SlideLog{
 // 슬라이드 전환 시 performance.now()로 타임스탬프 기록
 // SlideLog 배열 누적 방식
 
-1. 초기화</br>
-&emsp;   (1) SlideLog 배열 초기화</br>
-&emsp;   (2) 변수 startTime에 performance.now()를 가지고 상대 시간을 저장</br>
-&emsp;   (3) 현재 인덱스를 currentIndex에 저장</br>
-&emsp;   (4) enterTime에 performance.now()를 통해 상대시간 저장</br>
-   
-2. 시간 기록(슬라이드 전환 이벤트)</br>
-&emsp;   (1) 변수 now에 performance.now()를 통해 상대 시간 저장</br>
-&emsp;   (2) SlideLog 배열에 기록 누적 저장</br>
-&emsp; &emsp;       slideIndex: currentIndex</br>
-&emsp; &emsp;       enterTime: enterTime-startTime</br>
-&emsp; &emsp;       exitTime: now-startTime</br>
-&emsp; &emsp;       duration: now-enterTime</br>
-&emsp;   (3) enterTime에 now 저장</br>
-       currentIndex를 currentIndex+1로 변경</br>
-&emsp;   (4) 마지막 슬라이드 처리(isLast)
+**초기화**
+  1. 슬라이드 전환 기록을 저장하기 위한 SlideLog 배열 초기화
+  2. performance.now()로 발표 시작 시점의 상대 시간 저장(startTime)
+  3. 현재 슬라이드 인덱스를 0으로 초기화(currentSlideIndex)
+  4. 현재 슬라이드 진입 시간을 기록하기 위해 enterTime에 performance.now()를 사용하여 상대 시간 저장
+
+**슬라이드 전환 및 시간 기록**
+  1. 발표자의 제그처를 인식하여 슬라이드 전환
+  2. performance.now()를 호출하여 현재 상대 시간 저장(now)
+  3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
+       slideIndex: 현재 슬라이드 인덱스 (currentSlideIndex)
+       enterTime: enterTime - startTime
+       exitTime: now - startTime
+       duration: now - enterTime
+       
+  4. 다음 슬라이드 기록을 위해 enterTime을 now 값으로 갱신
+  5. currentSlideIndex를 새 슬라이드 인덱스로 변경
+  6. 마지막 슬라이드 여부(isLast)를 확인하여 종료 처리 수행
+
+**마지막 슬라이드 처리:**
+  1. 누적된 SlideLog 저장
+  2. 발표 종료 처리(데이터 Storage 저장 및 리소스 해제)
 
 ---
 
