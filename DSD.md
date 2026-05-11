@@ -577,20 +577,20 @@ class SlideLog{
 // 버킷 구조와 파일 경로 규칙을 트리 형식으로 표현
 // RLS 정책 한 줄 요약 포함 — 본인 소유 파일만 접근, 공개 URL 미사용 등
 
-bucket
-|
-|---- sessions
-         |---- user_id
-                |---- slides/
-                |        |---- slide1
-                |        |---- slide2
-                |
-                |---- captures/
-                |        |---- capture1
-                |        |---- capture2
-                |
-                |---- reports/
-                         |---- report.pdf
+bucket</br>
+|</br>
+|---- sessions</br>
+&emsp;         |---- user_id</br>
+&emsp;&emsp;               |---- slides/</br>
+&emsp;&emsp;                |&emsp;        |---- slide1</br>
+&emsp;&emsp;                |&emsp;        |---- slide2</br>
+&emsp;&emsp;                |</br>
+&emsp;&emsp;                |---- captures/</br>
+&emsp;&emsp;                |&emsp;        |---- capture1</br>
+&emsp;&emsp;                |&emsp;        |---- capture2</br>
+&emsp;&emsp;                |</br>
+&emsp;&emsp;                |---- reports/</br>
+&emsp;&emsp;&emsp;&ensp;                         |---- report.pdf
 
 RLS 정책 요약:
  본인 소유 파일만 접근 가능, 공개 URL 미사용
