@@ -593,7 +593,7 @@ bucket</br>
 &emsp;&emsp;&emsp;&ensp;                         |---- report.pdf
 
 RLS 정책 요약:
- 본인 소유 파일만 접근 가능, 공개 URL 미사용
+ 사용자는 본인 파일에만 접근할 수 있으며, 공개 URL 대신 signed URL 기반의 private bucket 접근 방식을 사용해 인증된 사용자만 파일을 열람할 수 있도록 한다.
 
 ---
 
