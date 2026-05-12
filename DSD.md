@@ -534,6 +534,7 @@ class SlideLog{
 // 관계: users 1:N sessions / sessions 1:1 analysis_results / sessions 1:1 reports
 // PK, FK, 주요 속성 표기 / draw.io 또는 dbdiagram.io 사용 권장
 
+![image](images/ERdiagram.png)
 ### 4.2 테이블 스키마
 
 // 각 테이블마다 컬럼명 / 타입 / 제약조건(PK·FK·NOT NULL 등) / 설명 표로 작성
