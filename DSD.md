@@ -297,12 +297,13 @@ flowchart TD
 
 | 지표 | 트리거 조건 | 쿨다운 |
 |------|-----------|--------|
-| 시선 이탈 | 코 벡터가 화면 중심에서 ±25° 이상 | 5초 |
+| 시선 이탈 | abs(pitch_degree) > 10.0 또는 abs(yaw_degree) > 10.0 일때 | 5초 |
 | 손 동작 인식 | 특정 손 제스처가 2초 이상 지속 -> 슬라이드 전환 | 4초 |
-| 어깨 기울기 및 흔들림 | 어깨 기울기 > 15° | 5초 |
+| 어깨 기울기 | 어깨 기울기 >= 7° | 5초 |
 | 손과 얼굴의 거리(가림 판단) | hand-face 거리 > threshold | 3초 |
-| 상체 흔들림 | 상체 중심 좌표 이동량 > threshold | 5초 |
-| 상체 중심 이탈 | 상체 중심 좌표 화면 중심 범위 이탈 여부 | 5초 |
+| 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량) <= 0.08 | 5초 |
+| 상체 앞쏠림 |  | 5초 |
+| 긴장도 |  |  |
 
 
 #### 알고리즘
@@ -418,12 +419,12 @@ flowchart TD
 | prevSlide() | slideIndex | slideIndex-1 |
 | getSlideTimings() | slideIndex | 해댕 슬라이드에서 SlideLog의 duration |
 
-SlideLog 구조:
-class SlideLog{
-    slideIndex,
-    enterTime,
-    exitTime,
-    duration
+SlideLog 구조:</br>
+class SlideLog{</br>
+&emsp;    slideIndex,</br>
+&emsp;    enterTime,</br>
+&emsp;    exitTime,</br>
+&emsp;    duration</br>
 }
 
 #### 알고리즘
@@ -562,7 +563,7 @@ class SlideLog{
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
 | analysis_id | Int | PK | 분석 결과 테이블 인덱스 |
-| user_id | Int | FK | 분석 결과와 사용자 매칭 |
+| session_id | Int | FK | 분석 결과와 세션 매칭 |
 | sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 
 #### reports
@@ -570,7 +571,7 @@ class SlideLog{
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
 | report_id | Int | PK | report 테이블 인덱스 |
-| user_id | Int | FK | 보고서와 사용자 매칭 |
+| session_id | Int | FK | 보고서와 세션 매칭 |
 | report_url | varchar | NOT NULL | 보고서 링크 |
 
 ### 4.3 Supabase Storage 구조
@@ -583,8 +584,8 @@ bucket</br>
 |---- sessions</br>
 &emsp;         |---- user_id</br>
 &emsp;&emsp;               |---- slides/</br>
-&emsp;&emsp;                |&emsp;        |---- slide1</br>
-&emsp;&emsp;                |&emsp;        |---- slide2</br>
+&emsp;&emsp;                |&emsp;        |---- slide_1</br>
+&emsp;&emsp;                |&emsp;        |---- slide_2</br>
 &emsp;&emsp;                |</br>
 &emsp;&emsp;                |---- captures/</br>
 &emsp;&emsp;                |&emsp;        |---- capture1</br>
