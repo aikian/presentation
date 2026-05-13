@@ -255,17 +255,17 @@
  3. Supabase Storage에 녹화 영상과 캡쳐 이미지 저장 및 관리 기능
 
 **오류 처리**</br>
-&emsp;  녹화 중 오류가 발생하면 녹화 중단 및 스트림 종료한다. 수집된 데이터는 Storage에 임시 저장되어 손실을 방지한다.
+&emsp;  녹화 중 오류가 발생하면 데이터 손실을 방지하기 위해 수집된 데이터를 Storage에 임시 저장한 뒤 녹화 중단 및 스트림 종료한다. 
 
 **데이터 활용 및 삭제**</br>
-&emsp;  녹화된 영상과 캡쳐 이미지는 이후 발표 평가 및 문제 구간 분석을 위한 데이터로 활용된다.
+&emsp;  수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.
 
 &emsp;  분석 완료 후 녹화 영상은 개인정보 보호를 위해 삭제된다.
 
 **고려 사항 및 주의점**</br>
-&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported(mimeType)을 통해 지원 여부를 확인해야 한다.
+&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 minmeType 검증 및 fallback 전략을 적용한다.
 
-&emsp; 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 chunk 단위로 데이터를 Storage에 임시 저장하여 안정성을 확보하고 분석 후 임시 저장된 데이터는 개인정보를 위해 삭제한다.
+&emsp; 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 일정 주기마다 chunk 단위로 데이터를 Storage에 임시 저장하여 안정성을 확보한다.
 
 #### 블록 다이어그램
 
@@ -315,7 +315,7 @@ flowchart TD
 **녹화 설정:**
   1. navigator.mediaDevices.getUserMedia()를 호출하여 stream 가져오기
   2. MediaRecorder 생성
-      - mimeType: "video/webm; codecs=vp8, opus"
+      - mimeType: MediaRecorder.isTypeSupported()를 통해 지원 가능한 mimeType을 적용
       - videoBitsPerSecond: 1500000
       - audioBitsPerSecond: 128000
   3. 녹화 데이터 저장을 위한 chunk 배열 초기화
@@ -337,7 +337,9 @@ flowchart TD
   2. canvas.toBlob()을 사용하여 이미지 데이터를 Blob 형태로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
+     - 캡쳐 오류 발생 시 오류 로그와 발생 시각을 기록한 후 다음 캡쳐로 넘어가도록 하여 실시간으로 캡쳐하도록 한다. 오류가 발생한 부분은 이후 녹화 영상을 가지고 캡쳐를 진행한다.
   3. 생성된 Blob을 captureBuffer버퍼에 저장
+     - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
 
 **녹화 종료:**
   1. stop()으로 녹화 종료
@@ -346,6 +348,7 @@ flowchart TD
       2. Blob 업로드 가능한 상태로 전환
   3. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
   4. captureBuffer의 이미지들을 Storage에 업로드
+  5. 업로드 완료 후 chunk, captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
 
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
