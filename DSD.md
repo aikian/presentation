@@ -674,26 +674,18 @@ PDF 보고서 생성 모듈은 분석 결과 데이터를 기반으로 시각화
 // 사용 라이브러리: ReportLab (레이아웃) + Matplotlib (그래프)
 
 #### 블록 다이어그램
+```plaintext
 입력 데이터
-
 (ScoreResult, CoachingResult[], SlideLog[])
-
-        ↓
-        
+        ↓       
 Matplotlib (차트 생성)
-
-        ↓
-        
+        ↓      
 ReportLab (PDF 생성)
-
-        ↓
-        
+        ↓        
 Supabase Storage (업로드)
-
-        ↓
-        
+        ↓        
 다운로드 URL 반환
-
+```
 
 // ★ 그림 필수 ★ — PDF 페이지 레이아웃 스케치
 
