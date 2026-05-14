@@ -345,6 +345,21 @@ PresentAI
 │   │       ├── PDF 생성 요청 (백엔드 API)
 │   │       └── PDF 다운로드 기능
 │   └── 8.2 백엔드 API 구현 (FastAPI + Railway)
+│       ├── 인증 API (Supabase Auth 연동)
+│       ├── 발표 세션 API
+│       │   ├── 세션 생성 및 종료
+│       │   └── 슬라이드 업로드 처리
+│       ├── 분석 결과 API
+│       │   ├── FrameData 저장
+│       │   ├── SessionSummary 생성
+│       │   └── 캡처 이미지 업로드
+│       ├── 보고서 API
+│       │   ├── Gemini API 호출
+│       │   ├── PDF 생성 처리
+│       │   └── 보고서 상태 조회(Polling)
+│       └── Storage 및 DB 연동
+│           ├── Supabase PostgreSQL 연동
+│           └── Supabase Storage 파일 관리
 ├── 9. DB 및 스토리지
 │   ├── 9.1 Supabase 연동 (PostgreSQL + Storage)
 │   ├── 9.2 사용자 인증 관리
