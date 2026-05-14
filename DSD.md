@@ -243,15 +243,12 @@
 
 #### 기능 설명
 
-// MediaRecorder API로 전 구간 녹화 + Canvas API로 문제 순간 캡
-// 발표 종료 후 캡처 이미지 Storage 업로드, 원본 영상 삭제 정책 명시
-
 &emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 특정 트리거 조건을 만족했을 때 해당 순간을 캡쳐하여 분석 데이터로 활용하는 것이다. 
-&emsp;특정 트리거는 발표 중 발생한 문제 상황 및 분석이 필요한 이벤트를 탐지하고 분석하기 위해 사용된다.
+&emsp; 발표 종료 후 녹화 영상을 기반으로 특정 트리거 조건을 만족한 시점의 프레임을 캡쳐하여 분석 데이터로 사용한다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
- 2. Canvas API를 활용한 조건 기반 문제 순간 캡쳐 기능
+ 2. Canvas API를 활용한 녹화 영상 기반 문제 순간 캡쳐 기능
  3. Supabase Storage에 녹화 영상과 캡쳐 이미지 저장 및 관리 기능
 
 **오류 처리**</br>
@@ -277,16 +274,17 @@
 ```mermaid
 flowchart TD
     A[웹캠 스트림] --> B[MediaRecorder -> 녹화]
-    B --> C[발표 종료]
-    C --> D[stop 함수]
-    D --> E[Blob 수집]
-    E --> F[Canvas -> 캡쳐]
-    F --> G[캡쳐 트리거 판단]
-    G --> H[drawImage 함수]
-    H --> I[JPEG 저장]
-    I --> J[captureBuffer 누적]
-    J --> K[Storage 업로드]
-    K --> L[원본 메모리 해제]
+    B --> C[chunk 생성 및 저장]
+    C --> D[발표 종료]
+    D --> E[stop 함수]
+    E --> F[최종 Blob 생성]
+    F --> G[녹화 영상 업로드]
+    G --> H[영상 분석 기반 트리거 시점 탐색]
+    H --> I[Canvas drawImage]
+    I --> J[JPEG 저장]
+    J --> K[captureBuffer 저장]
+    K --> L[캡쳐 이미지 저장]
+    L --> M[원본 영상 삭제]
 ```
 
 #### 입출력 파라미터
@@ -303,6 +301,8 @@ flowchart TD
 | 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량) <= 0.08 | 5초 |
 | 상체 앞쏠림 |  | 5초 |
 | 긴장도 |  |  |
+
+각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하며, timestamp 기반으로 캡쳐 진행
 
 
 #### 알고리즘
@@ -335,7 +335,6 @@ flowchart TD
       2. Blob 업로드 가능한 상태로 전환
   3. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
   4. captureBuffer의 이미지들을 Storage에 업로드
-  5. 업로드 완료 후 chunk, captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
 
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
@@ -346,16 +345,20 @@ flowchart TD
    3. 이후 재녹화 시작
 
 **프레임 캡쳐:**</br>
-- 프래임 캡쳐를 위한 canvas 준비 
-&emsp; 캡쳐 트리거 마다:
+- 프래임 캡쳐를 위한 canvas 준비
+- 녹화 영상을 video 요소에 로드
+&emsp; 분석 모듈 기반한 캡쳐 트리거 시점 기준:
 
+  1. timestamp를 통해 문제 발생 위치로 이동
   1. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
-  2. canvas.toBlob()을 사용하여 이미지 데이터를 Blob 형태로 변환
+  2. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
      - 캡쳐 오류 발생 시 오류 로그와 발생 시각을 기록한 후 다음 캡쳐로 넘어가도록 하여 실시간으로 캡쳐하도록 한다. 오류가 발생한 부분은 이후 녹화 영상을 가지고 캡쳐를 진행한다.
   3. 생성된 Blob을 captureBuffer버퍼에 저장
      - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
+
+- 캡쳐 완료 후 chunk,captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
    
 ---
 
