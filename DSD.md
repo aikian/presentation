@@ -251,11 +251,11 @@
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
- 2. Canvas API를 활용한 실시간 조건 기반 문제 순간 캡쳐 기능
+ 2. Canvas API를 활용한 조건 기반 문제 순간 캡쳐 기능
  3. Supabase Storage에 녹화 영상과 캡쳐 이미지 저장 및 관리 기능
 
 **오류 처리**</br>
-&emsp;  녹화 중 오류가 발생하면 데이터 손실을 방지하기 위해 수집된 데이터를 Storage에 임시 저장한 뒤 녹화 중단 및 스트림 종료한다. 
+&emsp;  녹화 중 오류가 발생하면 데이터 손실을 방지하기 위해 수집된 chunk를 Storage에 임시 저장한 뒤 녹화 중단 및 스트림 종료한다. 
 
 **데이터 활용 및 삭제**</br>
 &emsp;  수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.
@@ -277,16 +277,16 @@
 ```mermaid
 flowchart TD
     A[웹캠 스트림] --> B[MediaRecorder -> 녹화]
-    A --> C[Canvas -> 캡쳐]
-    C --> D[캡쳐 트리거 판단]
-    D --> E[drawImage 함수]
-    E --> F[JPEG 저장]
-    F --> G[captureBuffer 누적]
-    B --> H[발표 종료]
-    G --> H
-    H --> I[stop 함수]
-    I --> J[Blob 수집]
+    B --> C[발표 종료]
+    C --> D[stop 함수]
+    D --> E[Blob 수집]
+    E --> F[Canvas -> 캡쳐]
+    F --> G[캡쳐 트리거 판단]
+    G --> H[drawImage 함수]
+    H --> I[JPEG 저장]
+    I --> J[captureBuffer 누적]
     J --> K[Storage 업로드]
+
     K --> L[원본 메모리 해제]
 ```
 
