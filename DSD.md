@@ -415,52 +415,12 @@ Supabase Storage (업로드)
 다운로드 URL 반환
 ```
 
-// ★ 그림 필수 ★ — PDF 페이지 레이아웃 스케치
-
-// 1페이지: 표지 (점수 요약 + 레이더 차트)
-
-```plaintext
-┌──────────────────────────────┐
-│      발표 분석 리포트        │
-│                              │
-│      점수 요약 (숫자)        │
-│                              │
-│        [레이더 차트]         │
-│                              │
-└──────────────────────────────┘
-```
-
-// 2페이지: 카테고리별 바 차트 + 슬라이드별 시간 그래프
-
-┌──────────────────────────────┐
-
-│ 카테고리별 점수 (바 차트)      │
-
-│                              │
-
-│ 슬라이드별 시간 그래프         │
-
-│                              │
-
-└──────────────────────────────┘
-
-// 3페이지~: 코칭 섹션 반복 (좌: 캡처 이미지 / 우: 코칭 텍스트, 2단 레이아웃)
-
-┌───────────────┬───────────────┐
-
-│  캡처 이미지   │   코칭 텍스트  │
-
-│               │               │
-
-│               │               │
-
-└───────────────┴───────────────┘
+<img width="697" height="465" alt="Image" src="https://github.com/user-attachments/assets/45159fd8-542f-4c19-947a-7de8b9fd05df" />
 
 // 실제 여백·비율 비례하게 표현하면 구현할 때 훨씬 편함
 
 #### 입출력 파라미터
 
-// 표: 페이지 번호 / 포함 내용 / 사용 라이브러리
 | 페이지 | 내용                | 라이브러리                 |
 | ---    | -------------       | ---------------------      |
 | 1      | 표지 + 레이더 차트   | ReportLab, Matplotlib      |
@@ -470,8 +430,11 @@ Supabase Storage (업로드)
 #### 알고리즘
 
 // 1. Matplotlib으로 레이더 차트 / 바 차트 / 시간 그래프 PNG 생성
+
 // 2. ReportLab Frame 2개로 2단 레이아웃 구현 (LEFT_FRAME: 이미지, RIGHT_FRAME: 텍스트)
+
 // 3. CoachingResult 수만큼 페이지 반복 추가
+
 // 4. PDF BytesIO 버퍼 → Supabase Storage 업로드
 
 ---
@@ -564,9 +527,8 @@ Supabase Storage (업로드)
 ## 6. 프론트엔드 설계
 
 ### 6.1 페이지 구성 및 라우팅
-
-// 그림 권장 — 페이지 트리 또는 플로우차트
 // 각 경로에 Protected 여부 + 이동 트리거 표기 (로그인 성공, 발표 종료 등)
+```plaintext
 Landing (/)
    ↓ 로그인
 Login (/login)
@@ -577,6 +539,7 @@ Dashboard (/dashboard) [Protected]
    ├─ Report (/report)
    ├─ History (/history)
    └─ Profile (/profile)
+```
 
 | 경로         | 페이지명    | 인증 필요 |
 | ----------   | -------     | ----- |
@@ -590,21 +553,20 @@ Dashboard (/dashboard) [Protected]
 
 ### 6.2 상태 관리 설계
 
-// Context API 4개(Auth / Session / Analysis / Report) 각각의 주요 상태 필드와 역할을 표로
-
+// Context API 4개(Auth / Session / Analysis / Report) 각각의 주요 상태 필드와 역할
+```plaintext
 | Context  | 주요 상태 필드                             | 역할           |
 | -------- | -----------------------------------------  | ---------       |
 | Auth     | user, token, isAuthenticated               | 로그인 상태 관리 |
 | Session  | sessionId, isRecording, elapsedTime        | 발표 세션 관리   |
 | Analysis | scoreResult, coachingList, slideLogs       | 분석 결과 저장   |
 | Report   | reportUrl, isGenerating                    | PDF 상태 관리    |
-
+```
 
 ### 6.3 주요 컴포넌트 명세
 
-// 핵심 컴포넌트 위주로 표 작성
 // WebcamAnalyzer / SlideViewer / GestureOverlay / TimerBar / ReportViewer / CoachingCard / RadarChart
-
+```plaintext
 | 컴포넌트           | 위치         | 역할         | 주요 Props    |
 | --------------    | ----------    | -------       | ----------- |
 | WebcamAnalyzer    | /practice     | 영상 분석      | isRecording |
@@ -614,7 +576,7 @@ Dashboard (/dashboard) [Protected]
 | ReportViewer      | /report       | PDF 표시       | url         |
 | CoachingCard      | /analyze      | 코칭 내용      | text        |
 | RadarChart        | /dashboard    | 점수 시각화     | data        |
-
+```
 
 ---
 
