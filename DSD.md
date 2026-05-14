@@ -1213,19 +1213,19 @@ Dashboard (/dashboard) [Protected]
 ### 6.2 상태 관리 설계
 
 // Context API 4개(Auth / Session / Analysis / Report) 각각의 주요 상태 필드와 역할
-```plaintext
+
 | Context  | 주요 상태 필드                             | 역할           |
 | -------- | -----------------------------------------  | ---------       |
 | Auth     | user, token, isAuthenticated               | 로그인 상태 관리 |
 | Session  | sessionId, isRecording, elapsedTime        | 발표 세션 관리   |
 | Analysis | scoreResult, coachingList, slideLogs       | 분석 결과 저장   |
 | Report   | reportUrl, isGenerating                    | PDF 상태 관리    |
-```
+
 
 ### 6.3 주요 컴포넌트 명세
 
 // WebcamAnalyzer / SlideViewer / GestureOverlay / TimerBar / ReportViewer / CoachingCard / RadarChart
-```plaintext
+
 | 컴포넌트           | 위치         | 역할         | 주요 Props    |
 | --------------    | ----------    | -------       | ----------- |
 | WebcamAnalyzer    | /practice     | 영상 분석      | isRecording |
@@ -1235,7 +1235,7 @@ Dashboard (/dashboard) [Protected]
 | ReportViewer      | /report       | PDF 표시       | url         |
 | CoachingCard      | /analyze      | 코칭 내용      | text        |
 | RadarChart        | /dashboard    | 점수 시각화     | data        |
-```
+
 
 ---
 
