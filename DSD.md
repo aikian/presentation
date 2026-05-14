@@ -286,7 +286,6 @@ flowchart TD
     H --> I[JPEG 저장]
     I --> J[captureBuffer 누적]
     J --> K[Storage 업로드]
-
     K --> L[원본 메모리 해제]
 ```
 
@@ -320,7 +319,6 @@ flowchart TD
       - audioBitsPerSecond: 128000
   3. 녹화 데이터 저장을 위한 chunk 배열 초기화
   4. video.srcObject를 통해 웹캠 스트림과 비디오 요소를 연결
-  5. 프래임 캡쳐를 위한 canvas 준비 
  
 **녹화 시작:**
   1. MediaRecorder.start(timeslice)를 호출하여 녹화 시작
@@ -329,17 +327,6 @@ flowchart TD
   2. ondataavailable 이벤트로 실시간으로 생성되는 영상 데이터를 chunk 단위로 수집한다. 
       - event.data.size > 0이면 chunks.push(event.data) 수행
   3. 수집된 chunk 데이터는 메모리 사용량 증가 및 데이터 손실 방지를 위해 일정 단위로 Storage에 임시 저장한다.
-
-**프레임 캡쳐:**</br>
-&emsp; 캡쳐 트리거 마다:
-
-  1. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
-  2. canvas.toBlob()을 사용하여 이미지 데이터를 Blob 형태로 변환
-     - 이미지 형식: "image/jpeg",
-     - 품질 설정: jpegQuality=0.8
-     - 캡쳐 오류 발생 시 오류 로그와 발생 시각을 기록한 후 다음 캡쳐로 넘어가도록 하여 실시간으로 캡쳐하도록 한다. 오류가 발생한 부분은 이후 녹화 영상을 가지고 캡쳐를 진행한다.
-  3. 생성된 Blob을 captureBuffer버퍼에 저장
-     - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
 
 **녹화 종료:**
   1. stop()으로 녹화 종료
@@ -358,6 +345,17 @@ flowchart TD
        (3) track.stop()으로 리소스 해제
    3. 이후 재녹화 시작
 
+**프레임 캡쳐:**</br>
+- 프래임 캡쳐를 위한 canvas 준비 
+&emsp; 캡쳐 트리거 마다:
+
+  1. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
+  2. canvas.toBlob()을 사용하여 이미지 데이터를 Blob 형태로 변환
+     - 이미지 형식: "image/jpeg",
+     - 품질 설정: jpegQuality=0.8
+     - 캡쳐 오류 발생 시 오류 로그와 발생 시각을 기록한 후 다음 캡쳐로 넘어가도록 하여 실시간으로 캡쳐하도록 한다. 오류가 발생한 부분은 이후 녹화 영상을 가지고 캡쳐를 진행한다.
+  3. 생성된 Blob을 captureBuffer버퍼에 저장
+     - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
    
 ---
 
@@ -417,7 +415,6 @@ flowchart TD
 #### 입출력 파라미터
 
 // initSlides() / nextSlide() / prevSlide() / getSlideTimings() 각 입출력 표
-// SlideLog 데이터 구조 정의: slideIndex / enterTime / exitTime / duration
 
 | 함수 | 입력 | 출력 |
 |------|------|------|
