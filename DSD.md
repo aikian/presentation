@@ -157,9 +157,10 @@ flowchart LR
     subgraph Client["Client: Browser / React"]
         Webcam["Webcam Stream"]
         SlideViewer["SlideViewer"]
-        Worker["MediaPipe Web Worker<br/>Hand / Face / Pose"]
+        GestureWorker["GestureWorker<br/>Hand Landmarker 전용<br/>(발표 중 실시간)"]
+        Recorder["MediaRecorder<br/>녹화 Blob"]
+        VideoAnalyzer["VideoAnalyzer<br/>Face + Pose + Hand<br/>(발표 후 오프라인)"]
         Analysis["Analysis Engine<br/>FrameData / SessionSummary"]
-        Capture["Recorder / Capture Buffer"]
         UI["React UI + Context"]
     end
 
@@ -176,10 +177,13 @@ flowchart LR
         Storage["Storage"]
     end
 
-    Webcam --> Worker
-    Worker --> Analysis
+    Webcam --> GestureWorker
+    Webcam --> Recorder
+    GestureWorker -- "슬라이드 제어 이벤트" --> SlideViewer
+    GestureWorker --> UI
+    Recorder -- "녹화 Blob URL<br/>(분석하기 버튼 클릭)" --> VideoAnalyzer
+    VideoAnalyzer --> Analysis
     Analysis --> UI
-    Analysis --> Capture
     SlideViewer --> UI
     UI -- "HTTPS REST / JSON" --> API
     API --> SessionSvc
@@ -193,7 +197,7 @@ flowchart LR
     ReportSvc -- "report metadata" --> DB
 ```
 
-영상 프레임 원본은 실시간으로 서버에 전송하지 않는다. 서버로 전송되는 데이터는 발표 종료 후의 집계 JSON, 캡처 이미지, 슬라이드 로그, 보고서 생성 요청으로 제한한다.
+발표 중에는 GestureWorker(Hand Landmarker 전용)만 실시간으로 실행하여 슬라이드 제어에 사용하고, 나머지 Face·Pose·Hand 분석 지표는 발표 종료 후 "분석하기" 버튼 클릭 시 VideoAnalyzer가 녹화 영상을 입력받아 처리한다. 영상 프레임 원본은 서버에 전송하지 않으며, 서버로 전송되는 데이터는 발표 종료 후의 집계 JSON, 캡처 이미지, 슬라이드 로그, 보고서 생성 요청으로 제한한다.
 
 ### 2.2 계층별 역할 정의
 
@@ -209,11 +213,23 @@ flowchart LR
 
 ### 2.3 데이터 흐름 개요
 
-그림 2는 발표 시작부터 보고서 다운로드까지의 핵심 데이터 흐름이다.
+그림 2는 발표 시작부터 보고서 다운로드까지의 핵심 데이터 흐름이다. 흐름은 발표 중 1단계와 발표 후 2단계로 분리된다.
+
+**1단계: 발표 중**
 
 ```mermaid
 flowchart TD
-    A["웹캠 입력<br/>MediaStream"] --> B["MediaPipe Worker<br/>landmark arrays"]
+    A["웹캠 입력<br/>MediaStream"] --> B["GestureWorker<br/>Hand Landmarker 전용"]
+    A --> C["MediaRecorder<br/>녹화 Blob 축적"]
+    B --> D["슬라이드 제어 이벤트<br/>next / prev"]
+    D --> E["SlideViewer<br/>슬라이드 전환 + SlideLog 기록"]
+```
+
+**2단계: 발표 후 ("분석하기" 버튼 클릭)**
+
+```mermaid
+flowchart TD
+    A["녹화 Blob URL<br/>HTMLVideoElement 로드"] --> B["VideoAnalyzer<br/>Face + Pose + Hand Landmarker"]
     B --> C["분석 엔진<br/>FrameData JSON"]
     C --> D["문제 순간 판단<br/>timestamp + reason"]
     D --> E["Canvas 캡처<br/>JPEG Blob"]
@@ -231,7 +247,9 @@ flowchart TD
 | 단계 | 데이터 형태 | 저장 위치 | 비고 |
 |------|-------------|-----------|------|
 | 웹캠 입력 | MediaStream / VideoFrame | 클라이언트 메모리 | 외부 전송 없음 |
-| 랜드마크 추론 | Face/Hand/Pose landmark 배열 | Web Worker 메모리 | 프레임 단위 처리 후 원본 폐기 |
+| 제스처 추론 | Hand landmark 배열 | GestureWorker 메모리 | 발표 중 실시간, 슬라이드 제어 전용 |
+| 녹화 영상 | MediaRecorder Blob | 클라이언트 메모리 | 발표 종료 후 VideoAnalyzer 입력으로 사용 |
+| 랜드마크 추론 | Face/Hand/Pose landmark 배열 | VideoAnalyzer 메모리 | 발표 후 오프라인, 프레임 단위 처리 후 원본 폐기 |
 | 프레임 분석값 | FrameData JSON | 클라이언트 임시 버퍼 | timestamp 기준으로 누적 |
 | 문제 순간 캡처 | JPEG Blob | Supabase Storage | 보고서 근거 이미지로 사용 |
 | 발표 집계 | SessionSummary JSON | PostgreSQL analysis_results | 평균, 비율, 이벤트 타임라인 |
@@ -312,50 +330,65 @@ flowchart TD
 
 #### 기능 설명
 
-영상 분석 모듈은 브라우저에서 MediaPipe Hand Landmarker, Face Landmarker, Pose Landmarker를 동시에 구동하여 발표자의 제스처, 시선, 자세 관련 지표를 실시간으로 계산한다.
-세 모델의 추론과 지표 계산은 Web Worker로 분리하여 React 메인 스레드의 렌더링과 사용자 입력이 막히지 않도록 한다.
-MediaPipe 호출 방식은 `VIDEO` 모드를 기본으로 사용하며, 프레임 타임스탬프를 명시적으로 전달한다. 이는 `LIVE_STREAM` 모드의 콜백 정지 또는 프레임 누락 가능성을 피하고, 분석 프레임레이트를 애플리케이션에서 직접 제어하기 위한 결정이다.
+영상 분석 모듈은 역할에 따라 GestureWorker와 VideoAnalyzer 두 가지로 분리된다.
+
+**GestureWorker(발표 중 실시간):** 발표 중에는 Hand Landmarker만 실시간으로 구동하여 손 제스처를 인식하고 슬라이드 제어 이벤트를 생성한다. Face·Pose 분석은 수행하지 않아 브라우저 부하를 최소화한다.
+
+**VideoAnalyzer(발표 후 오프라인):** 발표 종료 후 사용자가 "분석하기" 버튼을 클릭하면 VideoAnalyzer가 녹화 영상 Blob URL을 입력으로 받아 Face Landmarker, Pose Landmarker, Hand Landmarker를 순서대로 실행한다. 발표자의 시선, 자세, 제스처 관련 17개 지표를 프레임 단위로 계산하고 SessionSummary로 집계한다.
+
+MediaPipe 호출 방식은 두 컴포넌트 모두 `VIDEO` 모드를 사용하며 프레임 타임스탬프를 명시적으로 전달한다. VideoAnalyzer의 경우 입력 소스는 실시간 웹캠 스트림이 아닌 녹화된 Blob URL을 HTMLVideoElement에 로드한 것이다.
 
 공식 문서 확인 결과, MediaPipe Web 태스크의 `detect()`와 `detectForVideo()` 호출은 동기적으로 실행되어 UI 스레드를 블로킹할 수 있으므로 Web Worker 분리 설계가 필요하다. 또한 Hand Landmarker는 손당 21개 랜드마크와 handedness를 제공하고, Face Landmarker는 얼굴 랜드마크·blendshape·facial transformation matrix를 제공하며, Pose Landmarker는 자세 랜드마크와 world landmark를 제공한다. 본 모듈은 이 출력값 중 발표 분석에 직접 필요한 값만 FrameData로 축약한다.
 
-| 모델 | 공식 출력 | 본 프로젝트 사용 값 |
-|------|-----------|--------------------|
-| Face Landmarker | 얼굴 랜드마크, blendshape, facial transformation matrix | yaw/pitch, 정면 응시 여부, EAR, 깜빡임 |
-| Hand Landmarker | 손 랜드마크 21개, handedness, world landmark | 왼손/오른손 구분, 주먹/손바닥 제스처, 손 움직임 속도 |
-| Pose Landmarker | 자세 랜드마크, world landmark | 어깨 기울기, 상체 중심, 상체 흔들림 |
+| 모델 | 사용 시점 | 공식 출력 | 본 프로젝트 사용 값 |
+|------|----------|-----------|---------------------|
+| Hand Landmarker | 발표 중 실시간 (GestureWorker) | 손 랜드마크 21개, handedness, world landmark | 왼손/오른손 구분, 주먹/손바닥 제스처 → 슬라이드 제어 |
+| Face Landmarker | 발표 후 오프라인 (VideoAnalyzer) | 얼굴 랜드마크, blendshape, facial transformation matrix | yaw/pitch, 정면 응시 여부, EAR, 깜빡임 |
+| Hand Landmarker | 발표 후 오프라인 (VideoAnalyzer) | 손 랜드마크 21개, handedness, world landmark | 손 움직임 속도, 양손 대칭성 분석 지표 |
+| Pose Landmarker | 발표 후 오프라인 (VideoAnalyzer) | 자세 랜드마크, world landmark | 어깨 기울기, 상체 중심, 상체 흔들림 |
 
 초기 설정값은 1차 프로토타입 기준으로 다음과 같이 둔다.
 
 | 항목 | 설정값 | 이유 |
 |------|--------|------|
-| runningMode | `VIDEO` | 프레임 timestamp를 직접 관리하고 동기 추론 결과를 일관되게 수집한다. |
+| runningMode | `VIDEO` | 프레임 timestamp를 직접 관리하고 동기 추론 결과를 일관되게 수집한다. VideoAnalyzer는 Blob URL 기반 HTMLVideoElement를 입력 소스로 사용한다. |
 | numFaces / numHands / numPoses | 얼굴 1명, 손 2개, 자세 1명 | DRD의 1인 1세션 조건과 일치한다. |
 | confidence threshold | 기본 0.5부터 시작, 테스트 후 조정 | 공식 기본값을 기준으로 조명·웹캠 환경 테스트 결과에 따라 보정한다. |
-| 분석 fps | 목표 15~20fps | 30fps 전체 프레임 추론 대신 UI 안정성과 CPU 사용량을 균형 있게 맞춘다. |
+| 분석 fps (VideoAnalyzer) | 목표 15~20fps | 녹화 영상 전체를 처리할 때 CPU 사용량을 줄이기 위해 프레임 샘플링을 적용한다. |
 
 #### 블록 다이어그램
 
 ```mermaid
 flowchart LR
-    Video["Webcam VideoFrame"]
+    Webcam["Webcam Stream"]
+    RecordedBlob["녹화 Blob URL<br/>(발표 후)"]
 
-    subgraph WorkerBox["Analysis Web Worker"]
-        Face["Face Landmarker<br/>Head Pose / EAR"]
-        Hand["Hand Landmarker<br/>Gesture / Velocity"]
-        Pose["Pose Landmarker<br/>Shoulder / Torso"]
+    subgraph GW["GestureWorker (발표 중 실시간)"]
+        HandRT["Hand Landmarker"]
+        GestureJudge["제스처 판별<br/>fist / open / none"]
+    end
+
+    subgraph VA["VideoAnalyzer (발표 후 오프라인)"]
+        FaceOff["Face Landmarker<br/>Head Pose / EAR"]
+        HandOff["Hand Landmarker<br/>Velocity / Symmetry"]
+        PoseOff["Pose Landmarker<br/>Shoulder / Torso"]
         Metric["Metric Calculator<br/>17 indicators"]
         Buffer["FrameData Buffer"]
     end
 
-    Video --> Face
-    Video --> Hand
-    Video --> Pose
-    Face --> Metric
-    Hand --> Metric
-    Pose --> Metric
+    Webcam --> HandRT
+    HandRT --> GestureJudge
+    GestureJudge -- "슬라이드 제어 이벤트" --> SlideControl["SlideViewer"]
+
+    RecordedBlob --> FaceOff
+    RecordedBlob --> HandOff
+    RecordedBlob --> PoseOff
+    FaceOff --> Metric
+    HandOff --> Metric
+    PoseOff --> Metric
     Metric --> Buffer
     Buffer -- "postMessage(FrameData)" --> Main["React Main Thread"]
-    Main --> Overlay["Analysis Overlay / Slide Control"]
+    Main --> Summary["SessionSummary 집계"]
     Main --> Capture["Capture Trigger"]
 ```
 
@@ -434,10 +467,8 @@ SessionSummary {
 #### 알고리즘
 
 1. 모델 초기화
-   - 클라이언트가 웹캠 권한을 획득하면 Web Worker를 생성한다.
-   - Worker는 MediaPipe Vision WASM 리소스를 로드한 뒤 `FaceLandmarker`, `HandLandmarker`, `PoseLandmarker`를 순서대로 초기화한다.
-   - 각 모델은 `runningMode: "VIDEO"`로 설정하고, 메인 스레드는 `requestVideoFrameCallback` 또는 동등한 타이머로 프레임과 타임스탬프를 Worker에 전달한다.
-   - 세 모델 추론 결과가 모두 도착하면 동일 timestamp 기준으로 하나의 FrameData를 생성한다.
+   - **GestureWorker(발표 중):** 클라이언트가 웹캠 권한을 획득하면 GestureWorker를 생성한다. Worker는 MediaPipe Vision WASM 리소스를 로드한 뒤 `HandLandmarker`만 `runningMode: "VIDEO"`로 초기화한다. 메인 스레드는 `requestVideoFrameCallback` 또는 동등한 타이머로 웹캠 프레임과 타임스탬프를 Worker에 전달하고, Worker는 제스처 판별 결과를 슬라이드 제어 이벤트로 반환한다.
+   - **VideoAnalyzer(발표 후):** 사용자가 "분석하기" 버튼을 클릭하면 VideoAnalyzer Worker를 생성한다. Worker는 `FaceLandmarker`, `HandLandmarker`, `PoseLandmarker`를 순서대로 초기화한다. 메인 스레드는 녹화 Blob URL을 HTMLVideoElement에 로드하고, 프레임 단위로 `detectForVideo()`를 호출하여 타임스탬프와 함께 전달한다. 세 모델 추론 결과가 모두 도착하면 동일 timestamp 기준으로 하나의 FrameData를 생성한다.
 
 2. 제스처 판별
    - 손가락 i에 대해 `fingerCurl_i = distance(tip_i, wrist) / distance(mcp_i, wrist)`로 굽힘 정도를 계산한다.
