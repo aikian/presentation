@@ -149,26 +149,38 @@
 
 #### 기능 설명
 
-회원 관리 모듈은 사용자 계정의 생성(회원가입), 인증(로그인), 세션 종료(로그아웃) 및 발표 분석 히스토리 조회 기능을 제공한다. 사용자는 안전하게 계정을 관리하고, JWT 기반 인증을 통해 보호된 서비스에 접근할 수 있다.
-JWT 방식 채택 이유: 서버 상태를 유지하지 않는 Stateless 구조로 확장성과 보안성이 뛰어나기 때문.
+회원 관리 모듈은 사용자 계정의 생성(회원가입), 인증(로그인), 세션 종료(로그아웃) 및 발표 분석 히스토리 조회 기능을 제공한다. 사용자는 안전하게 계정을 관리하고, FastAPI 백엔드 서버에서 발급한 JWT 기반 Access Token을 통해 보호된 서비스에 접근할 수 있다.
+JWT 방식 채택 이유: 서버 상태를 유지하지 않는 Stateless 구조로 확장성과 보안성이 뛰어나며, 프론트엔드와 백엔드 간 인증 처리를 효율적으로 수행할 수 있기 때문이다.
 
 #### 블록 다이어그램
-<img width="351" height="145" alt="image" src="https://github.com/user-attachments/assets/1d05e5fc-7069-4392-bedf-6f20a6f1f624" />
+```plaintext
+회원가입 / 로그인 UI
+        ↓
+Auth API (/auth/signup, /auth/login)
+        ↓
+UserService
+        ↓
+bcrypt 비밀번호 검증
+        ↓
+JWTService (Access Token 발급)
+        ↓
+Supabase (users 테이블 저장)
+        ↓
+Frontend AuthContext/localStorage 저장
+```
 
-
-// 흐름: 회원가입·로그인 Handler → UserService → JWTService → Supabase(users 테이블)
 
 #### 입출력 파라미터
 
 // 엔드포인트별 입력 / 출력 / 에러 케이스를 표로 정리
 // 대상: /auth/signup, /auth/login, /auth/logout, /users/history
 
-| 엔드포인트          | 입력                    | 출력           | 프론트 처리          |
-| --------------      | ---------------------   | ------------   | --------------- |
-| /auth/signup        | email, password, name   | user           | 성공/실패 메시지 UI    |
-| /auth/login         | email, password         | token, user    | 로그인 성공 → 페이지 이동 |
-| /auth/logout        | Authorization header    | success        | 상태 초기화          |
-| /users/history      | page, size              | history list   | 리스트 렌더링 + 정렬    |
+| 엔드포인트          | 입력                    | 출력                 | 프론트 처리          |
+| --------------      | ---------------------   | ------------         | --------------- |
+| /auth/signup        | email, password, name   | user                 | 성공/실패 메시지 UI    |
+| /auth/login         | email, password         | access_token, user   | 로그인 성공 → 페이지 이동 |
+| /auth/logout        | Authorization header    | success              | 상태 초기화          |
+| /users/history      | page, size              | history list         | 리스트 렌더링 + 정렬    |
 
 
 #### 알고리즘
@@ -1214,12 +1226,12 @@ Dashboard (/dashboard) [Protected]
 
 // Context API 4개(Auth / Session / Analysis / Report) 각각의 주요 상태 필드와 역할
 
-| Context  | 주요 상태 필드                             | 역할           |
-| -------- | -----------------------------------------  | ---------       |
-| Auth     | user, token, isAuthenticated               | 로그인 상태 관리 |
-| Session  | sessionId, isRecording, elapsedTime        | 발표 세션 관리   |
-| Analysis | scoreResult, coachingList, slideLogs       | 분석 결과 저장   |
-| Report   | reportUrl, isGenerating                    | PDF 상태 관리    |
+| Context  | 주요 상태 필드                             | 역할               |
+| -------- | ------------------------------------ | ---------------- |
+| Auth     | user, accessToken, isAuthenticated   | JWT 기반 로그인 상태 관리 |
+| Session  | sessionId, isRecording, elapsedTime  | 발표 세션 관리         |
+| Analysis | scoreResult, coachingList, slideLogs | 분석 결과 저장         |
+| Report   | reportUrl, isGenerating              | PDF 상태 관리        |
 
 
 ### 6.3 주요 컴포넌트 명세
