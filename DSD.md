@@ -540,72 +540,80 @@ interface SlideLog{</br>
 
 ### 4.1 ER 다이어그램
 
-// ★ 그림 필수 ★
-// 엔티티: users / sessions / analysis_results / reports
-// 관계: users 1:N sessions / sessions 1:1 analysis_results / sessions 1:1 reports
-// PK, FK, 주요 속성 표기 / draw.io 또는 dbdiagram.io 사용 권장
-
 ![image](images/ERdiagram.png)
 ### 4.2 테이블 스키마
-
-// 각 테이블마다 컬럼명 / 타입 / 제약조건(PK·FK·NOT NULL 등) / 설명 표로 작성
 
 #### users
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| id | Int | PK | 테이블 인덱스 번호 |
-| userId | varchar | NOT NULL | 사용자 아이디 |
-| password | varchar | NOT NULL | 비밀번호 |
-| email | varchar |  | 이메일 주소 |
+| id | UUID | PK | 테이블 인덱스 번호 |
+| userId | VARCHAR | NOT NULL | 사용자 아이디 |
+| password | TEXT | NOT NULL | 비밀번호 |
+| email | VARCHAR | NOT NULL | 이메일 주소 |
 
 #### sessions
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| session_id | Int | PK | 세션 아이디 |
-| user_id | Int | FK | 세션과 사용자 매칭 |
-| title | varchar | NOT NULL | 발표 제목 |
+| session_id | UUID | PK | 세션 아이디 |
+| user_id | UUID | FK | 세션과 사용자 매칭 |
+| title | VARCHAR | NOT NULL | 발표 제목 |
 | slideLog | JSONB | NOT NULL | 시간 로그 배열 |
+| target_time | INT | NOT NULL | 목표 발표 시간(초) |
 
 #### analysis_results
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| analysis_id | Int | PK | 분석 결과 테이블 인덱스 |
-| session_id | Int | FK | 분석 결과와 세션 매칭 |
+| analysis_id | UUID | PK | 분석 결과 테이블 인덱스 |
+| session_id | UUID | FK | 분석 결과와 세션 매칭 |
 | sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
+| score | JSONB | NOT NULL | 점수 산출 결과 |
+| coaching | JSONB | AI 코칭 결과 |
 
 #### reports
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| report_id | Int | PK | report 테이블 인덱스 |
-| session_id | Int | FK | 보고서와 세션 매칭 |
-| report_url | varchar | NOT NULL | 보고서 링크 |
+| report_id | UUID | PK | report 테이블 인덱스 |
+| session_id | UUID | FK | 보고서와 세션 매칭 |
+| report_url | TEXT | NOT NULL | 보고서 링크 |
 
 ### 4.3 Supabase Storage 구조
 
-// 버킷 구조와 파일 경로 규칙을 트리 형식으로 표현
-// RLS 정책 한 줄 요약 포함 — 본인 소유 파일만 접근, 공개 URL 미사용 등
-
 bucket</br>
 |</br>
-|---- sessions</br>
-&emsp;         |---- user_id</br>
-&emsp;&emsp;               |---- slides/</br>
-&emsp;&emsp;                |&emsp;        |---- slide_1</br>
-&emsp;&emsp;                |&emsp;        |---- slide_2</br>
-&emsp;&emsp;                |</br>
-&emsp;&emsp;                |---- captures/</br>
-&emsp;&emsp;                |&emsp;        |---- capture1</br>
-&emsp;&emsp;                |&emsp;        |---- capture2</br>
-&emsp;&emsp;                |</br>
-&emsp;&emsp;                |---- reports/</br>
-&emsp;&emsp;&emsp;&ensp;                         |---- report.pdf
+|---- slides/</br>
+&emsp;   |---- {session_id}/</br>
+&emsp;&emsp;       |---- slide_1.png</br>
+&emsp;&emsp;       |---- slide_2.png</br>
+&emsp;&emsp;       |---- ...</br>
+|
+|---- captures/</br>
+&emsp;   |---- {session_id}/</br>
+&emsp;&emsp;       |---- capture_1715332912.jpg</br>
+&emsp;&emsp;       |---- capture_1715332928.jpg</br>
+&emsp;&emsp;       |---- ...</br>
+|
+|---- reports/</br>
+&emsp;   |---- {session_id}/</br>
+&emsp;&emsp;       |---- report.pdf
 
-RLS 정책 요약:
- 사용자는 본인 파일에만 접근할 수 있으며, 공개 URL 대신 signed URL 기반의 private bucket 접근 방식을 사용해 인증된 사용자만 파일을 열람할 수 있도록 한다.
+**파일 경로 규칙**
+| 유형 | 경로 규칙 |
+|-----|---------|
+| 슬라이드 | slides/{session_id}/slide_{n}.png |
+| 캡쳐 이미지 | captures/{session_id}/capture_{timestamp}.jpg |
+| 보고서 PDF | reports/{session_id}/report.pdf
+
+**RLS 정책**
+| 정책 | 설명 |
+|-----|-----|
+| 사용자별 접근 제한 | auth.uid() 기반 본인 데이터만 접근 가능 |
+| 공개 URL 미사용 | Signed URL 방식으로만 파일 접근 |
+| 세션 단위 권한 분리 | session.user_id 검증 후 접근 허용 |
+| 업로드 제한 | 인증 사용자만 업로드 가능 |
 
 ---
 
