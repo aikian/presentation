@@ -243,8 +243,7 @@
 
 #### 기능 설명
 
-&emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 특정 트리거 조건을 만족했을 때 해당 순간을 캡쳐하여 분석 데이터로 활용하는 것이다. 
-&emsp; 발표 종료 후 녹화 영상을 기반으로 특정 트리거 조건을 만족한 시점의 프레임을 캡쳐하여 분석 데이터로 사용한다.
+&emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고, 발표 종료 후 녹화 영상을 기반으로 특정 트리거 조건을 만족한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
@@ -260,7 +259,7 @@
 &emsp;  분석 완료 후 녹화 영상은 개인정보 보호를 위해 삭제된다.
 
 **고려 사항 및 주의점**</br>
-&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 minmeType 검증 및 fallback 전략을 적용한다.
+&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 mimeType 검증 및 fallback 전략을 적용한다.
 
 &emsp; 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 일정 주기마다 chunk 단위로 데이터를 Storage에 임시 저장하여 안정성을 확보한다.
 
@@ -289,13 +288,13 @@ flowchart TD
 | 시선 이탈 | abs(pitch_degree) > 15.0 또는 abs(yaw_degree) > 15.0 | 2초 이상 지속 | 5초 |
 | 어깨 기울기 | 어깨 기울기 >= 8° | 3초 이상 지속 | 5초 |
 | 손과 얼굴의 거리(가림 판단) | distance(hand, face_center) < face_width * 0.6 AND IoU(hand_Bbox, face_Bbox) > 0.25 AND Hand_Velocity < 0.05 | 1.5초 이상 지속 | 3초 |
-| 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량 / shoulder_width) >= 0.08 | 2초 이상 지 | 5초 |
+| 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량 / shoulder_width)) >= 0.08 | 2초 이상 지속 | 5초 |
 | 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> abs(Ratio_base - Ratio_current) >= 0.15 | 3이상 지속 | 5초 |
 | 대본 리딩(시선 고정) | yaw_degree > 20도 또는 시선 좌우 편향 > 0.7 | 4초 이상 지속 | 5초 |
-| 산만한 과잉 제스처 | 정규화된 손 움직임 속도 > 0.75 AND 양손 대칭성 < 0.3 aAND 제스처 빈도 > 임계값 | 3초 이상 지속 | 5초 |
+| 산만한 과잉 제스처 | 정규화된 손 움직임 속도 > 0.75 AND 양손 대칭성 < 0.3 AND 제스처 빈도 > 임계값 | 3초 이상 지속 | 5초 |
 | 긴장성 신체 동결 | EAR < EAR_base * 0.75 and 눈 깜빡임 <=  5/min and hand_velocity < 0.01 | 3초 이상 지속| 5초 |
 
-트리거 조건 측정을 위해 base 값 측정 필요
+사용자별 자세 및 움직임 차이를 보정하기 발표 시작 전 초기 base 값을 측정한다.</br>
 각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하며, timestamp 기반으로 캡쳐 진행
 
 
@@ -324,7 +323,6 @@ flowchart TD
       1. 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
       2. Blob 업로드 가능한 상태로 전환
   3. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
-  4. captureBuffer의 이미지들을 Storage에 업로드
 
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
@@ -335,19 +333,19 @@ flowchart TD
    3. 이후 재녹화 시작
 
 **프레임 캡쳐:**</br>
-- 프래임 캡쳐를 위한 canvas 준비
+- 프레임 캡쳐를 위한 canvas 준비
 - 녹화 영상을 video 요소에 로드
 &emsp; 분석 모듈 기반한 캡쳐 트리거 시점 기준:
 
   1. timestamp를 통해 문제 발생 위치로 이동
-  1. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
-  2. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
+  2. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
+  3. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
-  3. 생성된 Blob을 captureBuffer버퍼에 저장
+  4. 생성된 Blob을 captureBuffer에 저장
      - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
 
-- 캡쳐 완료 후 chunk,captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
+- 캡쳐 완료 후 chunk, captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
    
 ---
 
