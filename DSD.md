@@ -244,7 +244,7 @@
 #### 기능 설명
 
 &emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 분석 데이터를 수집하는 것이다. 발표 종료 후 녹화 영상을 기반으로 문제 상황이 발생한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.
-&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호화성과 MediaRecorder 기본 자원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 결과를 기반으로 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
+&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호성과 MediaRecorder 기본 원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 결과를 기반으로 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
@@ -257,7 +257,7 @@
 **데이터 활용 및 삭제**</br>
 &emsp;  수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.
 
-&emsp;  녹화 영상은 분석 완료 후 즉시 삭제하여 개인정보 보호한다.
+&emsp;  분석 및 보고서 생성 완료 후 videos/{session_id}/ 이하의 segment 파일 및 final.webm 파일 즉시 삭제하여 개인정보를 보호한다.
 
 **고려 사항 및 주의점**</br>
 &emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 mimeType 검증 및 fallback 전략을 적용한다.
@@ -274,7 +274,7 @@ flowchart TD
     D --> E[stop 함수]
     E --> F[최종 Blob 생성]
     F --> G[녹화 영상 업로드]
-    G --> H[영상 분석 기반 트리거 시점 탐색]
+    G --> H[영상 분석 결과 수신]
     H --> I[Canvas drawImage]
     I --> J[JPEG 저장]
     J --> K[captureBuffer 저장]
@@ -290,7 +290,7 @@ flowchart TD
 | 어깨 기울기 | 어깨 기울기 >= 8° | 3초 이상 지속 | 5초 |
 | 손과 얼굴의 거리(가림 판단) | distance(hand, face_center) < face_width * 0.6 AND IoU(hand_Bbox, face_Bbox) > 0.25 AND Hand_Velocity < 0.05 | 1.5초 이상 지속 | 3초 |
 | 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량 / shoulder_width)) >= 0.08 | 2초 이상 지속 | 5초 |
-| 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> abs(Ratio_base - Ratio_current) >= 0.15 | 3이상 지속 | 5초 |
+| 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> abs(Ratio_base - Ratio_current) >= 0.15 | 3초 이상 지속 | 5초 |
 | 대본 리딩(시선 고정) | yaw_degree > 20도 또는 시선 좌우 편향 > 0.7 | 4초 이상 지속 | 5초 |
 | 산만한 과잉 제스처 | 정규화된 손 움직임 속도 > 0.75 AND 양손 대칭성 < 0.3 AND 제스처 빈도 > 임계값 | 3초 이상 지속 | 5초 |
 | 긴장성 신체 동결 | EAR < EAR_base * 0.75 and 눈 깜빡임 <=  5/min and hand_velocity < 0.01 | 3초 이상 지속| 5초 |
@@ -335,15 +335,15 @@ flowchart TD
 
 **프레임 캡쳐:**</br>
 - 프레임 캡쳐를 위한 canvas 준비
-- 발표 종료 후 분석된 timestamp 기준으로 캡쳐 실행
+- 발표 종료 후 영상 분석 모듈에서 전달받은 분석 결과 기준으로 캡쳐 실행
 
   1. video.currentTime = timestamp를 통해 문제 발생 위치로 이동
-  2. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
-  3. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
+  2. seeked 이벤트 발 후 현재 프레임 접근
+  3. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
+  4. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
-  4. 생성된 Blob을 captureBuffer에 저장
-     - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드
+  5. 생성된 캡쳐 이미지는 captureBuffer[]에 임시 저장되며 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드 후 임시 저장된 이미지를 삭제한다.
 
 **메모리해제**
 -  캡쳐 완료 후:</br>
@@ -440,29 +440,30 @@ interface SlideLog{</br>
   4. 현재 슬라이드 진입 시간을 기록하기 위해 enterTime에 performance.now()를 사용하여 상대 시간 저장
   5. Storage에서 슬라이드 이미지 목록 조회
   6. currentSlideIndex로 현재 인데스에 맞는 슬라이드를 렌더링
-  7. 다음 슬라이드 이미지 2개를 preload한다.
+  7. 현재 슬라이드 기준 다음 슬라이드 이미지 2개를 preload한다.
      - 모든 슬라이드 이미지를 가져오면 초기 로딩이 오래 걸리고 부담이 큼
      - 슬라이드를 하나씩 가져오면 전환 지연 발생 가능
+     - 네트워크 지연 시에도 즉시 전환과 메모리 사용량 증가를 고려하여 preload 개수는 2개로 제한한다.
 
 **슬라이드 전환 및 시간 기록**
   1. 영상 분석 모듈에서 전달된 GestureEvent를 수신하여 슬라이드 전환
-     - nextSlide(), prevSlide()
+     - 오른손 fist를 전달받으면 nextSlide()를 호출, 왼손 fist를 전달받으면 prevSlide()를 호출한다.
+     - 첫 슬라이드에서 prevSlide() 호출 시 상태 유지
+     - 마지막 슬라이드에서 nextSlide() 호출 시 발표 종료 여부를 사용자에세 확인한다.
   2. performance.now()를 호출하여 현재 상대 시간 저장(now)
   3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
        slideIndex: 현재 슬라이드 인덱스 (currentSlideIndex)
        enterTime: enterTime - startTime
        exitTime: now - startTime
        duration: now - enterTime
-       
+
   4. 다음 슬라이드 기록을 위해 enterTime을 now 값으로 갱신
   5. currentSlideIndex를 새 슬라이드 인덱스로 변경
   6. 마지막 슬라이드 여부(isLast)를 확인하여 종료 처리 수행
 
 **발표 종료:**
-  1. 누적된 SlideLog 저장
-  2.
-     데이터 Storage 저장
-     사용한 리소스 해제
+  1. 누적된 SlideLog를 sessions 테이블의 slide_log(JSONB)에 저장한다.
+  2. preload된 이미지 캐시 및 이벤트 리스너를 해제한다.
 
 **오류 처리**
 &emsp; 슬라이드 전환 또는 렌더링 중 오류가 발생하면 다음 작업을 수행한다.
@@ -554,7 +555,7 @@ interface SlideLog{</br>
 | id | UUID | PK | 테이블 인덱스 번호 |
 | name | VARCHAR | NOT NULL | 사용자 이름 |
 | email | VARCHAR | NOT NULL, UNIQUE | 로그인 이메일  |
-| password | TEXT | NOT NULL | 비밀번호 |
+| password_hash | TEXT | NOT NULL | bcypt 해시 비밀번호 |
 
 #### sessions
 
@@ -565,7 +566,8 @@ interface SlideLog{</br>
 | title | VARCHAR | NOT NULL | 발표 제목 |
 | slide_log | JSONB | NOT NULL | 시간 로그 배열 |
 | target_time | INT | NOT NULL | 목표 발표 시간(초) |
-| video_url | TEXT | NOT NULL | 발표 영상 |
+| video_url | TEXT |  | 발표 영상 |
+| created_at | TIMESTAMP |  | 생성 시간 |
 
 #### analysis_results
 
@@ -573,9 +575,11 @@ interface SlideLog{</br>
 |--------|------|------|------|
 | analysis_id | UUID | PK | 분석 결과 테이블 인덱스 |
 | session_id | UUID | FK | 분석 결과와 세션 매칭 |
-| sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
+| session_summary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 | score_result | JSONB | NOT NULL | 점수 산출 결과 |
 | coaching | JSONB | AI 코칭 결과 |
+| created_at | TIMESTAMP |  | 생성 시간 |
+
 
 #### reports
 
@@ -584,6 +588,7 @@ interface SlideLog{</br>
 | report_id | UUID | PK | report 테이블 인덱스 |
 | session_id | UUID | FK | 보고서와 세션 매칭 |
 | report_url | TEXT | NOT NULL | 보고서 링크 |
+| created_at | TIMESTAMP |  | 생성 시간 |
 
 ### 4.3 Supabase Storage 구조
 
@@ -597,8 +602,8 @@ bucket</br>
 |
 |---- captures/</br>
 &emsp;   |---- {session_id}/</br>
-&emsp;&emsp;       |---- capture_1715332912.jpg</br>
-&emsp;&emsp;       |---- capture_1715332928.jpg</br>
+&emsp;&emsp;       |---- capture_1.jpg</br>
+&emsp;&emsp;       |---- capture_2.jpg</br>
 &emsp;&emsp;       |---- ...</br>
 |
 |---- reports/</br>
@@ -617,7 +622,7 @@ bucket</br>
 | 유형 | 경로 규칙 |
 |-----|---------|
 | 슬라이드 | slides/{session_id}/slide_{n}.png |
-| 캡쳐 이미지 | captures/{session_id}/capture_{timestamp}.jpg |
+| 캡쳐 이미지 | captures/{session_id}/capture_{n}.jpg |
 | 보고서 PDF | reports/{session_id}/report.pdf |
 | 발표 영상 | videos/{session_id}/final.webm |
 
