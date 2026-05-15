@@ -304,7 +304,7 @@ flowchart TD
 | 긴장성 신체 동결 | EAR < EAR_base * 0.75 and 눈 깜빡임 <=  5/min and hand_velocity < 0.01 | 3초 이상 지속| 5초 |
 
 사용자별 자세 및 움직임 차이를 보정하기 발표 시작 전 초기 base 값을 측정한다.</br>
-각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하고 캡쳐를 진행한다.
+각 트리거 조건이 만족되면 문제가 확정된 시점의 timestamp를 기록하고 캡쳐를 진행한다.
 
 #### 알고리즘
 
@@ -441,6 +441,7 @@ interface SlideLog{</br>
 | enter Time | 슬라이드 진입 시각(ms) |
 | exitTime | 슬라이드 종료 시각(ms) |
 | duration | 머문 시간(ms) |
+** 마지막 슬라이드에서 exitTime은 발표 종료했을 때의 시각이다.
 
 #### 알고리즘
 
@@ -451,7 +452,7 @@ interface SlideLog{</br>
   4. 현재 슬라이드 진입 시간을 기록하기 위해 enterTime에 performance.now()를 사용하여 상대 시간 저장
   5. Storage에서 슬라이드 이미지 목록 조회
   6. currentSlideIndex로 현재 인데스에 맞는 슬라이드를 렌더링
-  7. 현재 슬라이드 기준 다음 슬라이드 이미지 2개를 preload한다.
+  7. 현재 슬라이드 기준 앞뒤 슬라이드 이미지를 각각 2개씩 preload한다.
      - 모든 슬라이드 이미지를 가져오면 초기 로딩이 오래 걸리고 부담이 큼
      - 슬라이드를 하나씩 가져오면 전환 지연 발생 가능
      - 네트워크 지연 시에도 즉시 전환과 메모리 사용량 증가를 고려하여 preload 개수는 2개로 제한한다.
