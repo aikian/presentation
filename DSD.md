@@ -379,13 +379,11 @@ flowchart TD
 
 #### 기능 설명
 
-// Storage에서 슬라이드 이미지 로드 → 렌더링 → 제스처 이벤트 수신 → 전환 + 타임스탬프 기록
+이 모듈은 발표 자료를 이미지 형태로 렌더링하고, 발표자의 제스처 이벤트를 수신하여 슬라이드를 전환하는 역할을 한다.
 
-이 모듈은 화면에 슬라이드를 표시하고 발표자의 제스처 이벤트를 수신하여 슬라이드를 전환하는 것이 목적이다.
+&emsp; 발표 전 Supabase Storage에 저장된 슬라이드 이미지를 로드하여 SlideViewer 컴포넌트에 전달하며, 영상 분석 모듈에서 전달된 제스처 이벤트를 수신하여 슬라이드 전환을 수행한다.
 
-&emsp; Storage에 저장된 슬라이드 이미지를 로드하여 '<img>' 태그로  웹 화면에 표시한다.
-
-&emsp; 발표 중 발표자의 제스처를 실시간으로 인식하여 슬라이드를 전환하고 각 슬라이드 전환 시간을 타임스탬프로 기록한다.
+&emsp; 또한 각 슬라이드의 진입 시각과 종료 시각을 기록하여 SlideLog를 생성하여 이후 발표 분석에 사용한다.
 
 &emsp; 슬라이드 렌더링 중 오류가 발생하면 이전 슬라이드를 유지하여 화면 중단을 방지한다. 오류 로그를 기록하고 렌더링을 재시도를 수행한다.
 
@@ -399,33 +397,37 @@ flowchart TD
     B --> C[SlideViewer]
     C --> D[제스처 이벤트 수신]
     D --> E[인덱스 업데이트 + SlideLog 기록]
-    E --> C
-    E --> |마지막 슬라이드| F[발표 종료]
+    E --> F[슬라이드 전환]
+    F --> C
+    F --> |마지막 슬라이드| G[발표 종료]
 ```
 
 #### 입출력 파라미터
 
-// initSlides() / nextSlide() / prevSlide() / getSlideTimings() 각 입출력 표
 
 | 함수 | 입력 | 출력 |
 |------|------|------|
-| initSlides() |  | 슬라이드 이미지 배열 가져오기 -> 초기 상태 설정 -> 첫 슬라이드 렌더링 -> 타임 스탬프 기록 시작 |
+| initSlides() | slideURLs[] | 슬라이드 이미지 배열 가져오기 -> 초기 상태 설정 -> 첫 슬라이드 렌더링 -> 타임 스탬프 기록 시작 |
 | nextSlide() | slideIndex | slideIndex+1 |
 | prevSlide() | slideIndex | slideIndex-1 |
-| getSlideTimings() | slideIndex | 해댕 슬라이드에서 SlideLog의 duration |
+| getSlideTimings() | slideLog[] | 슬라이드별 발표 시간 |
 
 SlideLog 구조:</br>
-class SlideLog{</br>
-&emsp;    slideIndex,</br>
-&emsp;    enterTime,</br>
-&emsp;    exitTime,</br>
-&emsp;    duration</br>
+interface SlideLog{</br>
+&emsp;    slideIndex: number,</br>
+&emsp;    enterTime: number,</br>
+&emsp;    exitTime: number,</br>
+&emsp;    duration: number</br>
 }
 
-#### 알고리즘
+| 필드 | 설명 |
+|----|-----|
+| slideIndex | 슬라이드 번호 |
+| enter Time | 슬라이드 진입 시각(ms) |
+| exitTime | 슬라이드 종료 시각(ms) |
+| duration | 머문 시간(ms) |
 
-// 슬라이드 전환 시 performance.now()로 타임스탬프 기록
-// SlideLog 배열 누적 방식
+#### 알고리즘
 
 **초기화**
   1. 슬라이드 전환 기록을 저장하기 위한 SlideLog 배열 초기화
@@ -439,7 +441,8 @@ class SlideLog{</br>
      - 슬라이드를 하나씩 가져오면 전환 지연 발생 가능
 
 **슬라이드 전환 및 시간 기록**
-  1. 발표자의 제그처를 인식하여 슬라이드 전환
+  1. 발표자의 제스처를 인식하여 슬라이드 전환
+     - nextSlide(), prevSlide()
   2. performance.now()를 호출하여 현재 상대 시간 저장(now)
   3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
        slideIndex: 현재 슬라이드 인덱스 (currentSlideIndex)
@@ -462,7 +465,14 @@ class SlideLog{</br>
   1. 현재 슬라이드를 유지하여 화면 중단 방지
   2. 오류 로그를 SlideLog 배열에 기록
   3. 현재 슬라이드 인덱스를 기반으로 슬라이드 렌더링을 재시도한다.
-  
+
+
+발표 종료 후 전체 SlideLog를 기반으로:
+ • 슬라이드별 발표 시간 
+ • 평균 슬라이드 체류 시간
+ • 목표 시간 대비 오차율
+등을 계산한다.
+
 ---
 
 ### 3.7 점수화 알고리즘 모듈
