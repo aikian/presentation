@@ -266,11 +266,6 @@
 
 #### 블록 다이어그램
 
-// ★ 그림 필수 ★
-// 웹캠 스트림을 두 갈래로 분기: MediaRecorder(녹화) / Canvas(캡처)
-// 캡처 트리거 판단 → drawImage() → JPEG 저장 → captureBuffer 누적
-// 발표 종료 → stop() → Blob 수집 → Storage 업로드 → 원본 메모리 해제
-
 ```mermaid
 flowchart TD
     A[웹캠 스트림] --> B[MediaRecorder -> 녹화]
@@ -289,9 +284,6 @@ flowchart TD
 
 #### 입출력 파라미터
 
-// 캡처 트리거 임계값 표로 정리
-// 표 형식: 지표 / 트리거 조건 / 쿨다운 시간
-
 | 지표 | 트리거 조건 | 지속 조건 | 쿨다운 |
 |------|-----------|----------|--------|
 | 시선 이탈 | abs(pitch_degree) > 15.0 또는 abs(yaw_degree) > 15.0 | 2초 이상 지속 | 5초 |
@@ -308,10 +300,6 @@ flowchart TD
 
 
 #### 알고리즘
-
-// MediaRecorder 초기화 옵션 (mimeType, 비트레이트 등)
-// JPEG 압축 품질 설정값
-// 발표 종료 처리 순서: stop → Blob 수집 → 이미지 업로드 → 영상 메모리 해제
 
 **녹화 설정:**
   1. navigator.mediaDevices.getUserMedia()를 호출하여 stream 가져오기
@@ -341,7 +329,7 @@ flowchart TD
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
   2. 오류 발생 시 다음 실행:</br>
-    &emsp;   (1) 현재까지의 chunk와 캡처 데이터를 Storage에 임시 저장</br>
+    &emsp;   (1) 현재까지의 chunk를 Storage에 임시 저장</br>
     &emsp;   (2) stop()을 통해 녹화 종료</br>
     &emsp;   (3) track.stop()으로 리소스 해제
    3. 이후 재녹화 시작
@@ -356,7 +344,6 @@ flowchart TD
   2. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
-     - 캡쳐 오류 발생 시 오류 로그와 발생 시각을 기록한 후 다음 캡쳐로 넘어가도록 하여 실시간으로 캡쳐하도록 한다. 오류가 발생한 부분은 이후 녹화 영상을 가지고 캡쳐를 진행한다.
   3. 생성된 Blob을 captureBuffer버퍼에 저장
      - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Storage에 즉시 업로드
 
