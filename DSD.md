@@ -247,25 +247,29 @@
 &emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화한다. 이때 브라우저 호환성과 MediaRecorder 기본 지원 포멧을 고려하여 WebM 형식을 사용하며, 대용량 영상의 서버 업로드에 따른 네트워크 오버헤드와 자원 낭비를 방지하기 위해 녹화된 영상은 브라우저 로컬 메모리(Blob URL)에 임시 저장된다. 특히, 브라우저 재실행되거나 새로고침하여 녹화 데이터가 유실되는 것을 방지하기 위해 Storage에 chunk 단위로 데이터를 주기적으로 저장한다.</br></br>
 &emsp; 발표가 종료되면, 시스템은 분석에 소요되는 시간과 자원을 최적화하기 위해 이 로컬 Blob URL 영상을 백그라운드 비디오 요소를 통해 순차적으로 재생(디코딩)한다. 재생되는 영상의 각 프레임은 영상 분석 모듈(3.3)로 전달되며, 분석 모듈의 실시간 연산 결과를 바탕으로 문제 상황이 탐지되는 즉시 캡처를 수행한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 문제 발생 시점의 프레임을 JPEG 이미지로 추출 및 저장한다. </br></br>
 &emsp; 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
+</br>
+</br>
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
  2. 유실 방지용 영상 임시 백업
  3. 영상 녹화 후 Canvas API를 활용한 문제 순간 캡쳐 기능:
  4. Supabase Storage에 캡쳐 이미지 저장 및 관리 기능
+</br>
 
 **오류 처리**</br>
 &emsp;  녹화 중 오류가 발생하면 데이터 손실을 방지하기 위해 수집된 chunk를 Storage에 임시 저장한 뒤 녹화 중단 및 스트림 종료한다. 
+</br>
 
 **데이터 활용 및 삭제**</br>
-&emsp;  수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.
-
-&emsp;  분석 및 보고서 생성 완료 후 videos/{session_id}/ 이하의 segment 파일 및 final.webm 파일 즉시 삭제하여 개인정보를 보호한다.
+&emsp;  - 수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.</br>
+&emsp;  - 분석 및 보고서 생성 완료 후 videos/{session_id}/ 이하의 segment 파일 및 final.webm 파일 즉시 삭제하여 개인정보를 보호한다.
+</br>
 
 **고려 사항 및 주의점**</br>
-&emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 mimeType 검증 및 fallback 전략을 적용한다.
-
-&emsp; 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 일정 주기마다 chunk 단위로 데이터를 Supabase Storage에 임시 저장하여 안정성을 확보한다.
+&emsp;  - MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 mimeType 검증 및 fallback 전략을 적용한다.
+&emsp;  - 장시간 녹화 시 메모리 사용량 증가 및 chunk 데이터 손실 가능성이 존재하므로 일정 주기마다 chunk 단위로 데이터를 Supabase Storage에 임시 저장하여 안정성을 확보한다.
+</br>
 
 #### 블록 다이어그램
 
@@ -289,6 +293,7 @@ flowchart TD
     M --> N[보고서 생성 완료]
     N --> O[원본 영상 삭제]
 ```
+</br>
 
 #### 입출력 파라미터
 
@@ -305,6 +310,7 @@ flowchart TD
 
 사용자별 자세 및 움직임 차이를 보정하기 발표 시작 전 초기 base 값을 측정한다.</br>
 각 트리거 조건이 만족되면 문제가 확정된 시점의 timestamp를 기록하고 캡쳐를 진행한다.
+</br>
 
 #### 알고리즘
 
@@ -316,6 +322,7 @@ flowchart TD
       - audioBitsPerSecond: 128000 
   3. 녹화 데이터 저장을 위한 chunk 배열 초기화
   4. video.srcObject를 통해 웹캠 스트림과 비디오 요소를 연결
+ </br>
  
 **녹화 시작:**
   1. MediaRecorder.start(timeslice)를 호출하여 녹화 시작
@@ -324,6 +331,7 @@ flowchart TD
   2. ondataavailable 이벤트로 실시간으로 생성되는 영상 데이터를 chunk 단위로 수집한다. 
       - event.data.size > 0이면 chunks.push(event.data) 수행
   3. 수집된 chunk 데이터는 메모리 사용량 증가 및 데이터 손실 방지를 위해 일정 개수(예: 30초 단위)마다 임시 WebM 세그먼트 파일로 Storage에 업로드한다.
+</br>
 
 **녹화 종료:**
   1. stop()으로 녹화 종료
@@ -332,7 +340,8 @@ flowchart TD
       2. 생성된 영상을 브라우저 내부 가상 메모리 주소인 Blob URL(URL.createObjectURL(finalBlob)) 형태로 변환하여 할당한다.
   3. 최종 영상 파일은 Supabase Storage의 videos/{session_id}/final.webm 경로에 Signed URL 형태로 저장한다.
   4. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
-
+</br
+   
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
   2. 오류 발생 시 다음 실행하여 현재 세션을 안전 종료:</br>
@@ -340,28 +349,29 @@ flowchart TD
     &emsp;   (2) stop()을 통해 녹화 종료</br>
     &emsp;   (3) track.stop()으로 리소스 해제
    3. 사용자에게 비정상 종료 알림 및 재시작 안내 제공
+</br>
 
-**사후 영상 프레임 캡쳐:**</br>
-- 프레임 캡쳐를 위한 canvas 준비
-- 발표 종료 후 영상 분석 모듈에서 전달받은 분석 결과 기준으로 캡쳐 실행
-- Blob URL을 사용하여 로컬에서 캡쳐를 하여 속도를 향상시킨다.
-  1. <video> 요소를 생성하고, Blob URL을 연결한다.
-  2. 프레임 캡쳐를 위해 Canvas 객체 및 captureBuffer[] 초기화한다.
-  3. video.play()로 비디오를 재생시키면서 requestVideoFrameCallback()를 통해 실시간으로 각 프레임의 이미지 데이터를 추출한다
-  4. 추출한 이미지 데이터를 영상 분석 모듈로 분석을 수행한다.
-  5. 분석 결과에 대한 연산 결과가 캡처 조건을 충족하면 해당 프레임을 캡처한다.
+**사후 영상 프레임 캡쳐:**
+  1. 프레임 캡쳐를 위한 canvas 준비
+  2. `<video>` 요소를 생성하고, Blob URL을 연결한다.
+     - Blob URL을 사용하여 로컬에서 캡쳐를 하여 속도를 향상시킨다.
+  3. 프레임 캡쳐를 위해 Canvas 객체 및 captureBuffer[] 초기화한다.
+  4. video.play()로 비디오를 재생시키면서 requestVideoFrameCallback()를 통해 실시간으로 각 프레임의 이미지 데이터를 추출한다
+  5. 추출한 이미지 데이터를 영상 분석 모듈로 분석을 수행한다.
+  6. 분석 결과에 대한 연산 결과가 캡처 조건을 충족하면 해당 프레임을 캡처한다.
      - video.currentTime을 문제 발생 타임스탬플 수집한다.
      - canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
   7. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
   8. 생성된 캡쳐 이미지는 captureBuffer[]에 임시 저장되며 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드 후 임시 저장된 이미지를 삭제한다.
+</br>
 
 **메모리해제**
 -  캡쳐 완료 후:</br>
-&emsp; • chunk[] 초기화
-&emsp; • captureBuffer[] 초기화
-&emsp; • URL.revokeObjectURL(finalBlob) 수행 
+&emsp; • chunk[] 초기화</br>
+&emsp; • captureBuffer[] 초기화</br>
+&emsp; • URL.revokeObjectURL(finalBlob) 수행 </br>
    
 ---
 
@@ -401,10 +411,9 @@ flowchart TD
 &emsp; 또한 각 슬라이드의 진입 시각과 종료 시각을 기록하여 SlideLog를 생성하여 이후 발표 분석에 사용한다.
 
 &emsp; 슬라이드 렌더링 중 오류가 발생하면 이전 슬라이드를 유지하여 화면 중단을 방지한다. 오류 로그를 기록하고 최대 3회 동안 일정 시간 간격으로 이미지 로딩을 자동 재시도한다. 재시도 후에도 로딩 실패 시 재시도를 중단하고 사용자에게 '네트워크 연결 확인' 경고 알림을 띄운다.
+</br>
 
 #### 블록 다이어그램
-
-// 흐름: 슬라이드 이미지 배열 → SlideViewer → 제스처 이벤트 수신 → 인덱스 업데이트 + SlideLog 기록
 
 ```mermaid
 flowchart TD
@@ -416,9 +425,9 @@ flowchart TD
     F --> C
     F --> G[발표 종료]
 ```
+</br>
 
 #### 입출력 파라미터
-
 
 | 함수 | 입력 | 출력 |
 |------|------|------|
@@ -426,7 +435,7 @@ flowchart TD
 | nextSlide() | slideIndex | Min(slideIndex+1, totalSlides -1) |
 | prevSlide() | slideIndex | Max(slideIndex-1, 0) |
 | getSlideTimings() | slideLog[] | 슬라이드별 발표 시간 |
-
+</br>
 SlideLog 구조:</br>
 interface SlideLog{</br>
 &emsp;    slideIndex: number,</br>
@@ -441,7 +450,9 @@ interface SlideLog{</br>
 | enter Time | 슬라이드 진입 시각(ms) |
 | exitTime | 슬라이드 종료 시각(ms) |
 | duration | 머문 시간(ms) |
+
 ** 마지막 슬라이드에서 exitTime은 발표 종료했을 때의 시각이다.
+</br>
 
 #### 알고리즘
 
@@ -456,6 +467,7 @@ interface SlideLog{</br>
      - 모든 슬라이드 이미지를 가져오면 초기 로딩이 오래 걸리고 부담이 큼
      - 슬라이드를 하나씩 가져오면 전환 지연 발생 가능
      - 네트워크 지연 시에도 즉시 전환과 메모리 사용량 증가를 고려하여 preload 개수는 2개로 제한한다.
+</br>
 
 **슬라이드 전환 및 시간 기록**
   - SlideLog 시간은 performance.now() 기준 상대 시간이다.
@@ -476,23 +488,26 @@ interface SlideLog{</br>
   4. 다음 슬라이드 기록을 위해 enterTime을 now 값으로 갱신
   5. currentSlideIndex를 새 슬라이드 인덱스로 변경
   6. 마지막 슬라이드 여부(isLast)를 확인하여 종료 처리 수행
+</br>
 
 **발표 종료:**
   1. 누적된 SlideLog를 sessions 테이블의 slide_log(JSONB)에 저장한다.
   2. preload된 이미지 캐시 및 이벤트 리스너를 해제한다.
+</br>
 
-**오류 처리**
+**오류 처리:**</br>
 &emsp; 슬라이드 전환 또는 렌더링 중 오류가 발생하면 다음 작업을 수행한다.
   1. 현재 슬라이드를 유지하여 화면 중단 방지
   2. 오류 로그를 SlideLog 배열에 기록
   3. 현재 슬라이드 인덱스를 기반으로 슬라이드 렌더링을 일정 시간 간격으로 최대 3회 재시도한다.
   4. 재시도 후에도 실패하면 사용자에게 결고 알림을 띄운다.
 
+</br>
 
-발표 종료 후 전체 SlideLog를 기반으로:
- • 슬라이드별 발표 시간 
- • 평균 슬라이드 체류 시간
- • 목표 시간 대비 오차율
+발표 종료 후 전체 SlideLog를 기반으로:</br>
+&emsp; • 슬라이드별 발표 시간 </br>
+&emsp; • 평균 슬라이드 체류 시간</br>
+&emsp; • 목표 시간 대비 오차율</br>
 등을 계산한다.
 
 ---
@@ -618,28 +633,29 @@ interface SlideLog{</br>
 bucket</br>
 |</br>
 |---- slides/</br>
-&emsp;   |---- {session_id}/</br>
-&emsp;&emsp;       |---- slide_1.png</br>
-&emsp;&emsp;       |---- slide_2.png</br>
-&emsp;&emsp;       |---- ...</br>
-|
+|&emsp;&emsp;   |---- {session_id}/</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- slide_1.png</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- slide_2.png</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- ...</br>
+|</br>
 |---- captures/</br>
-&emsp;   |---- {session_id}/</br>
-&emsp;&emsp;       |---- capture_1.jpg</br>
-&emsp;&emsp;       |---- capture_2.jpg</br>
-&emsp;&emsp;       |---- ...</br>
-|
+|&emsp;&emsp;   |---- {session_id}/</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- capture_1.jpg</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- capture_2.jpg</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- ...</br>
+|</br>
 |---- reports/</br>
-&emsp;   |---- {session_id}/</br>
-&emsp;&emsp;       |---- report.pdf
-|
+|&emsp;&emsp;   |---- {session_id}/</br>
+|&emsp;&emsp;&emsp;&emsp;       |---- report.pdf</br>
+|</br>
 |----videos/</br>
-&emsp;   |---- {session_id}/</br>
-&emsp;&emsp;       |---- segments/
-&emsp;&emsp;&emsp;          |---- segment_001.webm
-&emsp;&emsp;&emsp;          |---- segment_002.webm
-&emsp;&emsp;&emsp;          |---- ...
-&emsp;&emsp;       |---- final.webm
+&emsp;&emsp;   |---- {session_id}/</br>
+&emsp;&emsp;&emsp;&emsp;       |---- segments/</br>
+&emsp;&emsp;&emsp;&emsp;&emsp;          |---- segment_001.webm</br>
+&emsp;&emsp;&emsp;&emsp;&emsp;          |---- segment_002.webm</br>
+&emsp;&emsp;&emsp;&emsp;&emsp;         |---- ...</br>
+&emsp;&emsp;&emsp;&emsp;      |---- final.webm</br>
+</br>
 
 **파일 경로 규칙**
 | 유형 | 경로 규칙 | 설명 |
@@ -651,6 +667,7 @@ bucket</br>
 | 발표 영상 | videos/{session_id}/final.webm | 최종 영상|
 
 ** 분석 및 보고서 작성 완료 후 분할 백업과 발표 영상은 개인정보 보호를 위해 즉시 삭제된다.
+</br>
 
 **RLS 정책**
 | 정책 | 설명 |
