@@ -292,15 +292,16 @@ flowchart TD
 // 캡처 트리거 임계값 표로 정리
 // 표 형식: 지표 / 트리거 조건 / 쿨다운 시간
 
-| 지표 | 트리거 조건 | 쿨다운 |
-|------|-----------|--------|
-| 시선 이탈 | abs(pitch_degree) > 10.0 또는 abs(yaw_degree) > 10.0 일때 | 5초 |
-| 손 동작 인식 | 특정 손 제스처가 2초 이상 지속 -> 슬라이드 전환 | 4초 |
-| 어깨 기울기 | 어깨 기울기 >= 7° | 5초 |
-| 손과 얼굴의 거리(가림 판단) | hand-face 거리 > threshold | 3초 |
-| 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량) <= 0.08 | 5초 |
-| 상체 앞쏠림 |  | 5초 |
-| 긴장도 |  |  |
+| 지표 | 트리거 조건 | 지속 조건 | 쿨다운 |
+|------|-----------|----------|--------|
+| 시선 이탈 | abs(pitch_degree) > 15.0 또는 abs(yaw_degree) > 15.0 | 2초 이상 지속 | 5초 |
+| 어깨 기울기 | 어깨 기울기 >= 8° | 3초 이상 지속 | 5초 |
+| 손과 얼굴의 거리(가림 판단) | distance(hand, face_center) < face_width * 0.6 AND IoU(hand_Bbox, face_Bbox) > 0.25 AND Hand_Velocity < 0.05 | 1.5초 이상 지속 | 3초 |
+| 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량 / shoulder_width) >= 0.08 | 2초 이상 지 | 5초 |
+| 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> abs(Ratio_base - Ratio_current) >= 0.15 | 3이상 지속 | 5초 |
+| 대본 리딩(시선 고정) | yaw_degree > 20도 또는 시선 좌우 편향 > 0.7 | 4초 이상 지속 | 5초 |
+| 산만한 과잉 제스처 | 정규화된 손 움직임 속도 > 0.75 AND 양손 대칭성 < 0.3 aAND 제스처 빈도 > 임계값 | 3초 이상 지속 | 5초 |
+| 긴장성 신체 동결 | EAR < EAR_base * 0.75 and 눈 깜빡임 <=  5/min and hand_velocity < 0.01 | 3초 이상 지속| 5초 |
 
 각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하며, timestamp 기반으로 캡쳐 진행
 
