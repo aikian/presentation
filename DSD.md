@@ -548,9 +548,9 @@ interface SlideLog{</br>
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
 | id | UUID | PK | 테이블 인덱스 번호 |
-| userId | VARCHAR | NOT NULL | 사용자 아이디 |
+| name | VARCHAR | NOT NULL | 사용자 이름 |
+| email | VARCHAR | NOT NULL, UNIQUE | 로그인 이메일  |
 | password | TEXT | NOT NULL | 비밀번호 |
-| email | VARCHAR | NOT NULL | 이메일 주소 |
 
 #### sessions
 
