@@ -244,7 +244,7 @@
 #### 기능 설명
 
 &emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 분석 데이터를 수집하는 것이다. 발표 종료 후 녹화 영상을 기반으로 문제 상황이 발생한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.
-&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호성과 MediaRecorder 기본 원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 결과를 기반으로 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
+&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호환성과 MediaRecorder 기본 원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 모듈(3.3)에서 분석 결과를 전달받아서 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
@@ -305,8 +305,8 @@ flowchart TD
   1. navigator.mediaDevices.getUserMedia()를 호출하여 stream 가져오기
   2. MediaRecorder 생성
       - mimeType: MediaRecorder.isTypeSupported()를 통해 지원 가능한 mimeType을 적용
-      - videoBitsPerSecond: 1500000
-      - audioBitsPerSecond: 128000
+      - videoBitsPerSecond: 1500000 
+      - audioBitsPerSecond: 128000 
   3. 녹화 데이터 저장을 위한 chunk 배열 초기화
   4. video.srcObject를 통해 웹캠 스트림과 비디오 요소를 연결
  
@@ -323,7 +323,8 @@ flowchart TD
   2. onstop 이벤트:
       1. 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
       2. Blob 업로드 가능한 상태로 전환
-  3. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
+  3. 최종 영상 파일은 Supabase Storage의 videos/{session_id}/final.webm 경로에 Signed URL 형태로 저장한다.
+  4. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
 
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
@@ -446,10 +447,11 @@ interface SlideLog{</br>
      - 네트워크 지연 시에도 즉시 전환과 메모리 사용량 증가를 고려하여 preload 개수는 2개로 제한한다.
 
 **슬라이드 전환 및 시간 기록**
-  1. 영상 분석 모듈에서 전달된 GestureEvent를 수신하여 슬라이드 전환
+  - SlideLog 시간은 performance.now() 기준 상대 시간이다.
+  1. 영상 분석 모듈(3.3)에서 전달된 GestureEvent를 수신하여 슬라이드 전환
      - 오른손 fist를 전달받으면 nextSlide()를 호출, 왼손 fist를 전달받으면 prevSlide()를 호출한다.
      - 첫 슬라이드에서 prevSlide() 호출 시 상태 유지
-     - 마지막 슬라이드에서 nextSlide() 호출 시 발표 종료 여부를 사용자에세 확인한다.
+     - 마지막 슬라이드에서 nextSlide() 호출 시 즉시 종료하지 않고 발표 종료 여부를 사용자에게 확인하는 단께를 거침.
   2. performance.now()를 호출하여 현재 상대 시간 저장(now)
   3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
        slideIndex: 현재 슬라이드 인덱스 (currentSlideIndex)
@@ -546,13 +548,19 @@ interface SlideLog{</br>
 ### 4.1 ER 다이어그램
 
 ![image](images/ERdiagram.png)
+
+**관계**
+- users:sessions -> 1:N
+- sessions:analysis_results -> 1:1
+- sessions:reports -> 1:1
+
 ### 4.2 테이블 스키마
 
 #### users
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| id | UUID | PK | 테이블 인덱스 번호 |
+| id | UUID | PK | 사용자 고유 식별 |
 | name | VARCHAR | NOT NULL | 사용자 이름 |
 | email | VARCHAR | NOT NULL, UNIQUE | 로그인 이메일  |
 | password_hash | TEXT | NOT NULL | bcypt 해시 비밀번호 |
@@ -561,34 +569,34 @@ interface SlideLog{</br>
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| session_id | UUID | PK | 세션 아이디 |
-| user_id | UUID | FK | 세션과 사용자 매칭 |
+| session_id | UUID | PK | 세션 고유 아이디 |
+| user_id | UUID | FK, REFERENCES users(id) ON DELETE CASCADE | 세션과 사용자 매칭 |
 | title | VARCHAR | NOT NULL | 발표 제목 |
-| slide_log | JSONB | NOT NULL | 시간 로그 배열 |
+| slide_log | JSONB |  | SlideLog 배열 저장 |
 | target_time | INT | NOT NULL | 목표 발표 시간(초) |
 | video_url | TEXT |  | 발표 영상 |
-| created_at | TIMESTAMP |  | 생성 시간 |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 #### analysis_results
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| analysis_id | UUID | PK | 분석 결과 테이블 인덱스 |
-| session_id | UUID | FK | 분석 결과와 세션 매칭 |
+| analysis_id | UUID | PK | 분석 결과 고유 아이디 |
+| session_id | UUID | FK, REFERENCES sessions(session_id) ON DELETE CASCADE | 분석 결과와 세션 매칭 |
 | session_summary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 | score_result | JSONB | NOT NULL | 점수 산출 결과 |
-| coaching | JSONB | AI 코칭 결과 |
-| created_at | TIMESTAMP |  | 생성 시간 |
+| coaching | JSONB | | AI 코칭 결과 |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 
 #### reports
 
 | 컬럼명 | 타입 | 제약 | 설명 |
 |--------|------|------|------|
-| report_id | UUID | PK | report 테이블 인덱스 |
-| session_id | UUID | FK | 보고서와 세션 매칭 |
+| report_id | UUID | PK | 보고서 고유 아이 |
+| session_id | UUID | FK, REFERENCES sessions(session_id) ON DELETE CASCADE | 보고서와 세션 매칭 |
 | report_url | TEXT | NOT NULL | 보고서 링크 |
-| created_at | TIMESTAMP |  | 생성 시간 |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 ### 4.3 Supabase Storage 구조
 
