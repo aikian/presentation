@@ -244,7 +244,7 @@
 #### 기능 설명
 
 &emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 분석 데이터를 수집하는 것이다. 발표 종료 후 녹화 영상을 기반으로 문제 상황이 발생한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.
-&emsp; 브라우저의 MediaRecoder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호화성과 MediaRecorder 기본 자원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 결과를 기반으로 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
+&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호화성과 MediaRecorder 기본 자원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 결과를 기반으로 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
@@ -257,7 +257,7 @@
 **데이터 활용 및 삭제**</br>
 &emsp;  수집된 데이터는 이후 발표 평가 및 문제 구간 분석을 목적으로 활용된다.
 
-&emsp;  분석 완료 후 녹화 영상은 개인정보 보호를 위해 삭제된다.
+&emsp;  녹화 영상은 분석 완료 후 즉시 삭제하여 개인정보 보호한다.
 
 **고려 사항 및 주의점**</br>
 &emsp;  MediaRecorder는 브라우저별로 지원하는 코덱 및 동작 방식이 다르므로 isTypeSupported() 기반 mimeType 검증 및 fallback 전략을 적용한다.
@@ -316,7 +316,7 @@ flowchart TD
         -> 1초 단위로 데이터를 생성
   2. ondataavailable 이벤트로 실시간으로 생성되는 영상 데이터를 chunk 단위로 수집한다. 
       - event.data.size > 0이면 chunks.push(event.data) 수행
-  3. 수집된 chunk 데이터는 메모리 사용량 증가 및 데이터 손실 방지를 위해 일정 단위로 Storage에 임시 저장한다.
+  3. 수집된 chunk 데이터는 메모리 사용량 증가 및 데이터 손실 방지를 위해 일정 개수(예: 30초 단위)마다 임시 WebM 세그먼트 파일로 Storage에 업로드한다.
 
 **녹화 종료:**
   1. stop()으로 녹화 종료
@@ -327,18 +327,17 @@ flowchart TD
 
 **녹화 중 오류 처리:**
   1. onerror 이벤트를 통해 녹화 중 발생한 오류 감지
-  2. 오류 발생 시 다음 실행:</br>
+  2. 오류 발생 시 다음 실행하여 현재 세션을 안전 종료:</br>
     &emsp;   (1) 현재까지의 chunk를 Storage에 임시 저장</br>
     &emsp;   (2) stop()을 통해 녹화 종료</br>
     &emsp;   (3) track.stop()으로 리소스 해제
-   3. 이후 재녹화 시작
+   3. 사용자에게 재시작 안내 제공
 
 **프레임 캡쳐:**</br>
 - 프레임 캡쳐를 위한 canvas 준비
-- 녹화 영상을 video 요소에 로드
-&emsp; 분석 모듈 기반한 캡쳐 트리거 시점 기준:
+- 발표 종료 후 분석된 timestamp 기준으로 캡쳐 실행
 
-  1. timestamp를 통해 문제 발생 위치로 이동
+  1. video.currentTime = timestamp를 통해 문제 발생 위치로 이동
   2. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
   3. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
@@ -346,7 +345,12 @@ flowchart TD
   4. 생성된 Blob을 captureBuffer에 저장
      - 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드
 
-- 캡쳐 완료 후 chunk, captureBuffer 및 Blob URL을 초기화하여 메모리를 해제한다.
+**메모리해제**
+-  캡쳐 완료 후:</br>
+&emsp; • chunk[] 초기화
+&emsp; • captureBuffer[] 초기화
+&emsp; • URL.revokeObjectURL() 수행
+&emsp; • Blob 및 video 리소스 해제 
    
 ---
 
@@ -399,7 +403,7 @@ flowchart TD
     D --> E[인덱스 업데이트 + SlideLog 기록]
     E --> F[슬라이드 전환]
     F --> C
-    F --> |마지막 슬라이드| G[발표 종료]
+    F --> G[발표 종료]
 ```
 
 #### 입출력 파라미터
@@ -436,12 +440,12 @@ interface SlideLog{</br>
   4. 현재 슬라이드 진입 시간을 기록하기 위해 enterTime에 performance.now()를 사용하여 상대 시간 저장
   5. Storage에서 슬라이드 이미지 목록 조회
   6. currentSlideIndex로 현재 인데스에 맞는 슬라이드를 렌더링
-  7. 다음 슬라이드 이미지 2~3개를 preload한다.
+  7. 다음 슬라이드 이미지 2개를 preload한다.
      - 모든 슬라이드 이미지를 가져오면 초기 로딩이 오래 걸리고 부담이 큼
      - 슬라이드를 하나씩 가져오면 전환 지연 발생 가능
 
 **슬라이드 전환 및 시간 기록**
-  1. 발표자의 제스처를 인식하여 슬라이드 전환
+  1. 영상 분석 모듈에서 전달된 GestureEvent를 수신하여 슬라이드 전환
      - nextSlide(), prevSlide()
   2. performance.now()를 호출하여 현재 상대 시간 저장(now)
   3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
@@ -454,9 +458,9 @@ interface SlideLog{</br>
   5. currentSlideIndex를 새 슬라이드 인덱스로 변경
   6. 마지막 슬라이드 여부(isLast)를 확인하여 종료 처리 수행
 
-**마지막 슬라이드 처리:**
+**발표 종료:**
   1. 누적된 SlideLog 저장
-  2. 발표 종료 처리
+  2.
      데이터 Storage 저장
      사용한 리소스 해제
 
@@ -559,8 +563,9 @@ interface SlideLog{</br>
 | session_id | UUID | PK | 세션 아이디 |
 | user_id | UUID | FK | 세션과 사용자 매칭 |
 | title | VARCHAR | NOT NULL | 발표 제목 |
-| slideLog | JSONB | NOT NULL | 시간 로그 배열 |
+| slide_log | JSONB | NOT NULL | 시간 로그 배열 |
 | target_time | INT | NOT NULL | 목표 발표 시간(초) |
+| video_url | TEXT | NOT NULL | 발표 영상 |
 
 #### analysis_results
 
@@ -569,7 +574,7 @@ interface SlideLog{</br>
 | analysis_id | UUID | PK | 분석 결과 테이블 인덱스 |
 | session_id | UUID | FK | 분석 결과와 세션 매칭 |
 | sessionSummary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
-| score | JSONB | NOT NULL | 점수 산출 결과 |
+| score_result | JSONB | NOT NULL | 점수 산출 결과 |
 | coaching | JSONB | AI 코칭 결과 |
 
 #### reports
@@ -599,13 +604,22 @@ bucket</br>
 |---- reports/</br>
 &emsp;   |---- {session_id}/</br>
 &emsp;&emsp;       |---- report.pdf
+|
+|----videos/</br>
+&emsp;   |---- {session_id}/</br>
+&emsp;&emsp;       |---- segments/
+&emsp;&emsp;&emsp;          |---- segment_001.webm
+&emsp;&emsp;&emsp;          |---- segment_002.webm
+&emsp;&emsp;&emsp;          |---- ...
+&emsp;&emsp;       |---- final.webm
 
 **파일 경로 규칙**
 | 유형 | 경로 규칙 |
 |-----|---------|
 | 슬라이드 | slides/{session_id}/slide_{n}.png |
 | 캡쳐 이미지 | captures/{session_id}/capture_{timestamp}.jpg |
-| 보고서 PDF | reports/{session_id}/report.pdf
+| 보고서 PDF | reports/{session_id}/report.pdf |
+| 발표 영상 | videos/{session_id}/final.webm |
 
 **RLS 정책**
 | 정책 | 설명 |
