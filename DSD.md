@@ -243,13 +243,16 @@
 
 #### 기능 설명
 
-&emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 분석 데이터를 수집하는 것이다. 발표 종료 후 녹화 영상을 기반으로 문제 상황이 발생한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.
-&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화하여 Supabase Storage에 저장한다. 이때 브라우저 호환성과 MediaRecorder 기본 원 포멧을 고려하여 WebM 형식을 사용한다. 발표 후 영상 분석 모듈(3.3)에서 분석 결과를 전달받아서 문제 상황을 탐지한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 해당 시점의 프레임을 JPEG로 추출 및 저장한다. 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
+&emsp; 이 모듈의 목적은 발표 분석을 위해 발표 영상 및 음성을 녹화하고 분석 데이터를 수집하는 것이다. 발표 종료 후 녹화 영상을 기반으로 문제 상황이 발생한 시점의 프레임을 캡쳐하여 분석 데이터로 활용하는 것이다.</br></br>
+&emsp; 브라우저의 MediaRecorder API를 사용하여 발표 전 구간을 WebM 형식으로 녹화한다. 이때 브라우저 호환성과 MediaRecorder 기본 지원 포멧을 고려하여 WebM 형식을 사용하며, 대용량 영상의 서버 업로드에 따른 네트워크 오버헤드와 자원 낭비를 방지하기 위해 녹화된 영상은 브라우저 로컬 메모리(Blob URL)에 임시 저장된다. 특히, 브라우저 재실행되거나 새로고침하여 녹화 데이터가 유실되는 것을 방지하기 위해 Storage에 chunk 단위로 데이터를 주기적으로 저장한다.</br></br>
+&emsp; 발표가 종료되면, 시스템은 분석에 소요되는 시간과 자원을 최적화하기 위해 이 로컬 Blob URL 영상을 백그라운드 비디오 요소를 통해 순차적으로 재생(디코딩)한다. 재생되는 영상의 각 프레임은 영상 분석 모듈(3.3)로 전달되며, 분석 모듈의 실시간 연산 결과를 바탕으로 문제 상황이 탐지되는 즉시 캡처를 수행한다. 이때 Canvas API의 drawImage()와 toBlob()을 사용하여 문제 발생 시점의 프레임을 JPEG 이미지로 추출 및 저장한다. </br></br>
+&emsp; 녹화 영상 전 구간에 대하여 추출한 문제 상황의 프레임들은 Supabase Storage에 업로드되어 보고서 작성 시 사용된다.
 
 본 모듈의 주요 기능은 다음과 같다.
  1. MediaRecorder API를 활용한 실시간 영상 및 음성 녹화 기능
- 2. Canvas API를 활용한 녹화 영상 기반 문제 순간 캡쳐 기능
- 3. Supabase Storage에 녹화 영상과 캡쳐 이미지 저장 및 관리 기능
+ 2. 유실 방지용 영상 임시 백업
+ 3. 영상 녹화 후 Canvas API를 활용한 문제 순간 캡쳐 기능:
+ 4. Supabase Storage에 캡쳐 이미지 저장 및 관리 기능
 
 **오류 처리**</br>
 &emsp;  녹화 중 오류가 발생하면 데이터 손실을 방지하기 위해 수집된 chunk를 Storage에 임시 저장한 뒤 녹화 중단 및 스트림 종료한다. 
@@ -270,16 +273,21 @@
 flowchart TD
     A[웹캠 스트림] --> B[MediaRecorder -> 녹화]
     B --> C[chunk 생성 및 저장]
-    C --> D[발표 종료]
-    D --> E[stop 함수]
-    E --> F[최종 Blob 생성]
+    C --> D[Blob URL 적재]
+    D --> E[발표 종료]
+    E --> F[stop 함수]
     F --> G[녹화 영상 업로드]
-    G --> H[영상 분석 결과 수신]
-    H --> I[Canvas drawImage]
-    I --> J[JPEG 저장]
-    J --> K[captureBuffer 저장]
-    K --> L[캡쳐 이미지 저장]
-    L --> M[원본 영상 삭제]
+    G --> H[로컬 비디오 순차 재생]
+
+    H --> I[프레임 데이터 추출]
+    I --> J[영상 분석 모듈]
+    J --> |문제 상황 탐지| K[Canvas API: drawImage 및 toBlob]
+    K --> L[JPEG 추출 및 captureBuffer 적재]
+    L --> H
+
+    L -->|전 구간 분석 완료| M[Supabase Storage 업로드]
+    M --> N[보고서 생성 완료]
+    N --> O[원본 영상 삭제]
 ```
 
 #### 입출력 파라미터
@@ -290,14 +298,13 @@ flowchart TD
 | 어깨 기울기 | 어깨 기울기 >= 8° | 3초 이상 지속 | 5초 |
 | 손과 얼굴의 거리(가림 판단) | distance(hand, face_center) < face_width * 0.6 AND IoU(hand_Bbox, face_Bbox) > 0.25 AND Hand_Velocity < 0.05 | 1.5초 이상 지속 | 3초 |
 | 상체 흔들림 | mean(abs(상체의 중심좌표 X의 이동량 / shoulder_width)) >= 0.08 | 2초 이상 지속 | 5초 |
-| 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> abs(Ratio_base - Ratio_current) >= 0.15 | 3초 이상 지속 | 5초 |
-| 대본 리딩(시선 고정) | yaw_degree > 20도 또는 시선 좌우 편향 > 0.7 | 4초 이상 지속 | 5초 |
+| 상체 앞쏠림 | Distance_current $\sqrt{(X_Shoulder - X_Hip)^2 + (Y_Shoulder - Y_Hip)^2}$ </br> Ratio_current = Distance_current / (X_RightShoulder - X_LeftShoulder) </br> Ratio_base - Ratio_current >= 0.15 | 3초 이상 지속 | 5초 |
+| 대본 리딩(시선 고정) | (yaw_degree > 20도 AND pitch_degree < -10) 또는 시선 좌우 편향 > 0.7 | 4초 이상 지속 | 5초 |
 | 산만한 과잉 제스처 | 정규화된 손 움직임 속도 > 0.75 AND 양손 대칭성 < 0.3 AND 제스처 빈도 > 임계값 | 3초 이상 지속 | 5초 |
 | 긴장성 신체 동결 | EAR < EAR_base * 0.75 and 눈 깜빡임 <=  5/min and hand_velocity < 0.01 | 3초 이상 지속| 5초 |
 
 사용자별 자세 및 움직임 차이를 보정하기 발표 시작 전 초기 base 값을 측정한다.</br>
-각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하며, timestamp 기반으로 캡쳐 진행
-
+각 트리거 조건이 만족되면 해당 시점의 timestamp를 기록하고 캡쳐를 진행한다.
 
 #### 알고리즘
 
@@ -322,7 +329,7 @@ flowchart TD
   1. stop()으로 녹화 종료
   2. onstop 이벤트:
       1. 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
-      2. Blob 업로드 가능한 상태로 전환
+      2. 생성된 영상을 브라우저 내부 가상 메모리 주소인 Blob URL(URL.createObjectURL(finalBlob)) 형태로 변환하여 할당한다.
   3. 최종 영상 파일은 Supabase Storage의 videos/{session_id}/final.webm 경로에 Signed URL 형태로 저장한다.
   4. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
 
@@ -332,26 +339,29 @@ flowchart TD
     &emsp;   (1) 현재까지의 chunk를 Storage에 임시 저장</br>
     &emsp;   (2) stop()을 통해 녹화 종료</br>
     &emsp;   (3) track.stop()으로 리소스 해제
-   3. 사용자에게 재시작 안내 제공
+   3. 사용자에게 비정상 종료 알림 및 재시작 안내 제공
 
-**프레임 캡쳐:**</br>
+**사후 영상 프레임 캡쳐:**</br>
 - 프레임 캡쳐를 위한 canvas 준비
 - 발표 종료 후 영상 분석 모듈에서 전달받은 분석 결과 기준으로 캡쳐 실행
-
-  1. video.currentTime = timestamp를 통해 문제 발생 위치로 이동
-  2. seeked 이벤트 발 후 현재 프레임 접근
-  3. canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
-  4. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
+- Blob URL을 사용하여 로컬에서 캡쳐를 하여 속도를 향상시킨다.
+  1. <video> 요소를 생성하고, Blob URL을 연결한다.
+  2. 프레임 캡쳐를 위해 Canvas 객체 및 captureBuffer[] 초기화한다.
+  3. video.play()로 비디오를 재생시키면서 requestVideoFrameCallback()를 통해 실시간으로 각 프레임의 이미지 데이터를 추출한다
+  4. 추출한 이미지 데이터를 영상 분석 모듈로 분석을 수행한다.
+  5. 분석 결과에 대한 연산 결과가 캡처 조건을 충족하면 해당 프레임을 캡처한다.
+     - video.currentTime을 문제 발생 타임스탬플 수집한다.
+     - canvas.drawImage(video, 0, 0)를 통해 현재 비디오 프레임을 Canvas에 렌더링
+  7. canvas.toBlob()을 사용하여 JPEG 이미지로 변환
      - 이미지 형식: "image/jpeg",
      - 품질 설정: jpegQuality=0.8
-  5. 생성된 캡쳐 이미지는 captureBuffer[]에 임시 저장되며 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드 후 임시 저장된 이미지를 삭제한다.
+  8. 생성된 캡쳐 이미지는 captureBuffer[]에 임시 저장되며 캡쳐 이미지 수 증가에 따른 메모리 사용량 증가를 방지하기 위해 일정 개수 이상 누적 시 Supabase Storage에 즉시 업로드 후 임시 저장된 이미지를 삭제한다.
 
 **메모리해제**
 -  캡쳐 완료 후:</br>
 &emsp; • chunk[] 초기화
 &emsp; • captureBuffer[] 초기화
-&emsp; • URL.revokeObjectURL() 수행
-&emsp; • Blob 및 video 리소스 해제 
+&emsp; • URL.revokeObjectURL(finalBlob) 수행 
    
 ---
 
@@ -390,7 +400,7 @@ flowchart TD
 
 &emsp; 또한 각 슬라이드의 진입 시각과 종료 시각을 기록하여 SlideLog를 생성하여 이후 발표 분석에 사용한다.
 
-&emsp; 슬라이드 렌더링 중 오류가 발생하면 이전 슬라이드를 유지하여 화면 중단을 방지한다. 오류 로그를 기록하고 렌더링을 재시도를 수행한다.
+&emsp; 슬라이드 렌더링 중 오류가 발생하면 이전 슬라이드를 유지하여 화면 중단을 방지한다. 오류 로그를 기록하고 최대 3회 동안 일정 시간 간격으로 이미지 로딩을 자동 재시도한다. 재시도 후에도 로딩 실패 시 재시도를 중단하고 사용자에게 '네트워크 연결 확인' 경고 알림을 띄운다.
 
 #### 블록 다이어그램
 
@@ -413,8 +423,8 @@ flowchart TD
 | 함수 | 입력 | 출력 |
 |------|------|------|
 | initSlides() | slideURLs[] | 슬라이드 이미지 배열 가져오기 -> 초기 상태 설정 -> 첫 슬라이드 렌더링 -> 타임 스탬프 기록 시작 |
-| nextSlide() | slideIndex | slideIndex+1 |
-| prevSlide() | slideIndex | slideIndex-1 |
+| nextSlide() | slideIndex | Min(slideIndex+1, totalSlides -1) |
+| prevSlide() | slideIndex | Max(slideIndex-1, 0) |
 | getSlideTimings() | slideLog[] | 슬라이드별 발표 시간 |
 
 SlideLog 구조:</br>
@@ -451,13 +461,16 @@ interface SlideLog{</br>
   1. 영상 분석 모듈(3.3)에서 전달된 GestureEvent를 수신하여 슬라이드 전환
      - 오른손 fist를 전달받으면 nextSlide()를 호출, 왼손 fist를 전달받으면 prevSlide()를 호출한다.
      - 첫 슬라이드에서 prevSlide() 호출 시 상태 유지
-     - 마지막 슬라이드에서 nextSlide() 호출 시 즉시 종료하지 않고 발표 종료 여부를 사용자에게 확인하는 단께를 거침.
+     - 마지막 슬라이드에서 nextSlide() 호출 시 즉시 종료하지 않고 발표 종료 여부를 사용자에게 확인하는 단계를 거침.
+     - 예외 처리:</br>
+       사용자가 키보드(방향키)나 마우스 클릭으로 슬라이드를 넘겼을 때의 예외 처리를 하도록하여 제스처를 인식 못하거나 놓쳐서 사용자가 직접 넘겨도 잘 작동하고 SlideLog를 정확히 기록하도록 함.
+       
   2. performance.now()를 호출하여 현재 상대 시간 저장(now)
   3. 현재 슬라이드의 정보를 SlideLog 배열에 누적
        slideIndex: 현재 슬라이드 인덱스 (currentSlideIndex)
-       enterTime: enterTime - startTime
-       exitTime: now - startTime
-       duration: now - enterTime
+       enterTime: 현재 프레임에 들어온 상대 시각 - 발표 시작의 상대 시각
+       exitTime: 현재 상대 시각 - 발표 시작의 상대 시각
+       duration: 현재 상대 시각 - 현재 프레임에 들어온 상대 시각
 
   4. 다음 슬라이드 기록을 위해 enterTime을 now 값으로 갱신
   5. currentSlideIndex를 새 슬라이드 인덱스로 변경
@@ -471,7 +484,8 @@ interface SlideLog{</br>
 &emsp; 슬라이드 전환 또는 렌더링 중 오류가 발생하면 다음 작업을 수행한다.
   1. 현재 슬라이드를 유지하여 화면 중단 방지
   2. 오류 로그를 SlideLog 배열에 기록
-  3. 현재 슬라이드 인덱스를 기반으로 슬라이드 렌더링을 재시도한다.
+  3. 현재 슬라이드 인덱스를 기반으로 슬라이드 렌더링을 일정 시간 간격으로 최대 3회 재시도한다.
+  4. 재시도 후에도 실패하면 사용자에게 결고 알림을 띄운다.
 
 
 발표 종료 후 전체 SlideLog를 기반으로:
@@ -575,7 +589,7 @@ interface SlideLog{</br>
 | slide_log | JSONB |  | SlideLog 배열 저장 |
 | target_time | INT | NOT NULL | 목표 발표 시간(초) |
 | video_url | TEXT |  | 발표 영상 |
-| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
+| created_at | TIMESTAMPTZ | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 #### analysis_results
 
@@ -586,7 +600,7 @@ interface SlideLog{</br>
 | session_summary | JSONB | NOT NULL | 집계 데이터(평균, 비율, 타임스탬프) |
 | score_result | JSONB | NOT NULL | 점수 산출 결과 |
 | coaching | JSONB | | AI 코칭 결과 |
-| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
+| created_at | TIMESTAMPTZ | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 
 #### reports
@@ -596,7 +610,7 @@ interface SlideLog{</br>
 | report_id | UUID | PK | 보고서 고유 아이 |
 | session_id | UUID | FK, REFERENCES sessions(session_id) ON DELETE CASCADE | 보고서와 세션 매칭 |
 | report_url | TEXT | NOT NULL | 보고서 링크 |
-| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
+| created_at | TIMESTAMPTZ | DEFAULT CURRENT_TIMESTAMP | 생성 시간 |
 
 ### 4.3 Supabase Storage 구조
 
@@ -627,12 +641,15 @@ bucket</br>
 &emsp;&emsp;       |---- final.webm
 
 **파일 경로 규칙**
-| 유형 | 경로 규칙 |
-|-----|---------|
-| 슬라이드 | slides/{session_id}/slide_{n}.png |
-| 캡쳐 이미지 | captures/{session_id}/capture_{n}.jpg |
-| 보고서 PDF | reports/{session_id}/report.pdf |
-| 발표 영상 | videos/{session_id}/final.webm |
+| 유형 | 경로 규칙 | 설명 |
+|-----|----------|-------|
+| 슬라이드 | slides/{session_id}/slide_{n}.png | 발표 자료에서 추출한 이미지 |
+| 캡쳐 이미지 | captures/{session_id}/capture_{n}.jpg | 문제 상황 구단 프레임 이미지 |
+| 보고서 PDF | reports/{session_id}/report.pdf |  |
+| 분할 백업 | videos/{session_id}/segments/segment_{n}.webm | chunk 유실 방지용 30초 분할 임시본 |
+| 발표 영상 | videos/{session_id}/final.webm | 최종 영상|
+
+** 분석 및 보고서 작성 완료 후 분할 백업과 발표 영상은 개인정보 보호를 위해 즉시 삭제된다.
 
 **RLS 정책**
 | 정책 | 설명 |
