@@ -164,7 +164,7 @@ bcrypt 비밀번호 검증
         ↓
 JWTService (Access Token 발급)
         ↓
-Supabase (users 테이블 저장)
+사용자 정보 DB 저장(Supabase users 테이블 저장)
         ↓
 Frontend AuthContext/localStorage 저장
 ```
@@ -213,19 +213,14 @@ exp: 24시간
 type: access / refresh 구분
 
 // 토큰 검증 흐름 간략히
-
+```plaintext
 클라이언트 요청 (Authorization: Bearer token)
-
         ↓
-
 JWTService.verifyToken()
-
         ↓
-
 유효 → 요청 처리
-
 무효 → 401 Unauthorized
-
+```
 ---
 
 ### 3.2 발표 환경 설정 모듈
