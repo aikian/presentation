@@ -717,8 +717,8 @@ flowchart TD
 **녹화 종료:**
   1. stop()으로 녹화 종료
   2. onstop 이벤트:
-      1. 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
-      2. 생성된 영상을 브라우저 내부 가상 메모리 주소인 Blob URL(URL.createObjectURL(finalBlob)) 형태로 변환하여 할당한다.
+      (1) 수집된 모든 chunk → 하나의 Blob으로 병합 -> 최종 영상 파일 생성
+      (2) 생성된 영상을 브라우저 내부 가상 메모리 주소인 Blob URL(URL.createObjectURL(finalBlob)) 형태로 변환하여 할당한다.
   3. 최종 영상 파일은 Supabase Storage의 videos/{session_id}/final.webm 경로에 Signed URL 형태로 저장한다.
   4. track.stop()을 호출하여 카메라 및 마이크 리소스 해제
 </br
@@ -750,9 +750,9 @@ flowchart TD
 
 **메모리해제**
 -  캡쳐 완료 후:</br>
-&emsp; • chunk[] 초기화</br>
-&emsp; • captureBuffer[] 초기화</br>
-&emsp; • URL.revokeObjectURL(finalBlob) 수행 </br>
+&emsp; - chunk[] 초기화</br>
+&emsp; - captureBuffer[] 초기화</br>
+&emsp; - URL.revokeObjectURL(finalBlob) 수행 </br>
    
 ---
 
@@ -1003,9 +1003,9 @@ interface SlideLog{</br>
 </br>
 
 발표 종료 후 전체 SlideLog를 기반으로:</br>
-&emsp; • 슬라이드별 발표 시간 </br>
-&emsp; • 평균 슬라이드 체류 시간</br>
-&emsp; • 목표 시간 대비 오차율</br>
+&emsp; - 슬라이드별 발표 시간 </br>
+&emsp; - 평균 슬라이드 체류 시간</br>
+&emsp; - 목표 시간 대비 오차율</br>
 등을 계산한다.
 
 ---
@@ -1045,23 +1045,23 @@ interface SlideLog{</br>
 
 #### 알고리즘
 
-1) 시선 점수
+(1) 시선 점수
 
 :contentReference[oaicite:0]{index=0}
 
-2) 자세 점수
+(2) 자세 점수
 
 :contentReference[oaicite:1]{index=1}
 
-3) 제스처 점수
+(3) 제스처 점수
 
 :contentReference[oaicite:2]{index=2}
 
-4) 시간 점수
+(4) 시간 점수
 
 :contentReference[oaicite:3]{index=3}
 
-5) 최종 점수
+(5) 최종 점수
 
 :contentReference[oaicite:4]{index=4}
 
