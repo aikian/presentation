@@ -179,27 +179,108 @@
 
 #### 기능 설명
 
-// 파일 업로드 → 슬라이드 변환 → Storage 저장 흐름 + 목표 시간 설정 + 웹캠 사전 점검 요약
+발표 환경 설정 모듈은 발표 시작 전 웹캠·마이크 권한 확인, 슬라이드 업로드, 목표 발표 시간 설정, 녹화 및 분석 준비 상태 점검 기능을 담당한다.
+
+사용자는 발표 시작 전에 PPT 또는 PDF 슬라이드를 업로드하고 목표 발표 시간을 설정할 수 있으며, 시스템은 웹캠 연결 상태와 GestureWorker 초기화 가능 여부를 확인한다.
+
+현재 1차 프로토타입에서는 웹캠 기반 비언어 분석을 우선 구현하며, 발표 중에는 Hand Landmarker 기반 GestureWorker만 실시간으로 동작한다. 마이크 입력은 향후 음성 분석 기능 확장을 고려하여 권한 상태만 확인한다.
+
+발표 영상은 MediaRecorder를 통해 클라이언트에서 로컬로 녹화되며, 서버로 실시간 전송되지는 않는다. 해당 영상은 발표 종료 후 VideoAnalyzer의 입력 데이터로 사용된다.
+
+업로드된 슬라이드 파일은 발표 세션과 연결되어 Supabase Storage에 저장되며, 발표 중 슬라이드 표시 및 보고서 생성 과정에서 공통으로 사용된다.
+
+본 모듈은 발표 시작 전 필요한 환경 설정과 입력 장치 상태 점검을 수행하며, 사용자가 발표를 시작하면 해당 설정값을 기반으로 FastAPI 서버에서 발표 세션(Session)이 생성된다.
+
 
 #### 블록 다이어그램
 
-// 그림 권장
-// 흐름: 파일 업로드 → 확장자 분기(PPT/PDF) → 변환(python-pptx / pdf2image) → Storage 저장
+```mermaid
+flowchart LR
+    User["사용자"] --> Upload["슬라이드 업로드"]
+
+    Upload --> Branch{"파일 형식 확인"}
+
+    Branch -->|"PPT/PPTX"| PPT["슬라이드 정보 읽기"]
+    Branch -->|"PDF"| PDF["PDF 페이지 변환"]
+
+    PPT --> Convert["슬라이드 이미지 변환"]
+    PDF --> Convert
+
+    Convert --> Storage["Supabase Storage 저장"]
+    Storage --> Session["발표 세션 연결"]
+
+    User --> Webcam["웹캠 권한 확인"]
+    User --> Mic["마이크 권한 확인"]
+    User --> Time["목표 발표 시간 설정"]
+
+    User --> Recorder["MediaRecorder 초기화"]
+
+    Webcam --> Check["환경 상태 점검"]
+    Mic --> Check
+    Time --> Check
+    Session --> Check
+    Recorder --> Check
+
+    Check --> Ready["발표 녹화 및 제스처 제어 준비 완료"]
+
+    Ready --> Start["발표 시작"]
+    Start --> Api["FastAPI Session API"]
+```
 
 #### 입출력 파라미터
 
-// /slides/upload, convert_ppt(), convert_pdf() 각각 입출력을 표로
+슬라이드 업로드 API는 생성된 발표 세션(session_id) 기준으로 동작한다.
 
 | 함수 | 입력 | 출력 |
 |------|------|------|
-|  |  |  |
+| `/api/sessions/{id}/slides` | multipart/form-data(PPT/PDF) | storagePath, slideCount |
+| `convert_ppt()` | PPT/PPTX 파일 | PNG 슬라이드 이미지 리스트 |
+| `convert_pdf()` | PDF 파일 | 페이지 이미지 리스트 |
+| `checkWebcam()` | MediaDevices API | 웹캠 사용 가능 여부 |
+| `createSession()` | PresentationSessionConfig | sessionId |
+
+
+발표 환경 설정 완료 후, 해당 설정을 기반으로 다음 세션 생성 데이터가 활용된다.
+
+`PresentationSessionConfig`는 발표 시작 전 사용자가 설정한 환경 정보 및 세션 초기 설정값을 저장하는 데이터 구조이며, 발표 세션 생성과 분석 초기화 과정의 공통 입력으로 사용한다.
+
+```text
+PresentationSessionConfig {
+   targetTimeSec: number
+   slideFileName: string
+   webcamEnabled: boolean
+   microphoneEnabled: boolean
+   recordingEnabled: boolean
+}
+```
 
 #### 알고리즘
 
-// 1. 확장자 확인 후 분기
-// 2. PPT: python-pptx로 파싱 → PIL 이미지 렌더링
-// 3. PDF: pdf2image convert_from_bytes(), DPI 설정값 명시
-// 4. Storage 업로드 경로 규칙 — slides/{session_id}/slide_{n}.png
+1. 사용자가 발표 환경 설정 화면에 진입하면 브라우저 권한 상태를 확인한다.
+2. `getUserMedia()`를 사용하여 웹캠 및 마이크 접근 권한을 요청한다.
+3. 사용자가 슬라이드 파일을 업로드하면 파일 확장자를 확인하여 PPT/PPTX와 PDF 형식으로 분기 처리한다.
+
+4. PPT/PPTX 처리
+   - `python-pptx`를 사용하여 슬라이드 정보를 읽어온다.
+   - 이후 슬라이드 이미지는 별도의 렌더링 또는 변환 과정을 통해 PNG 형식으로 생성한다.
+
+5. PDF 처리
+   - `pdf2image`의 `convert_from_bytes()` 함수를 사용하여 PDF 페이지를 이미지로 변환한다.
+   - 변환 품질과 처리 속도의 균형을 위해 기본 DPI는 150으로 설정한다.
+
+6. 생성된 슬라이드 이미지는 다음 경로로 Supabase Storage에 업로드된다.
+
+```text
+slides/{session_id}/slide_{n}.png
+```
+
+7. 목표 발표 시간을 입력받아 세션 설정값으로 저장한다.
+8. GestureWorker 및 발표 후 VideoAnalyzer 실행 가능 여부를 점검한다.
+   - Hand Landmarker 기반 GestureWorker 초기화 여부를 확인
+   - WebAssembly(WASM), MediaRecorder, HTMLVideoElement 등 핵심 브라우저 API 지원 여부 확인
+   - 필수 API가 미지원 시 발표 시작 제한 또는 경고 메시지 출력
+9. 모든 조건이 충족되면 발표 시작 버튼을 활성화한다.
+10. 사용자가 발표를 시작하면 FastAPI 서버로 세션 생성 요청을 전송한다.
 
 ---
 
@@ -681,42 +762,367 @@ bucket</br>
 
 ## 5. API 명세
 
-// 공통 사항 먼저 명시:
-// Base URL / 인증 헤더 형식 / 공통 에러 코드 (400·401·403·404·500)
+본 시스템은 FastAPI 기반 REST API 서버를 통해 클라이언트와 데이터를 통신한다.
+대부분의 데이터는 JSON 형식으로 송수신하며, 슬라이드 및 캡처 이미지 업로드는 multipart/form-data 형식을 사용한다.
+발표 관련 데이터는 발표 세션(Session) 단위로 관리하며, 사용자 인증 및 계정 정보는 Supabase Authentication 기반으로 처리한다.
+데이터 저장 및 사용자 인증 기능은 Supabase 기반으로 구성한다.
 
-### 5.1 인증 API
+발표 중 실시간 영상 분석은 브라우저 내부(Web Worker 기반 VideoAnalyzer)에서 수행되며, 서버에는 원본 영상이나 FrameData는 전송하지 않는다.
+서버에는 발표 종료 후 SessionSummary, SlideLog, 캡처 메타데이터, 보고서 생성 요청만 전달된다.
 
-// /auth/signup, /auth/login, /auth/logout
-// 가능하면 각 엔드포인트 Request Body / Response Body 예시도 추가
+REST API는 발표 세션 관리, 분석 결과 저장, 보고서 생성 및 조회 기능을 담당한다.
 
+
+### 5.1 공통사항
+
+#### 1. Base URL
+`/api`
+
+모든 API는 `/api ` 경로를 기준으로 동작한다.
+
+#### 2. 인증 방식
+
+본 시스템은 JWT 기반 사용자 인증 방식을 사용한다.
+
+사용자는 회원가입 및 로그인 후 JWT 기반 Access Token을 발급받으며, 인증이 필요한 API 요청 시 Authorization 헤더에 Bearer 토큰 형태로 포함한다.
+
+```http
+Authorization: Bearer {access_token}
+```
+서버는 전달된 JWT 토큰을 검증하여 사용자 인증 상태를 확인한다.
+
+※ 세부 인증 흐름 및 토큰 관리 방식은 구현 단계에서 변경될 수 있다.
+
+#### 3. 공통 응답 형식
+성공 응답은 다음 형식을 사용한다.
+```JSON
+{
+   "status": "success",
+   "data": {}
+}
+```
+실패 응답은 다음 형식을 사용한다.
+```JSON
+{
+   "status": "error",
+   "error": {
+     "message": "Invalid request"
+   }
+}
+```
+
+#### 4. 공통 에러 코드
+| 상태코드 | 설명 |
+| --- | --- |
+| 400 | 잘못된 요청 |
+| 401 | 인증 실패 |
+| 403 | 접근 권한 없음 |
+| 404 | 요청한 리소스를 찾을 수 없음 |
+| 409 | 데이터 충돌 |
+| 422 | 요청 데이터 검증 실패 |
+| 500 | 서버 내부 오류 |
+
+
+### 5.2 인증 API
+인증 API는 사용자 회원가입, 로그인, 로그아웃 및 사용자 인증 상태 조회 기능을 담당한다.
+
+사용자는 로그인 성공 시 JWT 기반 Access Token을 발급받으며, 인증이 필요한 API 요청 시 Authorization 헤더를 통해 사용자 인증을 수행한다.
+
+※ 인증 처리 세부 로직 및 토큰 관리 방식은 구현 단계에서 조정될 수 있다.
+
+#### API 목록
+※ 모든 응답은 공통 응답 형식(5.1_3)을 따른다
+| 메서드 | 경로 | 설명 | 인증 |
+|---|---|---|---|
+| POST | `/api/auth/signup` | 회원가입 | X |
+| POST | `/api/auth/login` | 로그인 | X |
+| POST | `/api/auth/logout` | 로그아웃 | O |
+| GET | `/api/auth/me` | 현재 사용자 정보 조회 | O |
+
+#### 회원가입
+##### Request Body
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "name": "user name"
+}
+```
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": "uuid"
+  }
+}
+```
+
+#### 로그인
+##### Request Body
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {
+    "access_token": "jwt_token"
+  }
+}
+```
+
+#### 로그아웃
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {}
+}
+```
+
+#### 현재 사용자 정보 조회
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": "uuid",
+    "email": "user@example.com",
+    "name": "user name"
+  }
+}
+```
+
+
+### 5.3 발표 세션 API
+발표 세션 API는 발표 시작 전 세션 생성, 발표 설정 저장, 슬라이드 업로드 및 세션 조회 기능을 담당한다.
+업로드된 슬라이드는 Supabase Storage에 저장되며, 발표 세션 및 슬라이드 이벤트 로그(SlideLog)와 연결된다.
+
+#### API 목록
+※ 모든 응답은 공통 응답 형식(5.1_3)을 따른다
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions` | 발표 세션 생성 | O |
+| GET | `/api/sessions/{id}` | 발표 세션 조회 | O |
+| DELETE | `/api/sessions/{id}` | 발표 세션 종료 (soft delete) | O |
+| POST | `/api/sessions/{id}/slides` | 발표 슬라이드 업로드 | O |
 
-### 5.2 발표 세션 API
+#### 발표 세션 생성
+##### Request Body
+```JSON
+{
+   "target_time": 300
+}
+```
+##### Response Body
+```JSON
+{
+   "status": "success",
+   "data": {
+      "session_id": "s001"
+   }
+}
+```
 
-// /sessions CRUD + /sessions/{id}/slides 업로드
+#### 발표 세션 조회
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {
+    "session_id": "s001",
+    "target_time_sec": 300,
+    "created_at": "2026-05-15T10:00:00",
+    "slide_count": 10
+  }
+}
+```
 
+#### 슬라이드 업로드
+슬라이드 파일은 multipart/form-data 형식으로 업로드하며, PPT 또는 PDF 파일을 허용한다.
+
+업로드된 파일은 서버에서 PPT/PPTX 또는 PDF 형식에 따라 슬라이드 이미지로 변환된 뒤 Supabase Storage에 저장한다.
+
+##### Response Body
+```JSON
+{
+   "status": "success",
+   "data": {
+      "session_id": "s001",    
+      "slide_count": 10
+   }
+}
+```
+
+
+### 5.4 분석 결과 API
+분석 결과 API는 발표 종료 후 생성된 FrameData, 집계 결과(SessionSummary), 문제 순간 캡처 이미지를 저장 및 조회하는 기능을 담당한다.
+
+발표 중에는 GestureWorker(Hand Landmarker 전용)만 실시간으로 동작하여 슬라이드 제어 이벤트를 처리하며, 영상 원본 및 분석 데이터는 서버로 전송하지 않는다.
+
+발표 종료 후 사용자가 "분석하기" 버튼을 클릭하면 VideoAnalyzer가 녹화 영상을 기반으로 Face·Pose·Hand 분석을 수행한다.
+분석 과정에서 생성된 FrameData는 SessionSummary 생성에 사용되며, 서버에는 세션 단위의 집계 결과(SessionSummary)와 필요한 분석 메타데이터만 저장한다.
+
+SessionSummary에는 발표 시간 통계, 시선·자세·제스처 분석 결과, 슬라이드 이벤트 로그(SlideLog) 등이 포함될 수 있으며, AI 코칭 및 PDF 보고서 생성의 공통 입력 데이터로 사용된다.
+
+#### API 목록
+※ 모든 응답은 공통 응답 형식(5.1_3)을 따른다
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions/{id}/analysis` | 분석 데이터 저장 | O |
+| GET | `/api/sessions/{id}/analysis` | 분석 결과 조회 | O |
+| POST | `/api/sessions/{id}/captures` | 문제 순간 캡처 업로드 | O |
 
-### 5.3 분석 결과 API
+#### 분석 데이터 저장
+발표 종료 후 VideoAnalyzer가 녹화 영상을 분석하여 생성한 FrameData 및 SessionSummary 데이터를 저장한다.
 
-// /sessions/{id}/analysis 저장·조회 + /sessions/{id}/captures 업로드
+frames 배열은 분석 구조 예시를 위한 축약 데이터이며, 실제 저장 범위는 구현 단계에서 조정될 수 있다.
 
+##### Request Body
+```JSON
+{
+  "frames": [
+    {
+      "timestampMs": 1710000000,
+
+      "face": {
+        "yawDeg": 3.2,
+        "pitchDeg": -1.5,
+        "frontGaze": true
+      },
+
+      "pose": {
+        "shoulderTiltDeg": 4.1,
+        "torsoSway": 0.08
+      },
+
+      "hand": {
+        "leftGesture": "open",
+        "rightGesture": "none"
+      }
+    }
+  ],
+
+  "summary": {
+    "durationSec": 312,
+    "frameCount": 4280,
+    "frontGazeRatio": 0.78,
+    "avgYawDeg": 2.4,
+    "blinkCount": 21
+  }
+}
+```
+##### Response Body
+```JSON
+{
+   "status": "success",
+   "data": {
+      "analysis_id": "a001"
+   }
+}
+```
+#### 분석 결과 조회
+발표 세션에 저장된 분석 결과(SessionSummary, FrameData, 캡처 목록)를 조회한다.
+
+필요 시 일부 FrameData 샘플만 반환할 수 있으며, 전체 프레임 데이터 반환 범위는 구현 단계에서 조정될 수 있다.
+
+##### Response Body
+```json
+{
+  "status": "success",
+  "data": {
+    "session_id": "s001",
+    "summary": {
+      "durationSec": 312,
+      "frontGazeRatio": 0.78,
+      "avgYawDeg": 2.4
+    },
+    "frames": [],
+    "captures": [
+      {
+        "capture_id": "c001",
+        "timestampMs": 42000,
+        "category": "posture"
+      }
+    ]
+  }
+}
+```
+
+#### 문제 순간 캡처 업로드
+캡처 이미지는 `multipart/form-data` 형식으로 업로드하며, 문제 발생 시점의 `timestamp`와 `category` 정보를 함께 저장한다.
+
+##### Response Body
+```JSON
+{
+   "status": "success",
+   "data": {
+      "capture_id": "c001"
+   }
+}
+```
+
+
+### 5.5 보고서 API
+보고서 API는 발표 종료 후 SessionSummary와 캡처 이미지를 기반으로 AI 코칭 보고서를 생성한다.
+보고서 생성 과정에는 Gemini API 호출 및 PDF 생성이 포함되며, 처리 시간이 필요한 작업이므로 비동기 방식으로 처리한다.
+
+클라이언트는 보고서 생성 요청 후 polling 방식으로 상태 조회 API를 호출하여 진행 상태를 확인한다.
+보고서 생성 상태는 processing, completed, failed 상태값으로 구분한다.
+
+#### API 목록
+※ 모든 응답은 공통 응답 형식(5.1_3)을 따른다
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
-|  |  |  |  |
+| POST | `/api/sessions/{id}/report` | 보고서 생성 요청 | O |
+| GET | `/api/reports/{report_id}` | 보고서 생성 상태 조회 | O |
+| GET | `/api/reports/{report_id}/download` | PDF 보고서 다운로드 | O |
 
-### 5.4 보고서 API
-
-// POST /sessions/{id}/report → Gemini 호출 + PDF 생성 (처리 시간 김)
-// 비동기 처리 방식 사용할지 (polling 방식 등) 결정해서 명시
-
-| 메서드 | 경로 | 설명 | 인증 |
-|--------|------|------|------|
-|  |  |  |  |
+#### 보고서 생성 요청
+##### Response Body
+```JSON
+{
+  "status": "success",
+  "data": {
+    "report_id": "r001",
+    "state": "processing"
+  }
+}
+```
+#### 보고서 상태 조회
+##### Response Body (생성 중)
+```JSON
+{
+  "status": "success",
+  "data": {
+    "state": "processing"
+  }
+}
+```
+##### Response Body (완료)
+```JSON
+{
+  "status": "success",
+  "data": {
+    "state": "completed"
+  }
+}
+```
+#### PDF 보고서 다운로드
+##### Response Body
+```JSON
+{
+  "status": "success",
+  "data": {
+    "report_url": "signed_url"
+  }
+}
+```
 
 ---
 
