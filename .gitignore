@@ -1,0 +1,7 @@
+﻿__pycache__/
+*.pyc
+*.db
+.env
+frontend/node_modules/
+backend/uploads/
+backend/static/slides/
