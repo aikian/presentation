@@ -116,7 +116,9 @@ export default function History() {
   }, [])
 
   useEffect(() => {
-    loadPage(1).finally(() => setLoading(false))
+    queueMicrotask(() => {
+      loadPage(1).finally(() => setLoading(false))
+    })
   }, [loadPage])
 
   async function handleLoadMore() {

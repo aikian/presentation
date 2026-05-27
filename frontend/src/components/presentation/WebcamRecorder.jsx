@@ -5,7 +5,7 @@ const MIME_TYPE = (() => {
   return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
 })()
 
-const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
+const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream, showPreview = true }, ref) {
   const videoRef = useRef(null)
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
@@ -40,7 +40,7 @@ const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
       recorderRef.current?.state !== 'inactive' && recorderRef.current?.stop()
       streamRef.current?.getTracks().forEach((t) => t.stop())
     }
-  }, [])
+  }, [onStream])
 
   useEffect(() => {
     if (status === 'recording' && streamRef.current) {
@@ -72,13 +72,15 @@ const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
     )
   }
 
-  if (status === 'init') {
+  if (status === 'init' && showPreview) {
     return (
       <div className="absolute bottom-20 left-4 z-30 w-36 rounded-lg border border-gray-600 bg-black/80 px-3 py-2 text-xs text-gray-200 shadow-xl">
         카메라 준비 중...
       </div>
     )
   }
+
+  if (!showPreview) return null
 
   return (
     <div className="absolute bottom-20 left-4 z-30">
