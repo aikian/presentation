@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 
 from app.core.config import settings
 
-LIBREOFFICE_PATH = r"C:\Program Files\LibreOffice\program\soffice.exe"
+LIBREOFFICE_PATH = (shutil.which("soffice") or shutil.which("libreoffice") or r"C:\Program Files\LibreOffice\program\soffice.exe")
 
 def _pdf_to_images(pdf_path: Path, out_dir: Path) -> list[str]:
     """PDF 각 페이지를 PNG로 변환. URL 경로 목록 반환."""
@@ -26,6 +26,9 @@ def _pdf_to_images(pdf_path: Path, out_dir: Path) -> list[str]:
 
 def _pptx_to_pdf(pptx_path: Path, out_dir: Path) -> Path:
     """LibreOffice headless로 PPTX → PDF 변환."""
+    if not LIBREOFFICE_PATH:
+        raise RuntimeError("LibreOffice 실행 파일을 찾을 수 없습니다.")
+
     result = subprocess.run(
         [
             LIBREOFFICE_PATH,
