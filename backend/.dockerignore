@@ -1,0 +1,7 @@
+.env
+midas.db
+uploads
+static/slides
+__pycache__
+**/__pycache__
+*.pyc
