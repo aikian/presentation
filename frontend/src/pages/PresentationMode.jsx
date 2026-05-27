@@ -14,6 +14,7 @@ function GoalModal({ onStart }) {
   const [minutes, setMinutes] = useState('')
   const [folderHandle, setFolderHandle] = useState(null)
   const [folderName, setFolderName] = useState('')
+  const [showFacePreview, setShowFacePreview] = useState(true)
 
   async function pickFolder() {
     try {
@@ -27,10 +28,16 @@ function GoalModal({ onStart }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-80 text-center">
-        <div className="text-4xl mb-4">⏱️</div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">발표 설정</h2>
-        <p className="text-sm text-gray-500 mb-4">목표 시간 및 영상 저장 폴더를 설정하세요.</p>
+      <div className="w-[22rem] rounded-lg bg-white p-6 text-left shadow-xl">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-sm font-bold text-blue-700">
+            SET
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">발표 설정</h2>
+            <p className="text-sm text-gray-500">시작 전에 녹화 옵션을 정하세요.</p>
+          </div>
+        </div>
 
         <input
           type="number"
@@ -39,22 +46,31 @@ function GoalModal({ onStart }) {
           placeholder="목표 시간 (분, 선택)"
           value={minutes}
           onChange={(e) => setMinutes(e.target.value)}
-          className="w-full border rounded-lg px-4 py-2 text-center text-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="mb-3 w-full rounded-lg border px-4 py-2 text-center text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         {SUPPORTS_FOLDER && (
           <button
             onClick={pickFolder}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition mb-4 flex items-center justify-center gap-2"
+            className="mb-3 flex w-full items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-50"
           >
-            <span>📁</span>
             <span>{folderName ? `저장 폴더: ${folderName}` : '영상 저장 폴더 선택 (선택)'}</span>
           </button>
         )}
 
+        <label className="mb-5 flex cursor-pointer items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+          <span className="text-sm font-medium text-gray-800">발표 중 내 얼굴 표시</span>
+          <input
+            type="checkbox"
+            checked={showFacePreview}
+            onChange={(e) => setShowFacePreview(e.target.checked)}
+            className="h-5 w-5 accent-blue-600"
+          />
+        </label>
+
         <button
-          onClick={() => onStart(minutes ? parseInt(minutes) * 60 : null, folderHandle)}
-          className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-semibold hover:bg-blue-700 transition"
+          onClick={() => onStart(minutes ? parseInt(minutes) * 60 : null, folderHandle, { showFacePreview })}
+          className="w-full rounded-lg bg-blue-600 py-2.5 font-semibold text-white transition hover:bg-blue-700"
         >
           발표 시작
         </button>
@@ -87,6 +103,7 @@ export default function PresentationMode() {
   const [goalSec, setGoalSec] = useState(null)
   const [elapsed, setElapsed] = useState(null)
   const [webcamStream, setWebcamStream] = useState(null)
+  const [showFacePreview, setShowFacePreview] = useState(true)
   const webcamRef = useRef(null)
   const timerRef = useRef(null)
   const folderHandleRef = useRef(null)
@@ -121,9 +138,10 @@ export default function PresentationMode() {
     }
   }
 
-  function handleStart(goal, folderHandle) {
+  function handleStart(goal, folderHandle, options = {}) {
     folderHandleRef.current = folderHandle
     setGoalSec(goal)
+    setShowFacePreview(options.showFacePreview !== false)
     setShowGoal(false)
     setElapsed(0)
     slideLogRef.current = []
@@ -132,6 +150,7 @@ export default function PresentationMode() {
   }
 
   async function handleExit() {
+    if (exiting) return
     clearInterval(timerRef.current)
     _recordCurrentSlide()  // 마지막 슬라이드 체류 시간 기록
     setExiting(true)
@@ -180,7 +199,7 @@ export default function PresentationMode() {
   if (!session) return <FileUpload onUpload={handleUpload} loading={loading} />
 
   return (
-    <div className="h-screen flex flex-col bg-black relative">
+    <div className="fixed inset-0 z-50 flex h-screen w-screen flex-col bg-black">
       <SlideViewer slides={session.slides} current={current} onPrev={prev} onNext={next} />
       <SlideControls
         current={current}
@@ -192,7 +211,13 @@ export default function PresentationMode() {
         elapsed={elapsed}
         goalSec={goalSec}
       />
-      <WebcamRecorder ref={webcamRef} onStream={setWebcamStream} />
+      {elapsed != null && (
+        <WebcamRecorder
+          ref={webcamRef}
+          onStream={setWebcamStream}
+          showPreview={showFacePreview}
+        />
+      )}
       {webcamStream && (
         <GestureController stream={webcamStream} onLeft={prev} onRight={next} />
       )}

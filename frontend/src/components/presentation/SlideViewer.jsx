@@ -20,11 +20,11 @@ export default function SlideViewer({ slides, current, onPrev, onNext }) {
   }
 
   return (
-    <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
+    <div className="flex-1 min-h-0 w-full bg-black flex items-center justify-center overflow-hidden">
       <img
         src={slides[current]}
         alt={`슬라이드 ${current + 1}`}
-        className="max-h-full max-w-full object-contain select-none"
+        className="h-full w-full object-contain select-none"
         draggable={false}
       />
       {/* 숨겨진 preload 이미지 */}
