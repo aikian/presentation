@@ -6,6 +6,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-flash-latest"
     upload_dir: str = str(BASE_DIR / "uploads")
     static_dir: str = str(BASE_DIR / "static")
     max_upload_size_mb: int = 500

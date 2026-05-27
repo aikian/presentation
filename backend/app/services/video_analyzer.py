@@ -1,7 +1,11 @@
 import base64
+import json
+import logging
 import math
 from pathlib import Path
 from typing import Any
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import cv2
 import mediapipe as mp
@@ -12,6 +16,8 @@ from app.core.config import settings
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
 mp_hands = mp.solutions.hands
+
+logger = logging.getLogger(__name__)
 
 # FaceMesh 랜드마크 인덱스
 NOSE_TIP = 1
@@ -207,30 +213,62 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     }
 
 
-def _gemini_coaching(metrics: dict, api_key: str) -> str:
-    if not api_key:
-        return _fallback_coaching(metrics)
-    try:
-        import google.generativeai as genai
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        prompt = f"""
-당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 구체적인 개선 코칭을 한국어로 작성하세요.
+def _gemini_model_candidates() -> list[str]:
+    configured = settings.gemini_model.strip().removeprefix("models/")
+    candidates = [configured, "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    return list(dict.fromkeys(model for model in candidates if model))
+
+
+def _build_coaching_prompt(metrics: dict) -> str:
+    return f"""
+당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 한국어로 구체적인 개선 코칭을 작성하세요.
 
 - 시선 이탈 비율: {metrics['gaze_away_ratio'] * 100:.1f}%
 - 어깨 기울기 평균: {metrics['shoulder_tilt_avg']:.1f}도
-- 손 제스처 횟수: {metrics['gesture_count']}회
-- 눈 감음 비율 (집중도): {metrics['ear_blink_ratio'] * 100:.1f}%
+- 제스처 횟수: {metrics['gesture_count']}회
+- 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%
 - 침묵 구간 비율: {metrics['silence_ratio'] * 100:.1f}%
 
-각 항목별로 현재 상태를 평가하고, 구체적인 개선 방법을 2-3문장으로 제시하세요.
-마지막에 총평을 추가하세요.
+각 항목별로 현재 상태를 평가하고, 바로 실천할 수 있는 개선 방법을 1~2문장씩 제시하세요.
+마지막에는 발표자가 다음 연습에서 집중할 우선순위 2개를 제안하세요.
 """
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return _fallback_coaching(metrics) + f"\n\n(Gemini API 오류: {e})"
+
+
+def _generate_gemini_content(model_name: str, api_key: str, prompt: str) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
+    req = urlrequest.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-goog-api-key": api_key,
+        },
+    )
+
+    with urlrequest.urlopen(req, timeout=45) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    return "\n".join(part.get("text", "") for part in parts).strip()
+
+
+def _gemini_coaching(metrics: dict, api_key: str) -> str:
+    if not api_key:
+        return _fallback_coaching(metrics)
+
+    prompt = _build_coaching_prompt(metrics)
+    for model_name in _gemini_model_candidates():
+        try:
+            text = _generate_gemini_content(model_name, api_key, prompt)
+            if text:
+                return text
+        except (urlerror.HTTPError, urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            logger.warning("Gemini REST coaching failed with %s: %s", model_name, exc)
+
+    return _fallback_coaching(metrics)
 
 
 def _fallback_coaching(metrics: dict) -> str:
@@ -242,34 +280,33 @@ def _fallback_coaching(metrics: dict) -> str:
     silence = metrics.get("silence_ratio", 0) * 100
 
     if ratio > 30:
-        lines.append(f"🔴 시선: 발표 시간의 {ratio:.0f}%가 청중과 눈을 맞추지 않았습니다. 슬라이드 대신 청중을 바라보는 연습이 필요합니다.")
+        lines.append(f"시선: 발표 시간의 {ratio:.0f}% 동안 시선이 이탈했습니다. 슬라이드보다 카메라와 청중을 번갈아 보며 시선을 고정하는 연습이 필요합니다.")
     elif ratio > 15:
-        lines.append(f"🟡 시선: 시선 이탈이 {ratio:.0f}%로 약간 높습니다. 좌우 청중에게 균등하게 시선을 배분해보세요.")
+        lines.append(f"시선: 시선 이탈이 {ratio:.0f}%로 약간 높습니다. 핵심 문장을 말할 때는 카메라를 향하도록 의식해 보세요.")
     else:
-        lines.append(f"🟢 시선: 시선 처리가 양호합니다 ({ratio:.0f}% 이탈).")
+        lines.append(f"시선: 시선 처리가 양호합니다 ({ratio:.0f}% 이탈).")
 
     if tilt > 15:
-        lines.append(f"🔴 자세: 어깨 기울기가 평균 {tilt:.1f}도로 심합니다. 양발을 어깨 너비로 벌리고 균형을 유지하세요.")
+        lines.append(f"자세: 어깨 기울기가 평균 {tilt:.1f}도로 큽니다. 양발을 안정적으로 두고 어깨 높이를 맞춘 뒤 발표하세요.")
     elif tilt > 8:
-        lines.append(f"🟡 자세: 어깨가 {tilt:.1f}도 기울어져 있습니다. 발표 중 자세를 의식적으로 확인하세요.")
+        lines.append(f"자세: 어깨가 {tilt:.1f}도 기울어졌습니다. 발표 중간마다 상체 균형을 확인하세요.")
     else:
-        lines.append(f"🟢 자세: 어깨 균형이 잘 유지되고 있습니다 ({tilt:.1f}도).")
+        lines.append(f"자세: 어깨 균형이 잘 유지되고 있습니다 ({tilt:.1f}도).")
 
     if gestures < 5:
-        lines.append("🟡 제스처: 손 동작이 거의 없습니다. 핵심 포인트에서 적절한 제스처를 활용하면 전달력이 높아집니다.")
+        lines.append("제스처: 손 동작이 거의 없습니다. 핵심 포인트에서 숫자를 세거나 방향을 가리키는 제스처를 활용하면 전달력이 높아집니다.")
     elif gestures > 50:
-        lines.append(f"🟡 제스처: 제스처가 {gestures}회로 다소 많습니다. 불필요한 손 동작을 줄여 안정감을 높이세요.")
+        lines.append(f"제스처: 제스처가 {gestures}회로 많습니다. 반복적인 손동작을 줄이고 강조 지점에만 사용해 안정감을 높이세요.")
     else:
-        lines.append(f"🟢 제스처: 제스처 활용({gestures}회)이 적절합니다.")
+        lines.append(f"제스처: 제스처 사용이 적절합니다 ({gestures}회).")
 
     if blink > 40:
-        lines.append(f"🟡 집중도: 눈 감음 비율이 {blink:.0f}%로 높습니다. 카메라(청중)를 향해 눈을 충분히 뜨고 발표하세요.")
+        lines.append(f"집중도: 눈 감음 비율이 {blink:.0f}%로 높습니다. 카메라를 향해 눈을 충분히 뜨고 발표하세요.")
 
     if silence > 50:
-        lines.append(f"🟡 발화: 침묵 구간이 {silence:.0f}%로 많습니다. 발표 흐름이 끊기지 않도록 내용 숙지가 필요합니다.")
+        lines.append(f"발화: 침묵 구간이 {silence:.0f}%로 많습니다. 발표 흐름이 끊기지 않도록 말할 순서와 연결 문장을 미리 연습하세요.")
 
     return "\n\n".join(lines)
-
 
 def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str, Any]:
     metrics = analyze_video(video_path, on_step)
