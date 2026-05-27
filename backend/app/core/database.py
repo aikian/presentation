@@ -1,4 +1,4 @@
-﻿from sqlalchemy import create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from pathlib import Path
 from typing import Any
@@ -44,7 +44,7 @@ def get_user_by_email(email: str) -> dict[str, Any] | None:
     res = (
         get_supabase()
         .table("users")
-        .select("id,email,hashed_password,created_at")
+        .select("id,email,hashed_password,name,created_at")
         .eq("email", email)
         .limit(1)
         .execute()
@@ -56,7 +56,7 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
     res = (
         get_supabase()
         .table("users")
-        .select("id,email,hashed_password,created_at")
+        .select("id,email,hashed_password,name,created_at")
         .eq("id", user_id)
         .limit(1)
         .execute()
@@ -64,8 +64,10 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
     return res.data[0] if res.data else None
 
 
-def create_user(email: str, hashed_password: str) -> dict[str, Any]:
+def create_user(email: str, hashed_password: str, name: str | None = None) -> dict[str, Any]:
     user_id = uuid.uuid4().hex
-    payload = {"id": user_id, "email": email, "hashed_password": hashed_password}
+    payload: dict[str, Any] = {"id": user_id, "email": email, "hashed_password": hashed_password}
+    if name:
+        payload["name"] = name
     res = get_supabase().table("users").insert(payload).execute()
     return res.data[0] if res.data else payload

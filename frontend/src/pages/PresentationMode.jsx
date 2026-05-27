@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FileUpload from '../components/presentation/FileUpload'
 import SlideViewer from '../components/presentation/SlideViewer'
@@ -91,7 +91,20 @@ export default function PresentationMode() {
   const timerRef = useRef(null)
   const folderHandleRef = useRef(null)
 
+  // SlideLog: 슬라이드별 체류 시간 기록
+  const slideLogRef = useRef([])          // [{slide: 0, duration: 3.2}, ...]
+  const slideStartRef = useRef(null)       // 현재 슬라이드가 표시된 시각(ms)
+  const currentRef = useRef(0)            // setCurrent와 동기화용
+
   useEffect(() => () => clearInterval(timerRef.current), [])
+
+  function _recordCurrentSlide() {
+    if (slideStartRef.current !== null) {
+      const duration = parseFloat(((Date.now() - slideStartRef.current) / 1000).toFixed(1))
+      slideLogRef.current.push({ slide: currentRef.current, duration })
+    }
+    slideStartRef.current = Date.now()
+  }
 
   async function handleUpload(file) {
     setLoading(true)
@@ -99,6 +112,7 @@ export default function PresentationMode() {
       const data = await uploadSlides(file)
       setSession({ sessionId: data.session_id, slides: data.slides })
       setCurrent(0)
+      currentRef.current = 0
       setShowGoal(true)
     } catch (e) {
       toast(e.response?.data?.detail ?? '업로드 중 오류가 발생했습니다.')
@@ -112,24 +126,30 @@ export default function PresentationMode() {
     setGoalSec(goal)
     setShowGoal(false)
     setElapsed(0)
+    slideLogRef.current = []
+    slideStartRef.current = Date.now()
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000)
   }
 
   async function handleExit() {
     clearInterval(timerRef.current)
+    _recordCurrentSlide()  // 마지막 슬라이드 체류 시간 기록
     setExiting(true)
     if (session) await deleteSlides(session.sessionId).catch(() => {})
 
     try {
       const blob = await webcamRef.current?.stop()
       if (blob && blob.size > 0) {
-        // 폴더 저장 (선택된 경우)
         if (folderHandleRef.current) {
           await saveToFolder(blob, folderHandleRef.current)
         }
 
         const file = new File([blob], 'webcam_recording.webm', { type: blob.type })
-        const { job_id } = await uploadVideo(file)
+        const { job_id } = await uploadVideo(file, {
+          goal_sec: goalSec,
+          elapsed_sec: elapsed,
+          slide_log: slideLogRef.current,
+        })
         navigate('/analysis', { state: { jobId: job_id } })
         return
       }
@@ -139,11 +159,23 @@ export default function PresentationMode() {
     navigate('/')
   }
 
-  const prev = useCallback(() => setCurrent((c) => Math.max(0, c - 1)), [])
-  const next = useCallback(
-    () => setCurrent((c) => Math.min((session?.slides.length ?? 1) - 1, c + 1)),
-    [session]
-  )
+  const prev = useCallback(() => {
+    _recordCurrentSlide()
+    setCurrent((c) => {
+      const next = Math.max(0, c - 1)
+      currentRef.current = next
+      return next
+    })
+  }, [])
+
+  const next = useCallback(() => {
+    _recordCurrentSlide()
+    setCurrent((c) => {
+      const n = Math.min((session?.slides.length ?? 1) - 1, c + 1)
+      currentRef.current = n
+      return n
+    })
+  }, [session])
 
   if (!session) return <FileUpload onUpload={handleUpload} loading={loading} />
 
