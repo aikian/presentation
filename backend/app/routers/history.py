@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from app.core.database import get_supabase
@@ -7,32 +7,19 @@ from app.services.report_generator import generate_report
 
 router = APIRouter()
 
-_HISTORY_COLS = (
-    "id,gaze_away_ratio,shoulder_tilt_avg,gesture_count,"
-    "ear_blink_ratio,silence_ratio,coaching,created_at,"
-    "score_gaze,score_pose,score_gesture,score_time,score_total,"
-    "elapsed_sec,goal_sec"
-)
-
 
 @router.get("")
-def get_history(
-    page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
-    limit: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
-    current_user: CurrentUser = Depends(get_current_user),
-):
-    offset = (page - 1) * limit
+def get_history(current_user: CurrentUser = Depends(get_current_user)):
     try:
         res = (
             get_supabase()
             .table("analysis_results")
-            .select(_HISTORY_COLS)
+            .select("id,gaze_away_ratio,shoulder_tilt_avg,gesture_count,coaching,created_at")
             .eq("user_id", current_user.id)
             .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
             .execute()
         )
-        return {"items": res.data, "page": page, "limit": limit}
+        return res.data
     except Exception as e:
         raise HTTPException(500, f"히스토리 조회 실패: {e}")
 

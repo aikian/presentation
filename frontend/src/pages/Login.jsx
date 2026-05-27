@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -9,7 +9,6 @@ export default function Login() {
   const [tab, setTab] = useState('login') // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -19,7 +18,7 @@ export default function Login() {
     setLoading(true)
     try {
       if (tab === 'login') await login(email, password)
-      else await signup(email, password, name || undefined)
+      else await signup(email, password)
       navigate('/')
     } catch (err) {
       setError(err?.response?.data?.detail ?? '오류가 발생했습니다.')
@@ -48,15 +47,6 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {tab === 'signup' && (
-            <input
-              type="text"
-              placeholder="이름 (선택)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          )}
           <input
             type="email"
             placeholder="이메일"

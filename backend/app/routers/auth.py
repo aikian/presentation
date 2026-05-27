@@ -11,7 +11,6 @@ router = APIRouter()
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
-    name: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -22,7 +21,6 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
-    name: str | None = None
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=201)
@@ -32,7 +30,7 @@ def signup(body: SignupRequest):
     if len(body.password) < 6:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "비밀번호는 6자 이상이어야 합니다.")
 
-    user = create_user(body.email, hash_password(body.password), body.name)
+    user = create_user(body.email, hash_password(body.password))
     return TokenResponse(access_token=create_access_token(user["id"]))
 
 
@@ -48,4 +46,4 @@ def login(body: SignupRequest):
 
 @router.get("/me", response_model=UserResponse)
 def me(current_user: CurrentUser = Depends(get_current_user)):
-    return UserResponse(id=current_user.id, email=current_user.email, name=current_user.name)
+    return UserResponse(id=current_user.id, email=current_user.email)

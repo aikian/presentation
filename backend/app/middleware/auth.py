@@ -14,7 +14,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 class CurrentUser:
     id: str
     email: str
-    name: str | None = None
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
@@ -30,4 +29,4 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
     user = get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "사용자를 찾을 수 없습니다.")
-    return CurrentUser(id=user["id"], email=user["email"], name=user.get("name"))
+    return CurrentUser(id=user["id"], email=user["email"])

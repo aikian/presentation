@@ -23,8 +23,8 @@ export function AuthProvider({ children }) {
     setUser(me)
   }
 
-  async function signup(email, password, name) {
-    const { access_token } = await apiSignup(email, password, name)
+  async function signup(email, password) {
+    const { access_token } = await apiSignup(email, password)
     localStorage.setItem('token', access_token)
     const me = await fetchMe()
     setUser(me)

@@ -1,4 +1,4 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const api = axios.create({ baseURL: apiBaseUrl })
@@ -14,8 +14,8 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-export async function signup(email, password, name) {
-  const { data } = await api.post('/auth/signup', { email, password, name })
+export async function signup(email, password) {
+  const { data } = await api.post('/auth/signup', { email, password })
   return data // { access_token, token_type }
 }
 
@@ -26,12 +26,12 @@ export async function login(email, password) {
 
 export async function fetchMe() {
   const { data } = await api.get('/auth/me')
-  return data // { id, email, name }
+  return data // { id, email }
 }
 
-export async function fetchHistory(page = 1, limit = 20) {
-  const { data } = await api.get('/history', { params: { page, limit } })
-  return data // { items: [...], page, limit }
+export async function fetchHistory() {
+  const { data } = await api.get('/history')
+  return data // [{ id, gaze_away_ratio, shoulder_tilt_avg, gesture_count, coaching, created_at }]
 }
 
 export async function downloadPdf(resultId) {
@@ -56,16 +56,9 @@ export async function deleteSlides(sessionId) {
   await api.delete(`/slides/${sessionId}`)
 }
 
-/**
- * @param {File} file
- * @param {{ goal_sec?: number, elapsed_sec?: number, slide_log?: object[] }} metadata
- */
-export async function uploadVideo(file, metadata = {}) {
+export async function uploadVideo(file) {
   const form = new FormData()
   form.append('file', file)
-  if (metadata.goal_sec != null) form.append('goal_sec', metadata.goal_sec)
-  if (metadata.elapsed_sec != null) form.append('elapsed_sec', metadata.elapsed_sec)
-  if (metadata.slide_log?.length) form.append('slide_log', JSON.stringify(metadata.slide_log))
   const { data } = await api.post('/analysis/upload', form)
   return data // { job_id }
 }
