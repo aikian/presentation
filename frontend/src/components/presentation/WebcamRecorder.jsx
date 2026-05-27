@@ -12,12 +12,18 @@ const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
   const streamRef = useRef(null)
   const [status, setStatus] = useState('init') // init | recording | denied
 
+  function attachPreview(stream) {
+    if (!videoRef.current) return
+    videoRef.current.srcObject = stream
+    videoRef.current.play().catch(() => {})
+  }
+
   useEffect(() => {
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
         streamRef.current = stream
-        if (videoRef.current) videoRef.current.srcObject = stream
+        attachPreview(stream)
 
         const recorder = new MediaRecorder(stream, MIME_TYPE ? { mimeType: MIME_TYPE } : {})
         recorder.ondataavailable = (e) => {
@@ -36,6 +42,12 @@ const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
     }
   }, [])
 
+  useEffect(() => {
+    if (status === 'recording' && streamRef.current) {
+      attachPreview(streamRef.current)
+    }
+  }, [status])
+
   useImperativeHandle(ref, () => ({
     stop: () =>
       new Promise((resolve) => {
@@ -52,10 +64,24 @@ const WebcamRecorder = forwardRef(function WebcamRecorder({ onStream }, ref) {
       }),
   }))
 
-  if (status === 'denied' || status === 'init') return null
+  if (status === 'denied') {
+    return (
+      <div className="absolute bottom-20 left-4 z-30 w-36 rounded-lg border border-red-500 bg-black/80 px-3 py-2 text-xs text-red-100 shadow-xl">
+        카메라 권한을 확인하세요
+      </div>
+    )
+  }
+
+  if (status === 'init') {
+    return (
+      <div className="absolute bottom-20 left-4 z-30 w-36 rounded-lg border border-gray-600 bg-black/80 px-3 py-2 text-xs text-gray-200 shadow-xl">
+        카메라 준비 중...
+      </div>
+    )
+  }
 
   return (
-    <div className="absolute bottom-16 right-4 z-20">
+    <div className="absolute bottom-20 left-4 z-30">
       <div className="relative w-32 h-24 rounded-xl overflow-hidden border-2 border-red-500 shadow-xl">
         <video
           ref={videoRef}
