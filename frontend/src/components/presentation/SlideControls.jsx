@@ -13,10 +13,11 @@ export default function SlideControls({ current, total, onPrev, onNext, onExit, 
       <button
         onClick={onExit}
         disabled={exiting}
-        className="text-gray-400 hover:text-white disabled:opacity-40 transition-colors text-sm mr-2"
+        className="flex h-9 items-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-40"
         title="발표 종료"
       >
-        ✕
+        <span className="h-2.5 w-2.5 rounded-sm bg-white" />
+        <span>발표 종료</span>
       </button>
 
       <button

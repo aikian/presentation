@@ -21,6 +21,36 @@ function isFist(lm) {
   return tips.filter((t, i) => lm[t].y > lm[mcps[i]].y).length >= 3
 }
 
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function isOpenPalm(lm) {
+  const wrist = lm[0]
+  const fingers = [
+    [8, 6],
+    [12, 10],
+    [16, 14],
+    [20, 18],
+  ]
+  const extended = fingers.filter(([tip, pip]) => {
+    return distance(lm[tip], wrist) > distance(lm[pip], wrist) * 1.08
+  }).length
+  return extended >= 3 && !isFist(lm)
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getPointerPosition(lm) {
+  const palm = lm[9]
+  return {
+    x: clamp((1 - palm.x) * 100, 4, 96),
+    y: clamp(palm.y * 100, 6, 94),
+  }
+}
+
 // 화면 기준 좌우: 디스플레이는 mirror(-1) 이므로 raw x 부호 반전
 // raw x < 0.35 → 화면 오른쪽 / raw x > 0.65 → 화면 왼쪽
 function getScreenSide(lm) {
@@ -33,6 +63,7 @@ function getScreenSide(lm) {
 export default function GestureController({ stream, onLeft, onRight }) {
   const [hint, setHint] = useState(null)      // 'left' | 'right' | null
   const [progress, setProgress] = useState(0) // 0~100 (1초 홀드 진행률)
+  const [pointer, setPointer] = useState(null)
   const gestureRef = useRef({ side: null, startTime: 0 })
 
   useEffect(() => {
@@ -68,10 +99,20 @@ export default function GestureController({ stream, onLeft, onRight }) {
           if (!multiHandLandmarks?.length) {
             gestureRef.current = { side: null, startTime: 0 }
             setHint(null); setProgress(0)
+            setPointer(null)
             return
           }
 
           const lm = multiHandLandmarks[0]
+          if (isOpenPalm(lm)) {
+            gestureRef.current = { side: null, startTime: 0 }
+            setHint(null); setProgress(0)
+            setPointer(getPointerPosition(lm))
+            return
+          }
+
+          setPointer(null)
+
           if (!isFist(lm)) {
             gestureRef.current = { side: null, startTime: 0 }
             setHint(null); setProgress(0)
@@ -124,9 +165,27 @@ export default function GestureController({ stream, onLeft, onRight }) {
   }, [stream, onLeft, onRight])
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-between px-6">
-      <GestureIndicator side="left" active={hint === 'left'} progress={hint === 'left' ? progress : 0} label="◀ 이전" />
-      <GestureIndicator side="right" active={hint === 'right'} progress={hint === 'right' ? progress : 0} label="다음 ▶" />
+    <div className="pointer-events-none absolute inset-x-0 top-0 bottom-16 z-10">
+      <PalmPointer pointer={pointer} />
+      <div className="absolute inset-0 flex items-center justify-between px-6">
+        <GestureIndicator active={hint === 'left'} progress={hint === 'left' ? progress : 0} label="◀ 이전" />
+        <GestureIndicator active={hint === 'right'} progress={hint === 'right' ? progress : 0} label="다음 ▶" />
+      </div>
+    </div>
+  )
+}
+
+function PalmPointer({ pointer }) {
+  if (!pointer) return null
+
+  return (
+    <div
+      className="absolute z-20 h-12 w-12 -translate-x-1/2 -translate-y-1/2"
+      style={{ left: `${pointer.x}%`, top: `${pointer.y}%` }}
+    >
+      <span className="absolute inset-0 rounded-full bg-red-500/25 animate-ping" />
+      <span className="absolute inset-2 rounded-full border-2 border-white bg-red-500 shadow-[0_0_24px_rgba(239,68,68,0.9)]" />
+      <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
     </div>
   )
 }

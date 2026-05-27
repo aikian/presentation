@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import VideoUpload from '../components/analysis/VideoUpload'
 import AnalysisProgress from '../components/analysis/AnalysisProgress'
@@ -19,34 +19,7 @@ export default function VideoAnalysis() {
   const jobIdRef = useRef(null)
   const timerRef = useRef(null)
 
-  // 발표 모드에서 넘어온 job_id 자동 처리
-  useEffect(() => {
-    const jobId = location.state?.jobId
-    if (jobId) {
-      jobIdRef.current = jobId
-      setStage('progress')
-      startPolling(jobId)
-    }
-    return () => clearInterval(timerRef.current)
-  }, [])
-
-  async function handleUpload(file) {
-    setStage('progress')
-    setStepHint(0)
-    setError(null)
-    try {
-      const { job_id } = await uploadVideo(file)
-      jobIdRef.current = job_id
-      startPolling(job_id)
-    } catch (e) {
-      const msg = e.response?.data?.detail ?? '업로드 실패'
-      setError(msg)
-      toast(msg)
-      setStage('error')
-    }
-  }
-
-  function startPolling(jobId) {
+  const startPolling = useCallback((jobId) => {
     timerRef.current = setInterval(async () => {
       try {
         const data = await pollAnalysis(jobId)
@@ -67,6 +40,35 @@ export default function VideoAnalysis() {
         setStage('error')
       }
     }, POLL_INTERVAL)
+  }, [])
+
+  // 발표 모드에서 넘어온 job_id 자동 처리
+  useEffect(() => {
+    const jobId = location.state?.jobId
+    if (jobId) {
+      jobIdRef.current = jobId
+      queueMicrotask(() => {
+        setStage('progress')
+        startPolling(jobId)
+      })
+    }
+    return () => clearInterval(timerRef.current)
+  }, [location.state?.jobId, startPolling])
+
+  async function handleUpload(file) {
+    setStage('progress')
+    setStepHint(0)
+    setError(null)
+    try {
+      const { job_id } = await uploadVideo(file)
+      jobIdRef.current = job_id
+      startPolling(job_id)
+    } catch (e) {
+      const msg = e.response?.data?.detail ?? '업로드 실패'
+      setError(msg)
+      toast(msg)
+      setStage('error')
+    }
   }
 
   if (stage === 'upload') return <VideoUpload onUpload={handleUpload} loading={false} />
