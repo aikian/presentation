@@ -9,12 +9,22 @@ import { useToast } from '../components/common/Toast'
 import { uploadSlides, deleteSlides, uploadVideo } from '../api/client'
 
 const SUPPORTS_FOLDER = typeof window !== 'undefined' && 'showDirectoryPicker' in window
+const SETTINGS_KEY = 'presentationcoach.settings'
+
+function loadPresentationSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
 
 function GoalModal({ onStart }) {
-  const [minutes, setMinutes] = useState('')
+  const savedSettings = loadPresentationSettings()
+  const [minutes, setMinutes] = useState(savedSettings.defaultGoalMinutes || '')
   const [folderHandle, setFolderHandle] = useState(null)
   const [folderName, setFolderName] = useState('')
-  const [showFacePreview, setShowFacePreview] = useState(true)
+  const [showFacePreview, setShowFacePreview] = useState(savedSettings.showFacePreview !== false)
 
   async function pickFolder() {
     try {

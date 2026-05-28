@@ -29,6 +29,14 @@ export async function fetchMe() {
   return data // { id, email, name }
 }
 
+export async function changePassword(currentPassword, newPassword) {
+  const { data } = await api.post('/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  })
+  return data
+}
+
 export async function fetchHistory(page = 1, limit = 20) {
   const { data } = await api.get('/history', { params: { page, limit } })
   return data // { items: [...], page, limit }

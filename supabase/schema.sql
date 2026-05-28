@@ -20,6 +20,7 @@ create table if not exists public.analysis_results (
   gesture_count integer not null default 0,
   ear_blink_ratio double precision not null default 0,
   silence_ratio double precision not null default 0,
+  problem_frames jsonb not null default '[]'::jsonb,
   coaching text,
   score_gaze integer,
   score_pose integer,
@@ -34,6 +35,7 @@ create table if not exists public.analysis_results (
 alter table public.analysis_results
   add column if not exists ear_blink_ratio double precision not null default 0,
   add column if not exists silence_ratio double precision not null default 0,
+  add column if not exists problem_frames jsonb not null default '[]'::jsonb,
   add column if not exists score_gaze integer,
   add column if not exists score_pose integer,
   add column if not exists score_gesture integer,
@@ -41,6 +43,14 @@ alter table public.analysis_results
   add column if not exists score_total integer,
   add column if not exists elapsed_sec double precision,
   add column if not exists goal_sec double precision;
+
+update public.analysis_results
+set problem_frames = '[]'::jsonb
+where problem_frames is null;
+
+alter table public.analysis_results
+  alter column problem_frames set default '[]'::jsonb,
+  alter column problem_frames set not null;
 
 create index if not exists analysis_results_user_created_at_idx
   on public.analysis_results (user_id, created_at desc);
