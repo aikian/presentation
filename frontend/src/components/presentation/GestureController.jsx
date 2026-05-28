@@ -25,29 +25,27 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function isOpenPalm(lm) {
-  const wrist = lm[0]
-  const fingers = [
-    [8, 6],
-    [12, 10],
-    [16, 14],
-    [20, 18],
-  ]
-  const extended = fingers.filter(([tip, pip]) => {
-    return distance(lm[tip], wrist) > distance(lm[pip], wrist) * 1.08
-  }).length
-  return extended >= 3 && !isFist(lm)
-}
-
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
-function getPointerPosition(lm) {
-  const palm = lm[9]
+function isPinching(lm) {
+  const thumbTip = lm[4]
+  const indexTip = lm[8]
+  const palmSize = Math.max(distance(lm[0], lm[9]), 0.08)
+  const pinchDistance = distance(thumbTip, indexTip)
+  const indexNotFoldedIntoFist = indexTip.y < lm[5].y + palmSize * 0.45
+  return pinchDistance < palmSize * 0.38 && indexNotFoldedIntoFist
+}
+
+function getPinchPosition(lm) {
+  const thumbTip = lm[4]
+  const indexTip = lm[8]
+  const x = (thumbTip.x + indexTip.x) / 2
+  const y = (thumbTip.y + indexTip.y) / 2
   return {
-    x: clamp((1 - palm.x) * 100, 4, 96),
-    y: clamp(palm.y * 100, 6, 94),
+    x: clamp((1 - x) * 100, 4, 96),
+    y: clamp(y * 100, 6, 94),
   }
 }
 
@@ -104,10 +102,10 @@ export default function GestureController({ stream, onLeft, onRight }) {
           }
 
           const lm = multiHandLandmarks[0]
-          if (isOpenPalm(lm)) {
+          if (isPinching(lm)) {
             gestureRef.current = { side: null, startTime: 0 }
             setHint(null); setProgress(0)
-            setPointer(getPointerPosition(lm))
+            setPointer(getPinchPosition(lm))
             return
           }
 
@@ -166,7 +164,7 @@ export default function GestureController({ stream, onLeft, onRight }) {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 bottom-16 z-10">
-      <PalmPointer pointer={pointer} />
+      <PinchPointer pointer={pointer} />
       <div className="absolute inset-0 flex items-center justify-between px-6">
         <GestureIndicator active={hint === 'left'} progress={hint === 'left' ? progress : 0} label="◀ 이전" />
         <GestureIndicator active={hint === 'right'} progress={hint === 'right' ? progress : 0} label="다음 ▶" />
@@ -175,7 +173,7 @@ export default function GestureController({ stream, onLeft, onRight }) {
   )
 }
 
-function PalmPointer({ pointer }) {
+function PinchPointer({ pointer }) {
   if (!pointer) return null
 
   return (

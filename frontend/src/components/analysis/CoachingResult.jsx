@@ -39,6 +39,12 @@ const STATUS_STYLE = {
   bad: 'border-rose-200 bg-rose-50 text-rose-800',
 }
 
+const SCORE_COLOR = {
+  good: 'bg-emerald-500',
+  warn: 'bg-amber-500',
+  bad: 'bg-rose-500',
+}
+
 function toNumber(value, fallback = 0) {
   const next = Number(value)
   return Number.isFinite(next) ? next : fallback
@@ -57,6 +63,107 @@ function MetricCard({ label, value, unit, status }) {
       </div>
       <div className="mt-1 text-sm opacity-80">{label}</div>
     </div>
+  )
+}
+
+function scoreStatus(value) {
+  if (value >= 70) return 'good'
+  if (value >= 50) return 'warn'
+  return 'bad'
+}
+
+function ScoreBar({ label, score, weight }) {
+  const value = Math.max(0, Math.min(100, toNumber(score)))
+  const status = scoreStatus(value)
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="font-semibold text-slate-700">{label}</span>
+        <span className="text-slate-500">{value}점 · {weight}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function buildFocusItems(metrics) {
+  const items = [
+    {
+      label: '시선',
+      value: `${Math.round(metrics.gazeRatio * 100)}% 이탈`,
+      severity: metrics.gazeRatio > 0.3 ? 3 : metrics.gazeRatio > 0.15 ? 2 : 1,
+      detail: metrics.gazeRatio > 0.15 ? '카메라 응시 리듬을 먼저 잡는 게 좋습니다.' : '시선 처리는 안정적입니다.',
+    },
+    {
+      label: '자세',
+      value: `${metrics.tilt.toFixed(1)}도`,
+      severity: metrics.tilt > 15 ? 3 : metrics.tilt > 8 ? 2 : 1,
+      detail: metrics.tilt > 8 ? '상체 중심과 어깨 수평을 더 자주 점검하세요.' : '자세 균형은 좋은 편입니다.',
+    },
+    {
+      label: '제스처',
+      value: `${metrics.gestures}회`,
+      severity: metrics.gestures < 5 || metrics.gestures > 50 ? 2 : 1,
+      detail: metrics.gestures < 5 ? '핵심 포인트에 손동작을 붙이면 전달력이 올라갑니다.' : metrics.gestures > 50 ? '반복 손동작을 줄이고 강조 지점에만 쓰세요.' : '제스처 빈도는 적절합니다.',
+    },
+    {
+      label: '발화',
+      value: `${Math.round(metrics.silenceRatio * 100)}% 침묵`,
+      severity: metrics.silenceRatio > 0.5 ? 3 : metrics.silenceRatio > 0.25 ? 2 : 1,
+      detail: metrics.silenceRatio > 0.5 ? '슬라이드 전환 문장을 미리 정해 흐름을 이어가세요.' : '발화 흐름은 크게 무너지지 않았습니다.',
+    },
+  ]
+
+  return items.sort((a, b) => b.severity - a.severity).slice(0, 3)
+}
+
+function AnalysisOverview({ metrics, scores }) {
+  const focusItems = buildFocusItems(metrics)
+  const totalStatus = scores.total == null ? 'warn' : scoreStatus(scores.total)
+
+  return (
+    <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="flex flex-col justify-between rounded-lg bg-slate-950 p-5 text-white">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Score</p>
+          <div className="mt-2 flex items-end gap-1">
+            <span className="text-5xl font-bold leading-none">{scores.total ?? '-'}</span>
+            <span className="pb-1 text-sm text-slate-300">/ 100</span>
+          </div>
+        </div>
+        <div className={`mt-5 h-1.5 rounded-full ${SCORE_COLOR[totalStatus]}`} />
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.8fr)]">
+        <div>
+          <h2 className="mb-3 text-lg font-bold text-slate-950">핵심 진단</h2>
+          <div className="grid gap-2">
+            {focusItems.map((item) => (
+              <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold text-slate-900">{item.label}</span>
+                  <span className="text-xs font-semibold text-slate-500">{item.value}</span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-3 text-lg font-bold text-slate-950">항목별 점수</h2>
+          <div className="space-y-3">
+            <ScoreBar label="시선" score={scores.gaze} weight="30%" />
+            <ScoreBar label="자세" score={scores.pose} weight="25%" />
+            <ScoreBar label="제스처" score={scores.gesture} weight="15%" />
+            <ScoreBar label="시간" score={scores.time} weight="30%" />
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -137,11 +244,16 @@ function frameSrc(frame) {
 
 function framesForType(frames, type) {
   const typed = frames.filter((frame) => frame.type === type)
-  if (typed.length > 0) return typed
+  if (typed.length > 0) {
+    return typed
+      .slice()
+      .sort((a, b) => toNumber(b.score) - toNumber(a.score))
+      .slice(0, 1)
+  }
 
   const legacyFrames = frames.filter((frame) => !frame.type)
-  if (type === 'gaze') return legacyFrames.slice(0, 3)
-  if (type === 'pose') return legacyFrames.slice(3, 5)
+  if (type === 'gaze') return legacyFrames.slice(0, 1)
+  if (type === 'pose') return legacyFrames.slice(3, 4)
   return []
 }
 
@@ -201,7 +313,7 @@ function EvidencePanel({ title, frames }) {
     <div className="space-y-2">
       <p className="text-xs font-semibold text-slate-500">{title}</p>
       <div className="grid gap-2">
-        {frames.slice(0, 2).map((frame, index) => (
+        {frames.slice(0, 1).map((frame, index) => (
           <figure key={`${frame.type}-${frame.sec}-${index}`} className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
             <img
               src={frameSrc(frame)}
@@ -210,7 +322,7 @@ function EvidencePanel({ title, frames }) {
             />
             <figcaption className="flex items-center justify-between px-2 py-1.5 text-xs text-slate-500">
               <span>{frame.label}</span>
-              {frame.sec != null && <span>{frame.sec}초</span>}
+              <span>{frame.value ?? (frame.sec != null ? `${frame.sec}초` : '최대 구간')}</span>
             </figcaption>
           </figure>
         ))}
@@ -243,6 +355,7 @@ export default function CoachingResult({ result, resultId }) {
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_count,
     ear_blink_ratio, silence_ratio, gaze_timeline, problem_frames, coaching,
+    score_total, score_gaze, score_pose, score_gesture, score_time,
   } = result
 
   const metrics = {
@@ -267,6 +380,13 @@ export default function CoachingResult({ result, resultId }) {
 
   const parsedSections = useMemo(() => parseCoachingSections(coaching), [coaching])
   const frames = useMemo(() => normalizeFrames(problem_frames), [problem_frames])
+  const scores = {
+    total: score_total == null ? null : toNumber(score_total),
+    gaze: score_gaze == null ? score(metrics.gazeRatio, 0, 0.4) : toNumber(score_gaze),
+    pose: score_pose == null ? score(metrics.tilt, 0, 20) : toNumber(score_pose),
+    gesture: score_gesture == null ? (metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90) : toNumber(score_gesture),
+    time: score_time == null ? score(metrics.silenceRatio, 0, 0.7) : toNumber(score_time),
+  }
 
   async function handleDownload() {
     if (!resultId) return
@@ -306,6 +426,8 @@ export default function CoachingResult({ result, resultId }) {
           <MetricCard label="어깨 기울기" value={metrics.tilt.toFixed(1)} unit="도" status={tiltStatus} />
           <MetricCard label="제스처 횟수" value={metrics.gestures} unit="회" status={gestureStatus} />
         </div>
+
+        <AnalysisOverview metrics={metrics} scores={scores} />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)]">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
