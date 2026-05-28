@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchHistory, downloadPdf } from '../api/client'
+import { fetchHistory } from '../api/client'
 
 function statusColor(val, thresholds) {
   if (val > thresholds[1]) return 'text-red-600'
@@ -22,9 +22,8 @@ function ScoreBadge({ score }) {
 }
 
 function DetailPanel({ item, onClose }) {
-  const [downloading, setDownloading] = useState(false)
   const {
-    id, gaze_away_ratio, shoulder_tilt_avg, gesture_count,
+    gaze_away_ratio, shoulder_tilt_avg, gesture_count,
     coaching, created_at, score_total, elapsed_sec, goal_sec,
   } = item
   const date = new Date(created_at).toLocaleString('ko-KR')
@@ -34,23 +33,21 @@ function DetailPanel({ item, onClose }) {
     return `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초`
   }
 
-  async function handleDownload() {
-    setDownloading(true)
-    try { await downloadPdf(id) } finally { setDownloading(false) }
+  function handlePrint() {
+    window.print()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="print-modal-backdrop fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="print-report bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">분석 상세</h2>
-          <div className="flex items-center gap-2">
+          <div className="no-print flex items-center gap-2">
             <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-300 rounded-lg px-3 py-1 transition-colors disabled:opacity-50"
+              onClick={handlePrint}
+              className="text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-300 rounded-lg px-3 py-1 transition-colors"
             >
-              {downloading ? '생성 중...' : 'PDF 저장'}
+              인쇄 / PDF 저장
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
           </div>

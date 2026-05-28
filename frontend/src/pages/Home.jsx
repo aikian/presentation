@@ -42,6 +42,13 @@ const scoreRows = [
   { item: '시간', weight: '30%', formula: '목표 시간과의 오차 0% = 100점, 30% 이상 = 0점' },
 ]
 
+const scorePolicies = [
+  '각 항목은 0~100점으로 환산한 뒤 가중 평균으로 최종 점수를 계산합니다.',
+  '시선과 자세는 문제가 적을수록 높은 점수를 주고, 기준치를 넘으면 0점에 가깝게 낮춥니다.',
+  '제스처는 너무 적거나 과도한 경우를 모두 감점하고, 적절한 빈도의 손 동작을 가장 높게 평가합니다.',
+  '목표 시간을 설정하지 않으면 시간 항목은 기본 80점으로 반영합니다.',
+]
+
 function loadSettings() {
   try {
     return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }
@@ -63,6 +70,79 @@ function Toggle({ checked, onChange }) {
     >
       <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'left-6' : 'left-1'}`} />
     </button>
+  )
+}
+
+function ScorePolicyContent() {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {scoreRows.map((row) => (
+          <div key={row.item} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold text-slate-500">가중치 {row.weight}</p>
+            <h3 className="mt-1 text-lg font-bold text-slate-950">{row.item}</h3>
+            <p className="mt-2 text-xs leading-5 text-slate-600">{row.formula}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full min-w-[34rem] text-sm">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              <th className="px-3 py-2 text-left">항목</th>
+              <th className="px-3 py-2 text-left">가중치</th>
+              <th className="px-3 py-2 text-left">계산 방식</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scoreRows.map((row) => (
+              <tr key={row.item} className="border-t border-slate-200 odd:bg-slate-50">
+                <td className="px-3 py-2 font-semibold text-slate-900">{row.item}</td>
+                <td className="px-3 py-2 text-slate-600">{row.weight}</td>
+                <td className="px-3 py-2 text-slate-600">{row.formula}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+        <p className="text-sm font-bold text-indigo-950">코칭 점수 정책</p>
+        <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+          {scorePolicies.map((policy) => (
+            <p key={policy}>{policy}</p>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs leading-5 text-slate-500">
+        최종 점수 = 시선 30% + 자세 25% + 제스처 15% + 시간 30%입니다. 점수는 발표자의 장단점을 빠르게 파악하기 위한 코칭 지표이며, 분석 결과 화면과 PDF 리포트에 동일한 기준으로 표시됩니다.
+      </p>
+    </>
+  )
+}
+
+function ScorePolicyModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 text-left shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-indigo-600">Score Policy</p>
+            <h2 className="mt-1 text-2xl font-bold text-slate-950">코칭 점수 알고리즘</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              발표 분석 결과는 시선, 자세, 제스처, 시간 네 가지 지표를 점수화한 뒤 가중 평균으로 산출합니다.
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">
+            닫기
+          </button>
+        </div>
+
+        <ScorePolicyContent />
+      </div>
+    </div>
   )
 }
 
@@ -198,31 +278,9 @@ function SettingsModal({ user, onClose }) {
           </form>
         </section>
 
-        <section className="mt-4 rounded-lg border border-slate-200 p-4">
+        <section className="mt-4">
           <h3 className="mb-3 text-base font-bold text-slate-900">점수 알고리즘</h3>
-          <div className="overflow-hidden rounded-lg border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-950 text-white">
-                <tr>
-                  <th className="px-3 py-2 text-left">항목</th>
-                  <th className="px-3 py-2 text-left">가중치</th>
-                  <th className="px-3 py-2 text-left">계산 방식</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scoreRows.map((row) => (
-                  <tr key={row.item} className="border-t border-slate-200 odd:bg-slate-50">
-                    <td className="px-3 py-2 font-semibold text-slate-900">{row.item}</td>
-                    <td className="px-3 py-2 text-slate-600">{row.weight}</td>
-                    <td className="px-3 py-2 text-slate-600">{row.formula}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-xs leading-5 text-slate-500">
-            최종 점수 = 시선 30% + 자세 25% + 제스처 15% + 시간 30%입니다. 목표 시간을 설정하지 않으면 시간 점수는 기본 80점으로 계산됩니다.
-          </p>
+          <ScorePolicyContent />
         </section>
       </div>
     </div>
@@ -234,6 +292,7 @@ export default function Home() {
   const { user, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [scorePolicyOpen, setScorePolicyOpen] = useState(false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -277,11 +336,11 @@ export default function Home() {
             >
               계정 및 설정
             </button>
-            <button onClick={() => go('/analysis')} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-              영상 분석 바로가기
-            </button>
-            <button onClick={() => go('/presentation')} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-              발표 모드 바로가기
+            <button
+              onClick={() => { setScorePolicyOpen(true); setMenuOpen(false) }}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              코칭 점수 알고리즘
             </button>
             <button
               onClick={logout}
@@ -333,6 +392,7 @@ export default function Home() {
       </main>
 
       {settingsOpen && <SettingsModal user={user} onClose={() => setSettingsOpen(false)} />}
+      {scorePolicyOpen && <ScorePolicyModal onClose={() => setScorePolicyOpen(false)} />}
     </div>
   )
 }

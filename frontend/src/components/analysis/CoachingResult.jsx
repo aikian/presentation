@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine,
 } from 'recharts'
-import { downloadPdf } from '../../api/client'
 
 const SECTION_ORDER = [
   { key: 'summary', title: '한줄 요약' },
@@ -349,9 +348,8 @@ function CoachingSection({ meta, text, frames }) {
   )
 }
 
-export default function CoachingResult({ result, resultId }) {
+export default function CoachingResult({ result }) {
   const navigate = useNavigate()
-  const [downloading, setDownloading] = useState(false)
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_count,
     ear_blink_ratio, silence_ratio, gaze_timeline, problem_frames, coaching,
@@ -388,30 +386,25 @@ export default function CoachingResult({ result, resultId }) {
     time: score_time == null ? score(metrics.silenceRatio, 0, 0.7) : toNumber(score_time),
   }
 
-  async function handleDownload() {
-    if (!resultId) return
-    setDownloading(true)
-    try { await downloadPdf(resultId) } finally { setDownloading(false) }
+  function handlePrint() {
+    window.print()
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 text-left">
+    <div className="print-report min-h-screen bg-slate-50 px-4 py-8 text-left">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
             <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
           </div>
-          <div className="flex gap-2">
-            {resultId && (
-              <button
-                onClick={handleDownload}
-                disabled={downloading}
-                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50"
-              >
-                {downloading ? '생성 중...' : 'PDF 저장'}
-              </button>
-            )}
+          <div className="no-print flex gap-2">
+            <button
+              onClick={handlePrint}
+              className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
+            >
+              인쇄 / PDF 저장
+            </button>
             <button
               onClick={() => navigate('/')}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
