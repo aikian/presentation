@@ -55,6 +55,7 @@ def _run_job(
                 "ear_blink_ratio": result.get("ear_blink_ratio", 0),
                 "silence_ratio": result.get("silence_ratio", 0),
                 "coaching": result.get("coaching", ""),
+                "problem_frames": result.get("problem_frames", []),
                 "score_gaze": scores["score_gaze"],
                 "score_pose": scores["score_pose"],
                 "score_gesture": scores["score_gesture"],

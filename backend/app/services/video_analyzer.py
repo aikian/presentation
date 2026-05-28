@@ -137,10 +137,12 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     gaze_timeline: list[dict] = []
     ear_values: list[float] = []
     mar_values: list[float] = []
-    problem_gaze_frames: list[dict[str, Any]] = []
+    problem_gaze_frame: dict[str, Any] | None = None
+    max_gaze_score = 0.0
 
     shoulder_tilts: list[float] = []
-    problem_pose_frames: list[dict[str, Any]] = []
+    problem_pose_frame: dict[str, Any] | None = None
+    max_pose_tilt = 0.0
     gesture_count = 0
 
     # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
@@ -162,13 +164,16 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                 gaze_scores.append(score)
                 gaze_timeline.append({"sec": round(i * settings.frame_interval_sec, 1), "score": round(score, 3)})
 
-                if score > 0.35 and len(problem_gaze_frames) < 3:
-                    problem_gaze_frames.append({
+                if score > 0.35 and score > max_gaze_score:
+                    max_gaze_score = score
+                    problem_gaze_frame = {
                         "type": "gaze",
                         "label": "시선 이탈",
                         "sec": round(i * settings.frame_interval_sec, 1),
+                        "score": round(score, 3),
+                        "value": f"{score * 100:.0f}%",
                         "image": _frame_to_b64(frame),
-                    })
+                    }
 
                 left_ear = _ear(lm, LEFT_EYE_EAR, w, h)
                 right_ear = _ear(lm, RIGHT_EYE_EAR, w, h)
@@ -185,13 +190,16 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             if result.pose_landmarks:
                 tilt = _shoulder_tilt(result.pose_landmarks)
                 shoulder_tilts.append(tilt)
-                if tilt > 10 and len(problem_pose_frames) < 2:
-                    problem_pose_frames.append({
+                if tilt > 10 and tilt > max_pose_tilt:
+                    max_pose_tilt = tilt
+                    problem_pose_frame = {
                         "type": "pose",
                         "label": "자세 기울어짐",
                         "sec": round(i * settings.frame_interval_sec, 1),
+                        "score": round(tilt, 2),
+                        "value": f"{tilt:.1f}도",
                         "image": _frame_to_b64(frame),
-                    })
+                    }
 
     # Step 4: 제스처 분석 (Hands)
     _step(4)
@@ -202,7 +210,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             if result.multi_hand_landmarks:
                 gesture_count += len(result.multi_hand_landmarks)
 
-    problem_frames = problem_gaze_frames + problem_pose_frames
+    problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else 0.0
     shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else 0.0
 

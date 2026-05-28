@@ -1,4 +1,6 @@
+import base64
 import io
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +16,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
@@ -214,6 +217,109 @@ def _coaching_cards(text: str, width: float, title_s: ParagraphStyle, body_s: Pa
     return cards
 
 
+def _normalize_problem_frames(value):
+    if not value:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            value = []
+
+    frames = []
+    for index, frame in enumerate(value if isinstance(value, list) else []):
+        if isinstance(frame, str):
+            frames.append({"type": None, "label": f"문제 장면 {index + 1}", "image": frame})
+        elif isinstance(frame, dict) and frame.get("image"):
+            frames.append({
+                "type": frame.get("type"),
+                "label": frame.get("label") or f"문제 장면 {index + 1}",
+                "sec": frame.get("sec"),
+                "score": frame.get("score"),
+                "value": frame.get("value"),
+                "image": frame.get("image"),
+            })
+    return frames
+
+
+def _select_problem_frame(frames: list[dict], frame_type: str):
+    typed = [frame for frame in frames if frame.get("type") == frame_type]
+    if typed:
+        return sorted(typed, key=lambda frame: float(frame.get("score") or 0), reverse=True)[0]
+
+    legacy = [frame for frame in frames if not frame.get("type")]
+    if frame_type == "gaze" and legacy:
+        return legacy[0]
+    if frame_type == "pose" and len(legacy) > 3:
+        return legacy[3]
+    return None
+
+
+def _image_from_b64(data: str, max_width: float, max_height: float):
+    if data.startswith("data:"):
+        data = data.split(",", 1)[-1]
+    raw = base64.b64decode(data)
+    image_io = io.BytesIO(raw)
+    reader = ImageReader(image_io)
+    img_w, img_h = reader.getSize()
+    scale = min(max_width / img_w, max_height / img_h)
+    image_io.seek(0)
+    return RLImage(image_io, width=img_w * scale, height=img_h * scale)
+
+
+def _problem_frame_cards(frames: list[dict], width: float, title_s: ParagraphStyle, body_s: ParagraphStyle):
+    selected = [
+        ("시선 이탈 최대 장면", _select_problem_frame(frames, "gaze")),
+        ("자세 기울어짐 최대 장면", _select_problem_frame(frames, "pose")),
+    ]
+    cards = []
+    col_width = (width - 0.4 * cm) / 2
+
+    for title, frame in selected:
+        if not frame:
+            continue
+        try:
+            img = _image_from_b64(frame["image"], col_width - 0.5 * cm, 4.2 * cm)
+        except Exception:
+            continue
+
+        caption_bits = [frame.get("label") or title]
+        if frame.get("value"):
+            caption_bits.append(str(frame["value"]))
+        if frame.get("sec") is not None:
+            caption_bits.append(f"{frame['sec']}초")
+
+        content = [
+            Paragraph(title, title_s),
+            img,
+            Spacer(1, 0.12 * cm),
+            Paragraph(" · ".join(caption_bits), body_s),
+        ]
+        card = Table([[content]], colWidths=[col_width])
+        card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("BOX", (0, 0), (-1, -1), 0.8, _BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ]))
+        cards.append(card)
+
+    if not cards:
+        return []
+    if len(cards) == 1:
+        return [cards[0], Spacer(1, 0.3 * cm)]
+
+    row = Table([cards], colWidths=[col_width, col_width])
+    row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return [row, Spacer(1, 0.3 * cm)]
+
+
 def generate_report(record: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -252,6 +358,7 @@ def generate_report(record: dict) -> bytes:
     tilt = record.get("shoulder_tilt_avg", 0)
     gestures = record.get("gesture_count", 0)
     coaching = record.get("coaching") or "코칭 없음"
+    problem_frames = _normalize_problem_frames(record.get("problem_frames"))
     score_total = record.get("score_total")
     has_scores = score_total is not None
 
@@ -357,6 +464,11 @@ def generate_report(record: dict) -> bytes:
     story.append(PageBreak())
 
     # ── Page 3: AI 코칭 피드백 ───────────────────────────────────────────────
+    evidence = _problem_frame_cards(problem_frames, doc.width, card_title_s, body_s)
+    if evidence:
+        story.append(Paragraph("주요 문제 장면", section_s))
+        story.extend(evidence)
+
     story.append(Paragraph("AI 코칭 피드백", section_s))
     story.extend(_coaching_cards(coaching, doc.width, card_title_s, body_s))
 

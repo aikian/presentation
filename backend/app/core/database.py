@@ -114,3 +114,7 @@ def create_user(email: str, hashed_password: str, name: str | None = None) -> di
     user = res.data[0]
     user.setdefault("name", None)
     return user
+
+
+def update_user_password(user_id: str, hashed_password: str) -> None:
+    get_supabase().table("users").update({"hashed_password": hashed_password}).eq("id", user_id).execute()
