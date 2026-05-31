@@ -14,6 +14,10 @@ RUN apt-get update \
         libsm6 \
         libxext6 \
         libxrender1 \
+        fonts-noto-cjk \
+        fonts-nanum \
+        fontconfig \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
