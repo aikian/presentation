@@ -13,6 +13,7 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.rolemodel import coaching_lines
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -272,6 +273,8 @@ def _voice_metric_lines(metrics: dict) -> str:
 
 def _build_coaching_prompt(metrics: dict) -> str:
     voice = _voice_metric_lines(metrics)
+    rolemodel = coaching_lines(metrics.get("rolemodel_comparison"))
+    rolemodel_block = ("\n\n" + "\n".join(rolemodel)) if rolemodel else ""
 
     # 음성 분석이 되면 입 모양으로 추정한 침묵 대신 실제 음성 지표로 발화를 평가한다.
     speech_section = (
@@ -288,7 +291,7 @@ def _build_coaching_prompt(metrics: dict) -> str:
 - 시선 이탈 비율: {metrics['gaze_away_ratio'] * 100:.1f}%
 - 어깨 기울기 평균: {metrics['shoulder_tilt_avg']:.1f}도
 - 제스처 횟수: {metrics['gesture_count']}회
-- 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%{voice}
+- 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%{voice}{rolemodel_block}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
 각 섹션은 짧고 실행 가능한 문장으로 작성하고, 코드블록이나 표는 사용하지 마세요.

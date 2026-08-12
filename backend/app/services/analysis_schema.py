@@ -89,4 +89,7 @@ def build_details(
         "scores": None,           # AHP 담당 (지금은 평면 컬럼 score_* 사용)
         "habits": None,           # 습관 탐지 담당
         "artifacts": {},          # 생성 파일이 있는 사람이 각자 경로를 넣는다
+        # 롤모델 비교. 스키마 v0.1에 없는 실험 필드라 x_ 접두사를 쓴다.
+        # 회의에서 정식 필드로 승격할지 정한다.
+        "x_rolemodel": metrics.get("rolemodel_comparison"),
     }
