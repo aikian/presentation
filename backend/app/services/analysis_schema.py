@@ -31,8 +31,7 @@ def _audio_summary(audio: dict[str, Any], duration_sec: float | None) -> dict[st
         "silence_total_sec": silence_total,
         "silence_ratio": silence_ratio,
         "pitch_std": audio.get("pitch_std_hz"),
-        # 구간별 피치가 있어야 계산할 수 있어 3-4주차로 미룬다.
-        "monotone_ratio": None,
+        "monotone_ratio": audio.get("monotone_ratio"),
         # 실험 필드(x_): 회의에서 정식 승격하거나 삭제한다.
         "x_pitch_cv": audio.get("pitch_cv"),
         "x_pitch_median_hz": audio.get("pitch_median_hz"),
@@ -52,10 +51,8 @@ def build_audio_block(audio: dict[str, Any] | None, duration_sec: float | None) 
 
     return {
         "transcript": audio.get("segments") or [],
-        # 1초 구간별 spm·pitch·db. 3-4주차 작업.
-        "timeline": None,
-        # 필러워드별 타임스탬프. Whisper word timestamp를 써야 해서 3-4주차 작업.
-        "filler_words": None,
+        "timeline": audio.get("timeline") or None,
+        "filler_words": audio.get("filler_words") or [],
         # analyze_audio의 long_silences는 {start, sec} 형식이라 {start, end}로 바꾼다.
         "silences": [
             {"start": gap["start"], "end": round(gap["start"] + gap["sec"], 1)}
