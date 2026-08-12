@@ -353,7 +353,7 @@ export default function CoachingResult({ result }) {
   const navigate = useNavigate()
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_count,
-    ear_blink_ratio, silence_ratio, gaze_timeline, problem_frames, coaching,
+    ear_blink_ratio, silence_ratio, face_detected_ratio, gaze_timeline, problem_frames, coaching,
     score_total, score_gaze, score_pose, score_gesture, score_time,
   } = result
 
@@ -363,7 +363,10 @@ export default function CoachingResult({ result }) {
     gestures: toNumber(gesture_count),
     blinkRatio: ear_blink_ratio == null ? null : toNumber(ear_blink_ratio),
     silenceRatio: silence_ratio == null ? null : toNumber(silence_ratio),
+    faceDetectedRatio: face_detected_ratio == null ? null : toNumber(face_detected_ratio),
   }
+
+  const isLowConfidence = metrics.faceDetectedRatio != null && metrics.faceDetectedRatio < 0.5
 
   const gazeStatus = metrics.gazeRatio == null ? 'warn' : metrics.gazeRatio > 0.3 ? 'bad' : metrics.gazeRatio > 0.15 ? 'warn' : 'good'
   const tiltStatus = metrics.tilt == null ? 'warn' : metrics.tilt > 15 ? 'bad' : metrics.tilt > 8 ? 'warn' : 'good'
@@ -414,6 +417,13 @@ export default function CoachingResult({ result }) {
             </button>
           </div>
         </div>
+
+        {isLowConfidence && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="font-semibold">분석 신뢰도 낮음</span>
+            <span className="ml-2">얼굴이 충분히 검출되지 않아 일부 항목의 분석 결과가 제공되지 않을 수 있습니다.</span>
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-3">
           <MetricCard label="시선 이탈률" value={metrics.gazeRatio == null ? '분석 불가' : `${(metrics.gazeRatio * 100).toFixed(0)}%`} unit="" status={gazeStatus} />
