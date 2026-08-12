@@ -1,0 +1,182 @@
+{
+  "schema_version": "0.1",
+  "session_id": "9b2f6c3a-1d4e-4f8a-9c7b-2e5d8a1f4c6e",
+  "created_at": "2026-08-12T15:00:00+09:00",
+
+  "meta": {
+    "duration_sec": 20.0,
+    "frame_interval_sec": 2.0,
+    "target_time_sec": 30.0
+  },
+
+  "video_timeline": [
+    {
+      "sec": 0.0,
+      "gaze": { "yaw": -2.1, "pitch": 1.4, "score": 0.08, "confidence": 0.98 },
+      "posture": { "shoulder_tilt_deg": 2.8, "lean_dir": "none", "score": 0.9 },
+      "gesture": { "active": false, "hands_visible": true },
+      "expression": { "smile": 0.31, "frown": 0.05, "confidence": 0.97 }
+    },
+    {
+      "sec": 2.0,
+      "gaze": { "yaw": 3.5, "pitch": -0.8, "score": 0.12, "confidence": 0.98 },
+      "posture": { "shoulder_tilt_deg": 3.1, "lean_dir": "none", "score": 0.88 },
+      "gesture": { "active": true, "hands_visible": true },
+      "expression": { "smile": 0.55, "frown": 0.04, "confidence": 0.96 }
+    },
+    {
+      "sec": 4.0,
+      "gaze": { "yaw": -18.7, "pitch": -9.3, "score": 0.42, "confidence": 0.95 },
+      "posture": { "shoulder_tilt_deg": 4.6, "lean_dir": "right", "score": 0.75 },
+      "gesture": { "active": false, "hands_visible": true },
+      "expression": { "smile": 0.18, "frown": 0.52, "confidence": 0.94 }
+    },
+    {
+      "sec": 6.0,
+      "gaze": { "yaw": -24.2, "pitch": -12.6, "score": 0.55, "confidence": 0.93 },
+      "posture": { "shoulder_tilt_deg": 5.2, "lean_dir": "right", "score": 0.7 },
+      "gesture": { "active": false, "hands_visible": false },
+      "expression": { "smile": 0.12, "frown": 0.44, "confidence": 0.95 }
+    },
+    {
+      "sec": 8.0,
+      "gaze": { "yaw": null, "pitch": null, "score": null, "confidence": 0.0 },
+      "posture": { "shoulder_tilt_deg": 3.9, "lean_dir": "none", "score": 0.82 },
+      "gesture": { "active": false, "hands_visible": false },
+      "expression": { "smile": null, "frown": null, "confidence": 0.0 }
+    },
+    {
+      "sec": 10.0,
+      "gaze": { "yaw": 1.2, "pitch": 0.6, "score": 0.05, "confidence": 0.97 },
+      "posture": { "shoulder_tilt_deg": 2.5, "lean_dir": "none", "score": 0.92 },
+      "gesture": { "active": false, "hands_visible": true },
+      "expression": { "smile": 0.42, "frown": 0.06, "confidence": 0.97 }
+    },
+    {
+      "sec": 12.0,
+      "gaze": { "yaw": -4.8, "pitch": 2.1, "score": 0.15, "confidence": 0.98 },
+      "posture": { "shoulder_tilt_deg": 3.3, "lean_dir": "none", "score": 0.86 },
+      "gesture": { "active": true, "hands_visible": true },
+      "expression": { "smile": 0.61, "frown": 0.03, "confidence": 0.98 }
+    },
+    {
+      "sec": 14.0,
+      "gaze": { "yaw": 6.9, "pitch": -1.5, "score": 0.19, "confidence": 0.96 },
+      "posture": { "shoulder_tilt_deg": 2.9, "lean_dir": "none", "score": 0.89 },
+      "gesture": { "active": true, "hands_visible": true },
+      "expression": { "smile": 0.38, "frown": 0.07, "confidence": 0.97 }
+    },
+    {
+      "sec": 16.0,
+      "gaze": { "yaw": -3.4, "pitch": 0.9, "score": 0.1, "confidence": 0.98 },
+      "posture": { "shoulder_tilt_deg": 3.6, "lean_dir": "none", "score": 0.85 },
+      "gesture": { "active": true, "hands_visible": true },
+      "expression": { "smile": 0.27, "frown": 0.1, "confidence": 0.96 }
+    },
+    {
+      "sec": 18.0,
+      "gaze": { "yaw": -1.8, "pitch": 1.1, "score": 0.07, "confidence": 0.98 },
+      "posture": { "shoulder_tilt_deg": 3.0, "lean_dir": "none", "score": 0.88 },
+      "gesture": { "active": false, "hands_visible": true },
+      "expression": { "smile": 0.33, "frown": 0.05, "confidence": 0.97 }
+    }
+  ],
+
+  "audio": {
+    "transcript": [
+      { "start": 0.0, "end": 4.2, "text": "안녕하세요. 오늘 발표를 맡은 안동규입니다." },
+      { "start": 4.8, "end": 9.5, "text": "어, 저희 프로젝트는 AI 발표 코칭 시스템입니다." },
+      { "start": 12.0, "end": 19.2, "text": "이제 첫 번째로 시스템 구조부터, 음, 설명드리겠습니다." }
+    ],
+    "timeline": [
+      { "sec": 0.0, "spm": 257.1, "pitch_hz": 178.2, "db": -21.5 },
+      { "sec": 1.0, "spm": 257.1, "pitch_hz": 181.0, "db": -20.8 },
+      { "sec": 2.0, "spm": 257.1, "pitch_hz": 175.6, "db": -22.1 },
+      { "sec": 3.0, "spm": 257.1, "pitch_hz": 183.4, "db": -21.0 },
+      { "sec": 4.0, "spm": 257.1, "pitch_hz": 172.9, "db": -24.3 },
+      { "sec": 5.0, "spm": 255.3, "pitch_hz": 168.5, "db": -22.7 },
+      { "sec": 6.0, "spm": 255.3, "pitch_hz": 186.1, "db": -20.2 },
+      { "sec": 7.0, "spm": 255.3, "pitch_hz": 190.4, "db": -19.8 },
+      { "sec": 8.0, "spm": 255.3, "pitch_hz": 179.0, "db": -21.9 },
+      { "sec": 9.0, "spm": 255.3, "pitch_hz": 174.2, "db": -26.5 },
+      { "sec": 10.0, "spm": null, "pitch_hz": null, "db": -51.2 },
+      { "sec": 11.0, "spm": null, "pitch_hz": null, "db": -50.7 },
+      { "sec": 12.0, "spm": 200.0, "pitch_hz": 171.8, "db": -23.4 },
+      { "sec": 13.0, "spm": 200.0, "pitch_hz": 177.5, "db": -22.0 },
+      { "sec": 14.0, "spm": 200.0, "pitch_hz": 169.3, "db": -24.8 },
+      { "sec": 15.0, "spm": 200.0, "pitch_hz": 182.7, "db": -21.3 },
+      { "sec": 16.0, "spm": 200.0, "pitch_hz": 188.9, "db": -20.5 },
+      { "sec": 17.0, "spm": 200.0, "pitch_hz": 176.4, "db": -22.6 },
+      { "sec": 18.0, "spm": 200.0, "pitch_hz": 180.1, "db": -21.7 },
+      { "sec": 19.0, "spm": 200.0, "pitch_hz": 173.6, "db": -30.2 }
+    ],
+    "filler_words": [
+      { "sec": 4.9, "word": "어" },
+      { "sec": 12.1, "word": "이제" },
+      { "sec": 15.3, "word": "음" }
+    ],
+    "silences": [
+      { "start": 9.5, "end": 12.0 }
+    ],
+    "summary": {
+      "spm_avg": 231.2,
+      "filler_count": 3,
+      "filler_per_min": 9.0,
+      "silence_total_sec": 2.5,
+      "silence_ratio": 0.13,
+      "pitch_std": 6.1,
+      "monotone_ratio": 0.33
+    }
+  },
+
+  "summary": {
+    "gaze_away_ratio": 0.22,
+    "smile_ratio": 0.22,
+    "tension_ratio": 0.11,
+    "expression_change_std": 0.14,
+    "gesture_active_ratio": 0.4,
+    "posture_tilt_avg_deg": 3.5
+  },
+
+  "scores": {
+    "weights_version": "ahp-v1",
+    "gaze": 78,
+    "posture": 84,
+    "gesture": 65,
+    "voice": null,
+    "expression": null,
+    "total": 78,
+    "time": { "target_sec": 30.0, "actual_sec": 20.0, "score": 55 }
+  },
+
+  "habits": [
+    {
+      "type": "gaze_bias",
+      "direction": "left_down",
+      "count": 2,
+      "severity": "medium",
+      "occurrences": [ { "start": 4.0, "end": 8.0 } ],
+      "description": "왼쪽 아래로 시선이 반복적으로 이탈합니다."
+    },
+    {
+      "type": "filler_repeat",
+      "direction": null,
+      "count": 3,
+      "severity": "low",
+      "occurrences": [ { "start": 4.8, "end": 5.2 }, { "start": 15.1, "end": 15.6 } ],
+      "description": "습관적으로 '어', '음' 같은 군말을 사용합니다."
+    },
+    {
+      "type": "long_pause",
+      "direction": null,
+      "count": 1,
+      "severity": "low",
+      "occurrences": [ { "start": 9.5, "end": 12.0 } ],
+      "description": "발표 중 2초 이상의 긴 침묵이 있었습니다."
+    }
+  ],
+
+  "artifacts": {
+    "gaze_heatmap_png": "storage://sessions/9b2f6c3a-1d4e-4f8a-9c7b-2e5d8a1f4c6e/gaze_heatmap.png"
+  }
+}
