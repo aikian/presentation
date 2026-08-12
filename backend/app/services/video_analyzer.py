@@ -130,7 +130,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         return {
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
             "shoulder_tilt_avg": None, "gesture_count": 0,
-            "ear_blink_ratio": 0.0, "silence_ratio": 0.0,
+            "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
         }
@@ -218,18 +218,18 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else None
 
     # EAR 기반 눈 감음 비율
-    ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else 0.0
+    ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else None
 
     # 입 움직임 기반 침묵 비율 (MAR이 낮으면 미발화)
-    silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else 0.0
+    silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else None
 
     return {
         "gaze_away_ratio": round(gaze_away_ratio, 3) if gaze_away_ratio is not None else None,
         "face_detected_ratio": round(face_detected_ratio, 3),
         "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
-        "ear_blink_ratio": round(ear_blink_ratio, 3),
-        "silence_ratio": round(silence_ratio, 3),
+        "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
+        "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
         "problem_frames": problem_frames,
     }
@@ -245,9 +245,13 @@ def _gemini_model_candidates() -> list[str]:
 def _build_coaching_prompt(metrics: dict) -> str:
     gaze_ratio = metrics.get("gaze_away_ratio")
     shoulder_tilt = metrics.get("shoulder_tilt_avg")
+    blink_ratio = metrics.get("ear_blink_ratio")
+    silence_ratio = metrics.get("silence_ratio")
 
     gaze_text = f"{gaze_ratio * 100:.1f}%" if gaze_ratio is not None else "분석 불가"
     pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
+    blink_text = f"{blink_ratio * 100:.1f}%" if blink_ratio is not None else "분석 불가"
+    silence_text = f"{silence_ratio * 100:.1f}%" if silence_ratio is not None else "분석 불가"
 
     return f"""
 당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 한국어로 구체적인 개선 코칭을 작성하세요.
@@ -255,8 +259,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
 - 시선 이탈 비율: {gaze_text}
 - 어깨 기울기 평균: {pose_text}
 - 제스처 횟수: {metrics['gesture_count']}회
-- 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%
-- 침묵 구간 비율: {metrics['silence_ratio'] * 100:.1f}%
+- 눈 감음 비율: {blink_text}
+- 침묵 구간 비율: {silence_text}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
 각 섹션은 짧고 실행 가능한 문장으로 작성하고, 코드블록이나 표는 사용하지 마세요.
@@ -329,12 +333,14 @@ def _gemini_coaching(metrics: dict, api_key: str) -> str:
 def _fallback_coaching(metrics: dict) -> str:
     gaze_ratio = metrics.get("gaze_away_ratio")
     shoulder_tilt = metrics.get("shoulder_tilt_avg")
+    blink_ratio = metrics.get("ear_blink_ratio")
+    silence_ratio = metrics.get("silence_ratio")
 
     ratio = gaze_ratio * 100 if gaze_ratio is not None else None
     tilt = shoulder_tilt if shoulder_tilt is not None else None
     gestures = metrics["gesture_count"]
-    blink = metrics.get("ear_blink_ratio", 0) * 100
-    silence = metrics.get("silence_ratio", 0) * 100
+    blink = blink_ratio * 100 if blink_ratio is not None else None
+    silence = silence_ratio * 100 if silence_ratio is not None else None
 
     if ratio is None:
         gaze_diagnosis = "얼굴이 충분히 검출되지 않아 시선 분석이 어렵습니다."
@@ -372,14 +378,20 @@ def _fallback_coaching(metrics: dict) -> str:
         gesture_diagnosis = f"제스처 사용이 {gestures}회로 적절한 편입니다."
         gesture_coaching = "현재 빈도를 유지하면서 숫자, 방향, 크기 표현에 맞춰 제스처 종류를 분명히 나눠보세요."
 
-    if blink > 40:
+    if blink is None:
+        focus_diagnosis = "얼굴이 충분히 검출되지 않아 눈 감음 비율을 분석하기 어렵습니다."
+        focus_coaching = "얼굴과 눈이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif blink > 40:
         focus_diagnosis = f"눈 감음 비율이 {blink:.0f}%로 높아 피로하거나 자신감이 낮아 보일 수 있습니다."
         focus_coaching = "문장을 시작하기 전 숨을 짧게 들이마시고, 첫 단어를 말할 때 눈을 크게 뜨는 연습을 하세요."
     else:
         focus_diagnosis = f"눈 감음 비율이 {blink:.0f}%로 크게 문제되지 않습니다."
         focus_coaching = "발표 속도가 빨라질 때도 눈을 가늘게 뜨지 않도록 카메라 상단을 기준점으로 삼으세요."
 
-    if silence > 50:
+    if silence is None:
+        speech_diagnosis = "얼굴이 충분히 검출되지 않아 입 움직임 기반 침묵 비율을 분석하기 어렵습니다."
+        speech_coaching = "얼굴과 입이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif silence > 50:
         speech_diagnosis = f"침묵 구간이 {silence:.0f}%로 많아 발표 흐름이 자주 끊길 수 있습니다."
         speech_coaching = "슬라이드마다 첫 문장과 연결 문장을 미리 정해두고, 다음 장으로 넘어갈 때 짧은 브릿지 문장을 사용하세요."
     else:
@@ -393,9 +405,9 @@ def _fallback_coaching(metrics: dict) -> str:
         priorities.append("어깨 균형을 맞추기 위해 발표 전 자세 기준점을 정하세요.")
     if gestures < 5 or gestures > 50:
         priorities.append("제스처 빈도를 조절해 강조 지점에만 손동작을 사용하세요.")
-    if blink > 40:
+    if blink is not None and blink > 40:
         priorities.append("눈 감음 비율을 낮추기 위해 문장 시작 시 카메라를 또렷하게 바라보세요.")
-    if silence > 50:
+    if silence is not None and silence > 50:
         priorities.append("침묵 구간을 줄이기 위해 슬라이드별 연결 문장을 준비하세요.")
     priorities = (priorities + [
         "발표 시작과 결론에서 카메라 응시를 의식적으로 유지하세요.",
