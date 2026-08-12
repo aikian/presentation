@@ -30,6 +30,7 @@
 ## 공통 규약 (전 필드 적용)
 
 - **시간**: 모든 시각(`sec`, `start`, `end`)은 영상 시작 = 0초 기준 float 초 (소수 1자리). 리스트는 시간 오름차순.
+- **`audio.silences[]`와 `silence_total_sec`의 관계**: `silences[]`에는 2초 이상 이어진 긴 침묵만 담고, `silence_total_sec`은 짧은 것까지 포함한 전체 무음 시간이다. 따라서 `sum(silences 길이) ≤ silence_total_sec`이고, 긴 침묵이 하나도 없으면 `silences[]`가 빈 배열이어도 `silence_total_sec`은 0이 아닐 수 있다.
 - **없는 값 = `null`**: 측정 실패·미구현·해당 없음은 전부 `null`. `0`은 "측정된 0"이므로 절대 혼용 금지. 읽는 쪽은 null 방어 필수.
 - **숫자 범위**: 비율(`*_ratio`) 0.0–1.0 · 타임라인 내부 `score` 0.0–1.0 · `scores` 블록 점수 0–100 정수 · `confidence` 0.0–1.0.
 - **신뢰도 필터**: `confidence < 0.5` 프레임은 집계(`summary`·습관 탐지)에서 제외.
