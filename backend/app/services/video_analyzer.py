@@ -128,7 +128,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     frames = _extract_frames(video_path)
     if not frames:
         return {
-            "gaze_away_ratio": 0.0, "shoulder_tilt_avg": 0.0, "gesture_count": 0,
+            "gaze_away_ratio": None, "face_detected_ratio": 0.0,
+            "shoulder_tilt_avg": None, "gesture_count": 0,
             "ear_blink_ratio": 0.0, "silence_ratio": 0.0,
             "gaze_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
@@ -212,8 +213,9 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                 gesture_count += len(result.multi_hand_landmarks)
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
-    gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else 0.0
-    shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else 0.0
+    gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
+    face_detected_ratio = (len(gaze_scores) / len(frames)) if frames else 0.0
+    shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else None
 
     # EAR 기반 눈 감음 비율
     ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else 0.0
@@ -222,8 +224,9 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else 0.0
 
     return {
-        "gaze_away_ratio": round(gaze_away_ratio, 3),
-        "shoulder_tilt_avg": round(shoulder_tilt_avg, 2),
+        "gaze_away_ratio": round(gaze_away_ratio, 3) if gaze_away_ratio is not None else None,
+        "face_detected_ratio": round(face_detected_ratio, 3),
+        "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
         "ear_blink_ratio": round(ear_blink_ratio, 3),
         "silence_ratio": round(silence_ratio, 3),
@@ -240,11 +243,17 @@ def _gemini_model_candidates() -> list[str]:
 
 
 def _build_coaching_prompt(metrics: dict) -> str:
+    gaze_ratio = metrics.get("gaze_away_ratio")
+    shoulder_tilt = metrics.get("shoulder_tilt_avg")
+
+    gaze_text = f"{gaze_ratio * 100:.1f}%" if gaze_ratio is not None else "분석 불가"
+    pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
+
     return f"""
 당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 한국어로 구체적인 개선 코칭을 작성하세요.
 
-- 시선 이탈 비율: {metrics['gaze_away_ratio'] * 100:.1f}%
-- 어깨 기울기 평균: {metrics['shoulder_tilt_avg']:.1f}도
+- 시선 이탈 비율: {gaze_text}
+- 어깨 기울기 평균: {pose_text}
 - 제스처 횟수: {metrics['gesture_count']}회
 - 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%
 - 침묵 구간 비율: {metrics['silence_ratio'] * 100:.1f}%
@@ -318,13 +327,19 @@ def _gemini_coaching(metrics: dict, api_key: str) -> str:
 
 
 def _fallback_coaching(metrics: dict) -> str:
-    ratio = metrics["gaze_away_ratio"] * 100
-    tilt = metrics["shoulder_tilt_avg"]
+    gaze_ratio = metrics.get("gaze_away_ratio")
+    shoulder_tilt = metrics.get("shoulder_tilt_avg")
+
+    ratio = gaze_ratio * 100 if gaze_ratio is not None else None
+    tilt = shoulder_tilt if shoulder_tilt is not None else None
     gestures = metrics["gesture_count"]
     blink = metrics.get("ear_blink_ratio", 0) * 100
     silence = metrics.get("silence_ratio", 0) * 100
 
-    if ratio > 30:
+    if ratio is None:
+        gaze_diagnosis = "얼굴이 충분히 검출되지 않아 시선 분석이 어렵습니다."
+        gaze_coaching = "얼굴 전체가 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif ratio > 30:
         gaze_diagnosis = f"발표 시간의 {ratio:.0f}% 동안 시선이 이탈해 청중과의 연결감이 약해질 수 있습니다."
         gaze_coaching = "핵심 문장을 말할 때마다 카메라를 2초 이상 바라보고, 슬라이드는 문장 사이에만 확인하세요."
     elif ratio > 15:
@@ -334,7 +349,10 @@ def _fallback_coaching(metrics: dict) -> str:
         gaze_diagnosis = f"시선 이탈이 {ratio:.0f}%로 안정적인 편입니다."
         gaze_coaching = "현재 리듬을 유지하되, 강조 문장에서는 카메라 응시 시간을 조금 더 길게 가져가세요."
 
-    if tilt > 15:
+    if tilt is None:
+        pose_diagnosis = "자세가 충분히 검출되지 않아 어깨 기울기를 분석하기 어렵습니다."
+        pose_coaching = "상체와 양쪽 어깨가 카메라 화면에 모두 보이도록 위치를 조정한 뒤 다시 분석해보세요."
+    elif tilt > 15:
         pose_diagnosis = f"어깨 기울기가 평균 {tilt:.1f}도로 커서 화면에서 자세가 불안정해 보일 수 있습니다."
         pose_coaching = "발표 전 양발을 같은 간격으로 두고, 문단이 바뀔 때마다 어깨 높이를 한 번씩 점검하세요."
     elif tilt > 8:
@@ -369,9 +387,9 @@ def _fallback_coaching(metrics: dict) -> str:
         speech_coaching = "지금 흐름을 유지하되, 중요한 설명 뒤에는 의도적인 1초 멈춤으로 강조를 만들어보세요."
 
     priorities = []
-    if ratio > 15:
+    if ratio is not None and ratio > 15:
         priorities.append("시선 이탈을 줄이기 위해 핵심 문장마다 카메라 응시를 고정하세요.")
-    if tilt > 8:
+    if tilt is not None and tilt > 8:
         priorities.append("어깨 균형을 맞추기 위해 발표 전 자세 기준점을 정하세요.")
     if gestures < 5 or gestures > 50:
         priorities.append("제스처 빈도를 조절해 강조 지점에만 손동작을 사용하세요.")
@@ -384,8 +402,11 @@ def _fallback_coaching(metrics: dict) -> str:
         "다음 연습에서는 한 항목만 정해 녹화 후 바로 비교하세요.",
     ])[:2]
 
+    gaze_summary = f"{ratio:.0f}%" if ratio is not None else "분석 불가"
+    pose_summary = f"{tilt:.1f}도" if tilt is not None else "분석 불가"
+
     return "\n\n".join([
-        f"## 한줄 요약\n- 시선 {ratio:.0f}%, 자세 {tilt:.1f}도, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
+        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
         f"## 시선\n**진단:** {gaze_diagnosis}\n**코칭:** {gaze_coaching}",
         f"## 자세\n**진단:** {pose_diagnosis}\n**코칭:** {pose_coaching}",
         f"## 제스처\n**진단:** {gesture_diagnosis}\n**코칭:** {gesture_coaching}",
