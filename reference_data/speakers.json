@@ -1,0 +1,648 @@
+{
+  "7wHeV4nLtj8": {
+    "youtube_url": "https://www.youtube.com/watch?v=7wHeV4nLtj8",
+    "channel": "세바시",
+    "episode": "세바시 1491회",
+    "title": "뼈를 깎는 노력이 반드시 실패하는 이유",
+    "speaker": {
+      "name": "이지영",
+      "affiliation": "이투스 강사"
+    },
+    "duration_sec": 845.7,
+    "usable_sec": 626.7,
+    "usable_pct": 74.1,
+    "segment_count": 23,
+    "segments": [
+      {
+        "start": 31.0,
+        "end": 58.1,
+        "dur": 27.1
+      },
+      {
+        "start": 72.6,
+        "end": 112.2,
+        "dur": 39.6
+      },
+      {
+        "start": 120.0,
+        "end": 145.1,
+        "dur": 25.1
+      },
+      {
+        "start": 151.9,
+        "end": 180.9,
+        "dur": 29.0
+      },
+      {
+        "start": 187.7,
+        "end": 204.2,
+        "dur": 16.5
+      },
+      {
+        "start": 209.0,
+        "end": 229.3,
+        "dur": 20.3
+      },
+      {
+        "start": 248.7,
+        "end": 259.3,
+        "dur": 10.6
+      },
+      {
+        "start": 266.1,
+        "end": 292.2,
+        "dur": 26.1
+      },
+      {
+        "start": 307.7,
+        "end": 319.3,
+        "dur": 11.6
+      },
+      {
+        "start": 323.2,
+        "end": 353.2,
+        "dur": 30.0
+      },
+      {
+        "start": 358.0,
+        "end": 391.9,
+        "dur": 33.9
+      },
+      {
+        "start": 405.4,
+        "end": 418.0,
+        "dur": 12.6
+      },
+      {
+        "start": 423.8,
+        "end": 456.7,
+        "dur": 32.9
+      },
+      {
+        "start": 462.5,
+        "end": 498.3,
+        "dur": 35.8
+      },
+      {
+        "start": 503.2,
+        "end": 545.7,
+        "dur": 42.5
+      },
+      {
+        "start": 556.4,
+        "end": 590.3,
+        "dur": 33.9
+      },
+      {
+        "start": 601.9,
+        "end": 615.4,
+        "dur": 13.5
+      },
+      {
+        "start": 619.3,
+        "end": 654.1,
+        "dur": 34.8
+      },
+      {
+        "start": 659.0,
+        "end": 681.2,
+        "dur": 22.2
+      },
+      {
+        "start": 689.0,
+        "end": 703.5,
+        "dur": 14.5
+      },
+      {
+        "start": 709.3,
+        "end": 738.3,
+        "dur": 29.0
+      },
+      {
+        "start": 745.1,
+        "end": 784.8,
+        "dur": 39.7
+      },
+      {
+        "start": 791.5,
+        "end": 837.0,
+        "dur": 45.5
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 1.0,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "verified": "구간에서 12장 추출해 육안 확인, 오판 0/12",
+      "rejected_counts": {
+        "슬라이드": 5,
+        "롱샷/미검출": 170
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 341.1,
+      "filler_count": 21,
+      "filler_per_min": 1.49,
+      "silence_total_sec": 114.3,
+      "silence_ratio": 0.135,
+      "pitch_std": 42.3,
+      "monotone_ratio": 0.198,
+      "x_pitch_cv": 0.167,
+      "x_pitch_median_hz": 247.0,
+      "x_filler_detail": {
+        "그": 15,
+        "이제": 2,
+        "좀": 2,
+        "저": 1,
+        "어": 1
+      }
+    }
+  },
+  "MenYHcLC16M": {
+    "youtube_url": "https://www.youtube.com/watch?v=MenYHcLC16M",
+    "channel": "세바시",
+    "episode": "세바시 1134회",
+    "title": "한국인이 놓치고 사는 이 '숫자'만 바꿔도 인생이 바뀝니다",
+    "speaker": {
+      "name": "김경일",
+      "affiliation": "아주대학교 심리학과 교수"
+    },
+    "duration_sec": 1085.7,
+    "usable_sec": 458.8,
+    "usable_pct": 42.3,
+    "segment_count": 24,
+    "segments": [
+      {
+        "start": 17.4,
+        "end": 31.0,
+        "dur": 13.6
+      },
+      {
+        "start": 84.2,
+        "end": 95.8,
+        "dur": 11.6
+      },
+      {
+        "start": 102.6,
+        "end": 138.4,
+        "dur": 35.8
+      },
+      {
+        "start": 145.1,
+        "end": 157.7,
+        "dur": 12.6
+      },
+      {
+        "start": 180.9,
+        "end": 203.2,
+        "dur": 22.3
+      },
+      {
+        "start": 211.9,
+        "end": 230.3,
+        "dur": 18.4
+      },
+      {
+        "start": 237.1,
+        "end": 254.5,
+        "dur": 17.4
+      },
+      {
+        "start": 279.6,
+        "end": 291.3,
+        "dur": 11.7
+      },
+      {
+        "start": 349.3,
+        "end": 362.9,
+        "dur": 13.6
+      },
+      {
+        "start": 435.4,
+        "end": 460.6,
+        "dur": 25.2
+      },
+      {
+        "start": 478.0,
+        "end": 499.3,
+        "dur": 21.3
+      },
+      {
+        "start": 503.2,
+        "end": 535.1,
+        "dur": 31.9
+      },
+      {
+        "start": 560.3,
+        "end": 570.9,
+        "dur": 10.6
+      },
+      {
+        "start": 584.5,
+        "end": 604.8,
+        "dur": 20.3
+      },
+      {
+        "start": 646.4,
+        "end": 669.6,
+        "dur": 23.2
+      },
+      {
+        "start": 674.4,
+        "end": 689.0,
+        "dur": 14.6
+      },
+      {
+        "start": 719.9,
+        "end": 734.4,
+        "dur": 14.5
+      },
+      {
+        "start": 754.8,
+        "end": 765.4,
+        "dur": 10.6
+      },
+      {
+        "start": 775.1,
+        "end": 787.7,
+        "dur": 12.6
+      },
+      {
+        "start": 808.9,
+        "end": 848.6,
+        "dur": 39.7
+      },
+      {
+        "start": 867.0,
+        "end": 881.5,
+        "dur": 14.5
+      },
+      {
+        "start": 914.4,
+        "end": 940.5,
+        "dur": 26.1
+      },
+      {
+        "start": 991.8,
+        "end": 1006.3,
+        "dur": 14.5
+      },
+      {
+        "start": 1022.8,
+        "end": 1045.0,
+        "dur": 22.2
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 1.0,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "verified": "구간에서 12장 추출해 육안 확인, 오판 0/12",
+      "rejected_counts": {
+        "롱샷/미검출": 357,
+        "객석": 60,
+        "슬라이드": 5
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 362.1,
+      "filler_count": 42,
+      "filler_per_min": 2.32,
+      "silence_total_sec": 258.6,
+      "silence_ratio": 0.238,
+      "pitch_std": 37.9,
+      "monotone_ratio": 0.154,
+      "x_pitch_cv": 0.264,
+      "x_pitch_median_hz": 137.7,
+      "x_filler_detail": {
+        "저": 1,
+        "그": 28,
+        "이제": 3,
+        "뭐": 2,
+        "그러니까": 3,
+        "좀": 2,
+        "아": 3
+      }
+    }
+  },
+  "mtN6m5mbqV4": {
+    "youtube_url": "https://www.youtube.com/watch?v=mtN6m5mbqV4",
+    "channel": "세바시",
+    "episode": "세바시 2115회",
+    "title": "나를 망쳐가는 나쁜 습관으로부터 탈출하는 법",
+    "speaker": {
+      "name": "김경일",
+      "affiliation": "인지심리학자"
+    },
+    "duration_sec": 1120.5,
+    "usable_sec": 377.6,
+    "usable_pct": 33.7,
+    "segment_count": 20,
+    "segments": [
+      {
+        "start": 50.3,
+        "end": 73.5,
+        "dur": 23.2
+      },
+      {
+        "start": 116.1,
+        "end": 126.8,
+        "dur": 10.7
+      },
+      {
+        "start": 134.5,
+        "end": 145.1,
+        "dur": 10.6
+      },
+      {
+        "start": 169.3,
+        "end": 181.9,
+        "dur": 12.6
+      },
+      {
+        "start": 256.4,
+        "end": 274.8,
+        "dur": 18.4
+      },
+      {
+        "start": 334.8,
+        "end": 357.1,
+        "dur": 22.3
+      },
+      {
+        "start": 426.7,
+        "end": 439.3,
+        "dur": 12.6
+      },
+      {
+        "start": 450.9,
+        "end": 464.5,
+        "dur": 13.6
+      },
+      {
+        "start": 542.8,
+        "end": 559.3,
+        "dur": 16.5
+      },
+      {
+        "start": 579.6,
+        "end": 604.8,
+        "dur": 25.2
+      },
+      {
+        "start": 609.6,
+        "end": 639.6,
+        "dur": 30.0
+      },
+      {
+        "start": 649.3,
+        "end": 659.9,
+        "dur": 10.6
+      },
+      {
+        "start": 674.4,
+        "end": 707.3,
+        "dur": 32.9
+      },
+      {
+        "start": 757.7,
+        "end": 790.6,
+        "dur": 32.9
+      },
+      {
+        "start": 816.7,
+        "end": 828.3,
+        "dur": 11.6
+      },
+      {
+        "start": 842.8,
+        "end": 855.4,
+        "dur": 12.6
+      },
+      {
+        "start": 863.1,
+        "end": 891.2,
+        "dur": 28.1
+      },
+      {
+        "start": 922.2,
+        "end": 944.4,
+        "dur": 22.2
+      },
+      {
+        "start": 951.2,
+        "end": 966.7,
+        "dur": 15.5
+      },
+      {
+        "start": 980.2,
+        "end": 995.7,
+        "dur": 15.5
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 1.0,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "verified": "구간에서 12장 추출해 육안 확인, 오판 0/12",
+      "rejected_counts": {
+        "객석": 51,
+        "롱샷/미검출": 523,
+        "슬라이드": 17
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 336.8,
+      "filler_count": 34,
+      "filler_per_min": 1.82,
+      "silence_total_sec": 199.6,
+      "silence_ratio": 0.178,
+      "pitch_std": 47.9,
+      "monotone_ratio": 0.137,
+      "x_pitch_cv": 0.297,
+      "x_pitch_median_hz": 152.1,
+      "x_filler_detail": {
+        "그": 20,
+        "좀": 6,
+        "그러니까": 4,
+        "약간": 2,
+        "뭐": 1,
+        "저": 1
+      }
+    }
+  },
+  "myQeHo6IRv8": {
+    "youtube_url": "https://www.youtube.com/watch?v=myQeHo6IRv8",
+    "channel": "세바시",
+    "episode": "세바시 603회",
+    "title": "당신도 결국 알게 될 겁니다",
+    "speaker": {
+      "name": "김창옥",
+      "affiliation": "김창옥휴먼컴퍼니 대표"
+    },
+    "duration_sec": 1051.8,
+    "usable_sec": 491.6,
+    "usable_pct": 46.7,
+    "segment_count": 23,
+    "segments": [
+      {
+        "start": 71.6,
+        "end": 87.1,
+        "dur": 15.5
+      },
+      {
+        "start": 95.8,
+        "end": 115.1,
+        "dur": 19.3
+      },
+      {
+        "start": 132.6,
+        "end": 151.0,
+        "dur": 18.4
+      },
+      {
+        "start": 187.7,
+        "end": 200.3,
+        "dur": 12.6
+      },
+      {
+        "start": 256.4,
+        "end": 285.5,
+        "dur": 29.1
+      },
+      {
+        "start": 311.6,
+        "end": 327.1,
+        "dur": 15.5
+      },
+      {
+        "start": 330.9,
+        "end": 352.2,
+        "dur": 21.3
+      },
+      {
+        "start": 357.1,
+        "end": 381.2,
+        "dur": 24.1
+      },
+      {
+        "start": 449.9,
+        "end": 463.5,
+        "dur": 13.6
+      },
+      {
+        "start": 495.4,
+        "end": 506.1,
+        "dur": 10.7
+      },
+      {
+        "start": 573.8,
+        "end": 591.2,
+        "dur": 17.4
+      },
+      {
+        "start": 595.1,
+        "end": 615.4,
+        "dur": 20.3
+      },
+      {
+        "start": 631.9,
+        "end": 646.4,
+        "dur": 14.5
+      },
+      {
+        "start": 657.0,
+        "end": 668.6,
+        "dur": 11.6
+      },
+      {
+        "start": 693.8,
+        "end": 730.6,
+        "dur": 36.8
+      },
+      {
+        "start": 749.9,
+        "end": 762.5,
+        "dur": 12.6
+      },
+      {
+        "start": 765.4,
+        "end": 779.9,
+        "dur": 14.5
+      },
+      {
+        "start": 785.7,
+        "end": 803.1,
+        "dur": 17.4
+      },
+      {
+        "start": 818.6,
+        "end": 834.1,
+        "dur": 15.5
+      },
+      {
+        "start": 838.0,
+        "end": 852.5,
+        "dur": 14.5
+      },
+      {
+        "start": 858.3,
+        "end": 954.1,
+        "dur": 95.8
+      },
+      {
+        "start": 957.0,
+        "end": 971.5,
+        "dur": 14.5
+      },
+      {
+        "start": 975.4,
+        "end": 1001.5,
+        "dur": 26.1
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 1.0,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "rejected_counts": {
+        "슬라이드": 22,
+        "롱샷/미검출": 244,
+        "객석": 90
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 319.7,
+      "filler_count": 50,
+      "filler_per_min": 2.85,
+      "silence_total_sec": 232.6,
+      "silence_ratio": 0.221,
+      "pitch_std": 41.3,
+      "monotone_ratio": 0.184,
+      "x_pitch_cv": 0.282,
+      "x_pitch_median_hz": 138.0,
+      "x_filler_detail": {
+        "아": 7,
+        "그": 12,
+        "그러니까": 4,
+        "뭐": 5,
+        "어": 1,
+        "좀": 8,
+        "이제": 12,
+        "저": 1
+      }
+    }
+  }
+}
