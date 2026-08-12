@@ -370,12 +370,12 @@ export default function CoachingResult({ result }) {
   const gestureStatus = metrics.gestures < 5 || metrics.gestures > 50 ? 'warn' : 'good'
 
   const radarData = [
-    { subject: '시선', score: metrics.gazeRatio == null ? 0 : score(metrics.gazeRatio, 0, 0.4) },
-    { subject: '자세', score: metrics.tilt == null ? 0 : score(metrics.tilt, 0, 20) },
+    metrics.gazeRatio == null ? null : { subject: '시선', score: score(metrics.gazeRatio, 0, 0.4) },
+    metrics.tilt == null ? null : { subject: '자세', score: score(metrics.tilt, 0, 20) },
     { subject: '제스처', score: metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90 },
-    { subject: '집중도', score: metrics.blinkRatio == null ? 0 : score(metrics.blinkRatio, 0, 0.5) },
-    { subject: '발화', score: metrics.silenceRatio == null ? 0 : score(metrics.silenceRatio, 0, 0.7) },
-  ]
+    metrics.blinkRatio == null ? null : { subject: '집중도', score: score(metrics.blinkRatio, 0, 0.5) },
+    metrics.silenceRatio == null ? null : { subject: '발화', score: score(metrics.silenceRatio, 0, 0.7) },
+  ].filter(Boolean)
 
   const parsedSections = useMemo(() => parseCoachingSections(coaching), [coaching])
   const frames = useMemo(() => normalizeFrames(problem_frames), [problem_frames])
@@ -426,13 +426,19 @@ export default function CoachingResult({ result }) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)]">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-950">종합 점수</h2>
-            <ResponsiveContainer width="100%" height={240}>
-              <RadarChart data={radarData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
-                <Radar dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.28} />
-              </RadarChart>
-            </ResponsiveContainer>
+            {radarData.length >= 3 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <RadarChart data={radarData}>
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
+                  <Radar dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.28} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[240px] items-center justify-center text-sm text-slate-500">
+                분석 가능한 항목이 부족하여 종합 차트를 표시할 수 없습니다.
+              </div>
+            )}
           </section>
 
           {gaze_timeline?.length > 1 && (
