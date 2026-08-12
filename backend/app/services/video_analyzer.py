@@ -12,6 +12,7 @@ import mediapipe as mp
 import numpy as np
 
 from app.core.config import settings
+from app.services.audio_analyzer import analyze_audio
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -393,8 +394,31 @@ def _fallback_coaching(metrics: dict) -> str:
         f"## 다음 연습 우선순위\n1. {priorities[0]}\n2. {priorities[1]}",
     ])
 
+def _video_duration_sec(video_path: Path) -> float | None:
+    """영상 길이(초). 스키마의 meta.duration_sec으로 나간다."""
+    cap = cv2.VideoCapture(str(video_path))
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    finally:
+        cap.release()
+
+    if not fps or fps < 1 or fps > 120 or not frame_count or frame_count < 1:
+        return None
+    return round(frame_count / fps, 1)
+
+
 def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str, Any]:
     metrics = analyze_video(video_path, on_step)
+
+    # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
+    if settings.enable_audio_analysis:
+        metrics["audio_metrics"] = analyze_audio(video_path)
+    else:
+        metrics["audio_metrics"] = None
+
+    metrics["duration_sec"] = _video_duration_sec(video_path)
+
     if on_step:
         on_step(5)
     coaching = _gemini_coaching(metrics, api_key)

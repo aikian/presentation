@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     static_dir: str = str(BASE_DIR / "static")
     max_upload_size_mb: int = 500
     frame_interval_sec: int = 2
+    whisper_model: str = "small"
+    enable_audio_analysis: bool = True
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 60 * 24  # 24시간
     supabase_url: str = ""

@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import get_supabase
 from app.middleware.auth import CurrentUser, get_current_user
+from app.services.analysis_schema import build_details
 from app.services.score_calculator import calculate_scores
 from app.services.video_analyzer import run_full_analysis
 
@@ -42,6 +43,14 @@ def _run_job(
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
 
+        # 팀 공유 스키마(docs/schema/) 형식. analysis_results.details에 통째로 저장한다.
+        details = build_details(
+            result,
+            duration_sec=result.get("duration_sec"),
+            frame_interval_sec=settings.frame_interval_sec,
+            target_time_sec=goal_sec,
+        )
+
         _jobs[job_id] = {"status": "done", "step": 5, "result": result}
 
         try:
@@ -61,6 +70,7 @@ def _run_job(
                 "score_gesture": scores["score_gesture"],
                 "score_time": scores["score_time"],
                 "score_total": scores["score_total"],
+                "details": details,
             }
             if elapsed_sec is not None:
                 sb_payload["elapsed_sec"] = elapsed_sec
