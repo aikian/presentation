@@ -644,5 +644,537 @@
         "저": 1
       }
     }
+  },
+  "2G4_R02sM28": {
+    "youtube_url": "https://www.youtube.com/watch?v=2G4_R02sM28",
+    "channel": "세바시",
+    "episode": "세바시",
+    "title": "한마디 말로 사람은 성장해요",
+    "speaker": {
+      "name": "이금희",
+      "affiliation": "아나운서"
+    },
+    "duration_sec": 882.4,
+    "usable_sec": 417.3,
+    "usable_pct": 47.3,
+    "segment_count": 25,
+    "segments": [
+      {
+        "start": 3.5,
+        "end": 14.7,
+        "dur": 11.2
+      },
+      {
+        "start": 19.4,
+        "end": 29.6,
+        "dur": 10.2
+      },
+      {
+        "start": 75.0,
+        "end": 89.5,
+        "dur": 14.5
+      },
+      {
+        "start": 126.8,
+        "end": 137.6,
+        "dur": 10.8
+      },
+      {
+        "start": 141.8,
+        "end": 176.8,
+        "dur": 35.0
+      },
+      {
+        "start": 188.5,
+        "end": 205.3,
+        "dur": 16.8
+      },
+      {
+        "start": 243.2,
+        "end": 260.4,
+        "dur": 17.2
+      },
+      {
+        "start": 337.5,
+        "end": 352.0,
+        "dur": 14.5
+      },
+      {
+        "start": 376.2,
+        "end": 391.7,
+        "dur": 15.5
+      },
+      {
+        "start": 393.6,
+        "end": 406.1,
+        "dur": 12.5
+      },
+      {
+        "start": 435.1,
+        "end": 450.1,
+        "dur": 15.0
+      },
+      {
+        "start": 461.3,
+        "end": 488.4,
+        "dur": 27.1
+      },
+      {
+        "start": 496.8,
+        "end": 513.1,
+        "dur": 16.3
+      },
+      {
+        "start": 519.7,
+        "end": 530.5,
+        "dur": 10.8
+      },
+      {
+        "start": 547.2,
+        "end": 575.8,
+        "dur": 28.6
+      },
+      {
+        "start": 609.9,
+        "end": 625.2,
+        "dur": 15.3
+      },
+      {
+        "start": 655.1,
+        "end": 676.6,
+        "dur": 21.5
+      },
+      {
+        "start": 687.0,
+        "end": 704.6,
+        "dur": 17.6
+      },
+      {
+        "start": 708.4,
+        "end": 723.4,
+        "dur": 15.0
+      },
+      {
+        "start": 726.6,
+        "end": 737.4,
+        "dur": 10.8
+      },
+      {
+        "start": 757.5,
+        "end": 777.5,
+        "dur": 20.0
+      },
+      {
+        "start": 781.8,
+        "end": 795.8,
+        "dur": 14.0
+      },
+      {
+        "start": 797.6,
+        "end": 814.5,
+        "dur": 16.9
+      },
+      {
+        "start": 829.9,
+        "end": 840.1,
+        "dur": 10.2
+      },
+      {
+        "start": 842.5,
+        "end": 862.5,
+        "dur": 20.0
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 0.5,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "rejected_counts": {
+        "롱샷/미검출": 682,
+        "슬라이드": 8,
+        "객석": 8
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 355.2,
+      "filler_count": 26,
+      "filler_per_min": 1.77,
+      "silence_total_sec": 220.6,
+      "silence_ratio": 0.25,
+      "pitch_std": 63.1,
+      "monotone_ratio": 0.152,
+      "x_pitch_cv": 0.283,
+      "x_pitch_median_hz": 216.5,
+      "x_filler_detail": {
+        "그": 14,
+        "좀": 4,
+        "이제": 4,
+        "뭐": 1,
+        "그러니까": 1,
+        "어": 1,
+        "저": 1
+      }
+    }
+  },
+  "srp8defXNNI": {
+    "youtube_url": "https://www.youtube.com/watch?v=srp8defXNNI",
+    "channel": "세바시",
+    "episode": "세바시",
+    "title": "융합적 사고를 위해 버려야 할 것",
+    "speaker": {
+      "name": "조승연",
+      "affiliation": "작가"
+    },
+    "duration_sec": 961.8,
+    "usable_sec": 574.6,
+    "usable_pct": 59.7,
+    "segment_count": 28,
+    "segments": [
+      {
+        "start": 33.4,
+        "end": 78.7,
+        "dur": 45.3
+      },
+      {
+        "start": 110.0,
+        "end": 121.2,
+        "dur": 11.2
+      },
+      {
+        "start": 127.8,
+        "end": 142.7,
+        "dur": 14.9
+      },
+      {
+        "start": 145.1,
+        "end": 166.1,
+        "dur": 21.0
+      },
+      {
+        "start": 173.1,
+        "end": 195.1,
+        "dur": 22.0
+      },
+      {
+        "start": 197.8,
+        "end": 209.1,
+        "dur": 11.3
+      },
+      {
+        "start": 228.2,
+        "end": 247.3,
+        "dur": 19.1
+      },
+      {
+        "start": 250.7,
+        "end": 265.6,
+        "dur": 14.9
+      },
+      {
+        "start": 281.4,
+        "end": 295.4,
+        "dur": 14.0
+      },
+      {
+        "start": 309.4,
+        "end": 323.9,
+        "dur": 14.5
+      },
+      {
+        "start": 327.2,
+        "end": 345.4,
+        "dur": 18.2
+      },
+      {
+        "start": 382.4,
+        "end": 412.2,
+        "dur": 29.8
+      },
+      {
+        "start": 416.4,
+        "end": 427.2,
+        "dur": 10.8
+      },
+      {
+        "start": 435.1,
+        "end": 463.1,
+        "dur": 28.0
+      },
+      {
+        "start": 492.1,
+        "end": 516.9,
+        "dur": 24.8
+      },
+      {
+        "start": 544.9,
+        "end": 558.5,
+        "dur": 13.6
+      },
+      {
+        "start": 561.8,
+        "end": 588.9,
+        "dur": 27.1
+      },
+      {
+        "start": 602.4,
+        "end": 618.2,
+        "dur": 15.8
+      },
+      {
+        "start": 622.0,
+        "end": 636.5,
+        "dur": 14.5
+      },
+      {
+        "start": 645.8,
+        "end": 658.9,
+        "dur": 13.1
+      },
+      {
+        "start": 661.7,
+        "end": 684.1,
+        "dur": 22.4
+      },
+      {
+        "start": 717.8,
+        "end": 731.8,
+        "dur": 14.0
+      },
+      {
+        "start": 734.5,
+        "end": 763.5,
+        "dur": 29.0
+      },
+      {
+        "start": 772.9,
+        "end": 794.9,
+        "dur": 22.0
+      },
+      {
+        "start": 797.6,
+        "end": 825.2,
+        "dur": 27.6
+      },
+      {
+        "start": 835.0,
+        "end": 867.7,
+        "dur": 32.7
+      },
+      {
+        "start": 875.1,
+        "end": 887.8,
+        "dur": 12.7
+      },
+      {
+        "start": 895.8,
+        "end": 926.1,
+        "dur": 30.3
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 0.5,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "rejected_counts": {
+        "롱샷/미검출": 707,
+        "슬라이드": 10,
+        "객석": 69
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 411.7,
+      "filler_count": 29,
+      "filler_per_min": 1.81,
+      "silence_total_sec": 141.5,
+      "silence_ratio": 0.147,
+      "pitch_std": 36.9,
+      "monotone_ratio": 0.245,
+      "x_pitch_cv": 0.176,
+      "x_pitch_median_hz": 208.9,
+      "x_filler_detail": {
+        "인제": 2,
+        "그": 20,
+        "이제": 2,
+        "저": 2,
+        "그러니까": 1,
+        "아": 1,
+        "좀": 1
+      }
+    }
+  },
+  "RLXvgIHyGoA": {
+    "youtube_url": "https://www.youtube.com/watch?v=RLXvgIHyGoA",
+    "channel": "세바시",
+    "episode": "세바시",
+    "title": "당신의 결심이 작심삼일로 끝나지 않으려면",
+    "speaker": {
+      "name": "김미경",
+      "affiliation": "강사"
+    },
+    "duration_sec": 1008.1,
+    "usable_sec": 482.8,
+    "usable_pct": 47.9,
+    "segment_count": 24,
+    "segments": [
+      {
+        "start": 8.2,
+        "end": 18.4,
+        "dur": 10.2
+      },
+      {
+        "start": 35.8,
+        "end": 47.9,
+        "dur": 12.1
+      },
+      {
+        "start": 73.5,
+        "end": 85.2,
+        "dur": 11.7
+      },
+      {
+        "start": 88.5,
+        "end": 107.7,
+        "dur": 19.2
+      },
+      {
+        "start": 113.8,
+        "end": 127.3,
+        "dur": 13.5
+      },
+      {
+        "start": 171.7,
+        "end": 186.2,
+        "dur": 14.5
+      },
+      {
+        "start": 201.6,
+        "end": 228.2,
+        "dur": 26.6
+      },
+      {
+        "start": 238.4,
+        "end": 252.5,
+        "dur": 14.1
+      },
+      {
+        "start": 259.1,
+        "end": 294.1,
+        "dur": 35.0
+      },
+      {
+        "start": 334.7,
+        "end": 345.4,
+        "dur": 10.7
+      },
+      {
+        "start": 361.8,
+        "end": 375.8,
+        "dur": 14.0
+      },
+      {
+        "start": 383.8,
+        "end": 407.1,
+        "dur": 23.3
+      },
+      {
+        "start": 418.8,
+        "end": 433.2,
+        "dur": 14.4
+      },
+      {
+        "start": 437.4,
+        "end": 458.5,
+        "dur": 21.1
+      },
+      {
+        "start": 505.2,
+        "end": 518.8,
+        "dur": 13.6
+      },
+      {
+        "start": 591.1,
+        "end": 607.5,
+        "dur": 16.4
+      },
+      {
+        "start": 625.2,
+        "end": 651.0,
+        "dur": 25.8
+      },
+      {
+        "start": 703.8,
+        "end": 716.4,
+        "dur": 12.6
+      },
+      {
+        "start": 722.5,
+        "end": 738.3,
+        "dur": 15.8
+      },
+      {
+        "start": 777.0,
+        "end": 803.2,
+        "dur": 26.2
+      },
+      {
+        "start": 817.8,
+        "end": 840.1,
+        "dur": 22.3
+      },
+      {
+        "start": 862.1,
+        "end": 907.0,
+        "dur": 44.9
+      },
+      {
+        "start": 916.8,
+        "end": 942.9,
+        "dur": 26.1
+      },
+      {
+        "start": 950.4,
+        "end": 989.1,
+        "dur": 38.7
+      }
+    ],
+    "screening": {
+      "tool": "MediaPipe FaceMesh",
+      "sample_interval_sec": 0.5,
+      "min_face_ratio": 0.17,
+      "second_face_ratio": 0.5,
+      "max_brightness": 120,
+      "min_segment_sec": 10.0,
+      "rejected_counts": {
+        "슬라이드": 14,
+        "롱샷/미검출": 700,
+        "객석": 92
+      }
+    },
+    "audio_summary": {
+      "spm_avg": 372.5,
+      "filler_count": 32,
+      "filler_per_min": 1.9,
+      "silence_total_sec": 211.8,
+      "silence_ratio": 0.21,
+      "pitch_std": 52.5,
+      "monotone_ratio": 0.217,
+      "x_pitch_cv": 0.262,
+      "x_pitch_median_hz": 191.1,
+      "x_filler_detail": {
+        "저": 6,
+        "뭐": 8,
+        "그": 10,
+        "그러니까": 2,
+        "좀": 1,
+        "이제": 4,
+        "아": 1
+      }
+    }
   }
 }
