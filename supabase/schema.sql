@@ -52,6 +52,10 @@ alter table public.analysis_results
   alter column problem_frames set default '[]'::jsonb,
   alter column problem_frames set not null;
 
+-- 2학기 스키마 v0.1: 분석 결과 JSON 전체 저장 (구조는 docs/schema/ 참고, 기존 평면 컬럼은 호환용 유지)
+alter table public.analysis_results
+  add column if not exists details jsonb;
+
 create index if not exists analysis_results_user_created_at_idx
   on public.analysis_results (user_id, created_at desc);
 
