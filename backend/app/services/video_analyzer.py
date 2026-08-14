@@ -128,8 +128,9 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     frames = _extract_frames(video_path)
     if not frames:
         return {
-            "gaze_away_ratio": 0.0, "shoulder_tilt_avg": 0.0, "gesture_count": 0,
-            "ear_blink_ratio": 0.0, "silence_ratio": 0.0,
+            "gaze_away_ratio": None, "face_detected_ratio": 0.0,
+            "shoulder_tilt_avg": None, "gesture_count": 0,
+            "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
         }
@@ -212,21 +213,23 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                 gesture_count += len(result.multi_hand_landmarks)
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
-    gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else 0.0
-    shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else 0.0
+    gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
+    face_detected_ratio = (len(gaze_scores) / len(frames)) if frames else 0.0
+    shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else None
 
     # EAR 기반 눈 감음 비율
-    ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else 0.0
+    ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else None
 
     # 입 움직임 기반 침묵 비율 (MAR이 낮으면 미발화)
-    silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else 0.0
+    silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else None
 
     return {
-        "gaze_away_ratio": round(gaze_away_ratio, 3),
-        "shoulder_tilt_avg": round(shoulder_tilt_avg, 2),
+        "gaze_away_ratio": round(gaze_away_ratio, 3) if gaze_away_ratio is not None else None,
+        "face_detected_ratio": round(face_detected_ratio, 3),
+        "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
-        "ear_blink_ratio": round(ear_blink_ratio, 3),
-        "silence_ratio": round(silence_ratio, 3),
+        "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
+        "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
         "problem_frames": problem_frames,
     }
@@ -240,14 +243,24 @@ def _gemini_model_candidates() -> list[str]:
 
 
 def _build_coaching_prompt(metrics: dict) -> str:
+    gaze_ratio = metrics.get("gaze_away_ratio")
+    shoulder_tilt = metrics.get("shoulder_tilt_avg")
+    blink_ratio = metrics.get("ear_blink_ratio")
+    silence_ratio = metrics.get("silence_ratio")
+
+    gaze_text = f"{gaze_ratio * 100:.1f}%" if gaze_ratio is not None else "분석 불가"
+    pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
+    blink_text = f"{blink_ratio * 100:.1f}%" if blink_ratio is not None else "분석 불가"
+    silence_text = f"{silence_ratio * 100:.1f}%" if silence_ratio is not None else "분석 불가"
+
     return f"""
 당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 한국어로 구체적인 개선 코칭을 작성하세요.
 
-- 시선 이탈 비율: {metrics['gaze_away_ratio'] * 100:.1f}%
-- 어깨 기울기 평균: {metrics['shoulder_tilt_avg']:.1f}도
+- 시선 이탈 비율: {gaze_text}
+- 어깨 기울기 평균: {pose_text}
 - 제스처 횟수: {metrics['gesture_count']}회
-- 눈 감음 비율: {metrics['ear_blink_ratio'] * 100:.1f}%
-- 침묵 구간 비율: {metrics['silence_ratio'] * 100:.1f}%
+- 눈 감음 비율: {blink_text}
+- 침묵 구간 비율: {silence_text}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
 각 섹션은 짧고 실행 가능한 문장으로 작성하고, 코드블록이나 표는 사용하지 마세요.
@@ -318,13 +331,21 @@ def _gemini_coaching(metrics: dict, api_key: str) -> str:
 
 
 def _fallback_coaching(metrics: dict) -> str:
-    ratio = metrics["gaze_away_ratio"] * 100
-    tilt = metrics["shoulder_tilt_avg"]
-    gestures = metrics["gesture_count"]
-    blink = metrics.get("ear_blink_ratio", 0) * 100
-    silence = metrics.get("silence_ratio", 0) * 100
+    gaze_ratio = metrics.get("gaze_away_ratio")
+    shoulder_tilt = metrics.get("shoulder_tilt_avg")
+    blink_ratio = metrics.get("ear_blink_ratio")
+    silence_ratio = metrics.get("silence_ratio")
 
-    if ratio > 30:
+    ratio = gaze_ratio * 100 if gaze_ratio is not None else None
+    tilt = shoulder_tilt if shoulder_tilt is not None else None
+    gestures = metrics["gesture_count"]
+    blink = blink_ratio * 100 if blink_ratio is not None else None
+    silence = silence_ratio * 100 if silence_ratio is not None else None
+
+    if ratio is None:
+        gaze_diagnosis = "얼굴이 충분히 검출되지 않아 시선 분석이 어렵습니다."
+        gaze_coaching = "얼굴 전체가 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif ratio > 30:
         gaze_diagnosis = f"발표 시간의 {ratio:.0f}% 동안 시선이 이탈해 청중과의 연결감이 약해질 수 있습니다."
         gaze_coaching = "핵심 문장을 말할 때마다 카메라를 2초 이상 바라보고, 슬라이드는 문장 사이에만 확인하세요."
     elif ratio > 15:
@@ -334,7 +355,10 @@ def _fallback_coaching(metrics: dict) -> str:
         gaze_diagnosis = f"시선 이탈이 {ratio:.0f}%로 안정적인 편입니다."
         gaze_coaching = "현재 리듬을 유지하되, 강조 문장에서는 카메라 응시 시간을 조금 더 길게 가져가세요."
 
-    if tilt > 15:
+    if tilt is None:
+        pose_diagnosis = "자세가 충분히 검출되지 않아 어깨 기울기를 분석하기 어렵습니다."
+        pose_coaching = "상체와 양쪽 어깨가 카메라 화면에 모두 보이도록 위치를 조정한 뒤 다시 분석해보세요."
+    elif tilt > 15:
         pose_diagnosis = f"어깨 기울기가 평균 {tilt:.1f}도로 커서 화면에서 자세가 불안정해 보일 수 있습니다."
         pose_coaching = "발표 전 양발을 같은 간격으로 두고, 문단이 바뀔 때마다 어깨 높이를 한 번씩 점검하세요."
     elif tilt > 8:
@@ -354,14 +378,20 @@ def _fallback_coaching(metrics: dict) -> str:
         gesture_diagnosis = f"제스처 사용이 {gestures}회로 적절한 편입니다."
         gesture_coaching = "현재 빈도를 유지하면서 숫자, 방향, 크기 표현에 맞춰 제스처 종류를 분명히 나눠보세요."
 
-    if blink > 40:
+    if blink is None:
+        focus_diagnosis = "얼굴이 충분히 검출되지 않아 눈 감음 비율을 분석하기 어렵습니다."
+        focus_coaching = "얼굴과 눈이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif blink > 40:
         focus_diagnosis = f"눈 감음 비율이 {blink:.0f}%로 높아 피로하거나 자신감이 낮아 보일 수 있습니다."
         focus_coaching = "문장을 시작하기 전 숨을 짧게 들이마시고, 첫 단어를 말할 때 눈을 크게 뜨는 연습을 하세요."
     else:
         focus_diagnosis = f"눈 감음 비율이 {blink:.0f}%로 크게 문제되지 않습니다."
         focus_coaching = "발표 속도가 빨라질 때도 눈을 가늘게 뜨지 않도록 카메라 상단을 기준점으로 삼으세요."
 
-    if silence > 50:
+    if silence is None:
+        speech_diagnosis = "얼굴이 충분히 검출되지 않아 입 움직임 기반 침묵 비율을 분석하기 어렵습니다."
+        speech_coaching = "얼굴과 입이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
+    elif silence > 50:
         speech_diagnosis = f"침묵 구간이 {silence:.0f}%로 많아 발표 흐름이 자주 끊길 수 있습니다."
         speech_coaching = "슬라이드마다 첫 문장과 연결 문장을 미리 정해두고, 다음 장으로 넘어갈 때 짧은 브릿지 문장을 사용하세요."
     else:
@@ -369,23 +399,26 @@ def _fallback_coaching(metrics: dict) -> str:
         speech_coaching = "지금 흐름을 유지하되, 중요한 설명 뒤에는 의도적인 1초 멈춤으로 강조를 만들어보세요."
 
     priorities = []
-    if ratio > 15:
+    if ratio is not None and ratio > 15:
         priorities.append("시선 이탈을 줄이기 위해 핵심 문장마다 카메라 응시를 고정하세요.")
-    if tilt > 8:
+    if tilt is not None and tilt > 8:
         priorities.append("어깨 균형을 맞추기 위해 발표 전 자세 기준점을 정하세요.")
     if gestures < 5 or gestures > 50:
         priorities.append("제스처 빈도를 조절해 강조 지점에만 손동작을 사용하세요.")
-    if blink > 40:
+    if blink is not None and blink > 40:
         priorities.append("눈 감음 비율을 낮추기 위해 문장 시작 시 카메라를 또렷하게 바라보세요.")
-    if silence > 50:
+    if silence is not None and silence > 50:
         priorities.append("침묵 구간을 줄이기 위해 슬라이드별 연결 문장을 준비하세요.")
     priorities = (priorities + [
         "발표 시작과 결론에서 카메라 응시를 의식적으로 유지하세요.",
         "다음 연습에서는 한 항목만 정해 녹화 후 바로 비교하세요.",
     ])[:2]
 
+    gaze_summary = f"{ratio:.0f}%" if ratio is not None else "분석 불가"
+    pose_summary = f"{tilt:.1f}도" if tilt is not None else "분석 불가"
+
     return "\n\n".join([
-        f"## 한줄 요약\n- 시선 {ratio:.0f}%, 자세 {tilt:.1f}도, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
+        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
         f"## 시선\n**진단:** {gaze_diagnosis}\n**코칭:** {gaze_coaching}",
         f"## 자세\n**진단:** {pose_diagnosis}\n**코칭:** {pose_coaching}",
         f"## 제스처\n**진단:** {gesture_diagnosis}\n**코칭:** {gesture_coaching}",
