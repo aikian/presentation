@@ -131,7 +131,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
             "shoulder_tilt_avg": None, "gesture_count": 0,
             "ear_blink_ratio": None, "silence_ratio": None,
-            "gaze_timeline": [], "problem_frames": [],
+            "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
         }
 
@@ -146,6 +146,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     problem_pose_frame: dict[str, Any] | None = None
     max_pose_tilt = 0.0
     gesture_count = 0
+
+    video_timeline = [{"sec": round(i * settings.frame_interval_sec, 1), "posture": None, "gesture": None} for i in range(len(frames))]
 
     # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
     _step(2)
@@ -192,6 +194,11 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             if result.pose_landmarks:
                 tilt = _shoulder_tilt(result.pose_landmarks)
                 shoulder_tilts.append(tilt)
+                video_timeline[i]["posture"] = {
+                    "shoulder_tilt_deg": round(tilt, 1),
+                    "lean_dir": None,
+                    "score": None,
+                }
                 if tilt > 10 and tilt > max_pose_tilt:
                     max_pose_tilt = tilt
                     problem_pose_frame = {
@@ -206,9 +213,14 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     # Step 4: 제스처 분석 (Hands)
     _step(4)
     with mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
-        for frame in frames:
+        for i, frame in enumerate(frames):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = hands.process(rgb)
+            hands_visible = bool(result.multi_hand_landmarks)
+            video_timeline[i]["gesture"] = {
+                "active": None,
+                "hands_visible": hands_visible,
+            }
             if result.multi_hand_landmarks:
                 gesture_count += len(result.multi_hand_landmarks)
 
@@ -231,6 +243,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
         "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
+        "video_timeline": video_timeline,
         "problem_frames": problem_frames,
     }
 
