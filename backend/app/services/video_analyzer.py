@@ -83,9 +83,30 @@ def _mar(landmarks, w: int, h: int) -> float:
 
 
 def _shoulder_tilt(pose_landmarks) -> float:
+    return abs(_shoulder_tilt_signed(pose_landmarks))
+
+
+def _shoulder_tilt_signed(pose_landmarks) -> float:
     l = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
     r = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-    return abs(math.degrees(math.atan2(l.y - r.y, l.x - r.x)))
+
+    angle = math.degrees(math.atan2(l.y - r.y, l.x - r.x))
+
+    if angle > 90:
+        angle -= 180
+    elif angle < -90:
+        angle += 180
+
+    return angle
+
+
+def _lean_direction(pose_landmarks, threshold_deg: float = 5.0) -> str:
+    signed_tilt = _shoulder_tilt_signed(pose_landmarks)
+
+    if abs(signed_tilt) < threshold_deg:
+        return "none"
+
+    return "left" if signed_tilt < 0 else "right"
 
 
 def _extract_frames(video_path: Path):
@@ -195,9 +216,12 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             if result.pose_landmarks:
                 tilt = _shoulder_tilt(result.pose_landmarks)
                 shoulder_tilts.append(tilt)
+
+                lean_dir = _lean_direction(result.pose_landmarks)
+                
                 video_timeline[i]["posture"] = {
                     "shoulder_tilt_deg": round(tilt, 1),
-                    "lean_dir": None,
+                    "lean_dir": lean_dir,
                     "score": None,
                 }
                 if tilt > 10 and tilt > max_pose_tilt:
