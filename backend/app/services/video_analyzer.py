@@ -146,6 +146,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     problem_pose_frame: dict[str, Any] | None = None
     max_pose_tilt = 0.0
     gesture_count = 0
+    prev_wrist_positions = []
 
     video_timeline = [{"sec": round(i * settings.frame_interval_sec, 1), "posture": None, "gesture": None} for i in range(len(frames))]
 
@@ -221,8 +222,39 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                 "active": None,
                 "hands_visible": hands_visible,
             }
+
+            current_wrist_positions = []
+
             if result.multi_hand_landmarks:
                 gesture_count += len(result.multi_hand_landmarks)
+
+                for hand_landmarks in result.multi_hand_landmarks:
+                    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+                    current_wrist_positions.append(np.array([wrist.x, wrist.y]))
+
+                if prev_wrist_positions:
+                    remaining_prev = prev_wrist_positions.copy()
+                    movements = []
+
+                    for current in current_wrist_positions:
+                        if not remaining_prev:
+                            break
+
+                        distances = [float(np.linalg.norm(current - prev)) for prev in remaining_prev]
+                        min_idx = int(np.argmin(distances))
+                        movements.append(distances[min_idx])
+                        remaining_prev.pop(min_idx)
+
+                    if movements:
+                        print(
+                            f"[GESTURE TEST] sec={round(i * settings.frame_interval_sec, 1)}, "
+                            f"movements={[round(m, 4) for m in movements]}, "
+                            f"avg={np.mean(movements):.4f}"
+                        )
+
+                prev_wrist_positions = current_wrist_positions
+            else:
+                prev_wrist_positions = []
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
