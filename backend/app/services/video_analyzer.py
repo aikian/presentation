@@ -246,11 +246,11 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                         remaining_prev.pop(min_idx)
 
                     if movements:
-                        print(
-                            f"[GESTURE TEST] sec={round(i * settings.frame_interval_sec, 1)}, "
-                            f"movements={[round(m, 4) for m in movements]}, "
-                            f"avg={np.mean(movements):.4f}"
-                        )
+                        movement_max = max(movements)
+                        active = movement_max >= 0.10
+
+                        video_timeline[i]["gesture"]["active"] = active
+
 
                 prev_wrist_positions = current_wrist_positions
             else:
@@ -266,6 +266,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
     # 입 움직임 기반 침묵 비율 (MAR이 낮으면 미발화)
     silence_ratio = float(np.mean([m < MAR_SPEAK_THRESHOLD for m in mar_values])) if mar_values else None
+
 
     return {
         "gaze_away_ratio": round(gaze_away_ratio, 3) if gaze_away_ratio is not None else None,
