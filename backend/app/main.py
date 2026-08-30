@@ -1,11 +1,10 @@
-﻿from pathlib import Path
-
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
 from app.core.config import settings
-from app.routers import analysis, auth, history, slides
+# [수정] board 라우터 추가 (발표 영상 공유 게시판 기능)
+from app.routers import analysis, auth, history, slides, board
 
 app = FastAPI(title="PresentationCoach Presentation Analyzer")
 
@@ -29,13 +28,14 @@ app.add_middleware(
 
 Path(settings.static_dir).mkdir(parents=True, exist_ok=True)
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(slides.router, prefix="/api/slides", tags=["slides"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(history.router, prefix="/api/history", tags=["history"])
+# [신규 추가] 발표 영상 공유 게시판 기능
+app.include_router(board.router, prefix="/api/board", tags=["board"])
 
 
 @app.get("/api/health")
