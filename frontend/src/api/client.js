@@ -42,6 +42,11 @@ export async function fetchHistory(page = 1, limit = 20) {
   return data // { items: [...], page, limit }
 }
 
+export async function fetchAttentionResult(resultId) {
+  const { data } = await api.get(`/audience/${resultId}`)
+  return data
+}
+
 export async function downloadPdf(resultId) {
   const res = await api.get(`/history/${resultId}/pdf`, { responseType: 'blob' })
   const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
@@ -81,4 +86,14 @@ export async function uploadVideo(file, metadata = {}) {
 export async function pollAnalysis(jobId) {
   const { data } = await api.get(`/analysis/${jobId}`)
   return data // { status, result? }
+}
+
+export async function uploadSurveyCsv(file, resultId) {
+  const form = new FormData()
+
+  form.append("file", file)
+  form.append("result_id", resultId)
+
+  const { data } = await api.post('/audience/upload', form)
+  return data
 }

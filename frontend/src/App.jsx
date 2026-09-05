@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import PresentationMode from './pages/PresentationMode'
 import VideoAnalysis from './pages/VideoAnalysis'
 import History from './pages/History'
+import PredictAttention from './pages/PredictAttention'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -27,6 +28,7 @@ function AppRoutes() {
       <Route path="/presentation" element={<PrivateRoute><PresentationMode /></PrivateRoute>} />
       <Route path="/analysis" element={<PrivateRoute><VideoAnalysis /></PrivateRoute>} />
       <Route path="/history" element={<PrivateRoute><History /></PrivateRoute>} />
+      <Route path="/attention/:id" element={<PrivateRoute><PredictAttention /></PrivateRoute>} />
     </Routes>
   )
 }

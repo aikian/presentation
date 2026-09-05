@@ -164,6 +164,7 @@ export default function History() {
                 const date = new Date(r.created_at).toLocaleString('ko-KR')
                 const gaze = (r.gaze_away_ratio * 100).toFixed(0)
                 return (
+                  <div key={r.id}>
                   <button
                     key={r.id}
                     onClick={() => setSelected(r)}
@@ -191,6 +192,18 @@ export default function History() {
                       <p className="text-xs text-gray-400 mt-1 truncate">{r.coaching.split('\n')[0]}</p>
                     )}
                   </button>
+
+                  {/* 청중의 집중도 페이지 이동 버튼 */}
+                  <button
+                    onClick={() => {
+                      navigate(`/attention/${r.id}`)
+                    }}
+                    className="shrink-0 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded-lg px-3 py-2 transition-colors bg-white"
+                  >
+                    청중 집중도 예측
+                  </button>
+                  </div>
+
                 )
               })}
             </div>

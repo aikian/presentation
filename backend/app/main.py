@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
-from app.routers import analysis, auth, history, slides
+from app.routers import analysis, auth, history, slides, audience
 
 app = FastAPI(title="PresentationCoach Presentation Analyzer")
 
@@ -36,7 +36,8 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(slides.router, prefix="/api/slides", tags=["slides"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(history.router, prefix="/api/history", tags=["history"])
-
+# 청중 집중도 대시보드 추가
+app.include_router(audience.router, prefix="/api/audience", tags=["audience"])
 
 @app.get("/api/health")
 def health():
