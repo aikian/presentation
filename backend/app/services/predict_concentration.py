@@ -2,6 +2,7 @@ from typing import Any, List, Optional, Tuple
 import statistics
 import re
 from pathlib import Path
+from scipy.stats import zscore
 
 from app.services.audio_analyzer import analyze_audio
 
@@ -57,8 +58,6 @@ MONOTONE_NORMAL = "NORMAL"
 MONOTONE_ACTIVE = "MONOTONE"
 MONOTONE_REENGAGEMENT = "REENGAGEMENT_CANDIDATE"
 MONOTONE_EXCESSIVE = "EXCESSIVE"
-
-
 
 # 에러 발생 시 에러 결과 반환
 def make_error_result(code: str, message: str) -> dict[str, Any]:

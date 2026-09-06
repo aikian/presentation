@@ -1,8 +1,13 @@
 import io
+from typing import Any, Dict
+
 import pandas as pd
 from fastapi import UploadFile
 
-async def analyze_survey_csv(file: UploadFile, result_id: int):
+# DB에 저장되기 위한 설문 최소 응답자 수
+MIN_RESPONSES = 20
+    
+async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]:
     content = await file.read()
     
     if not content:
@@ -12,14 +17,9 @@ async def analyze_survey_csv(file: UploadFile, result_id: int):
         df = pd.read_csv(io.BytesIO(content), encoding='utf-8', na_values=["Null", "NULL", "none", ""])
     except Exception as e: 
         raise ValueError(f"CSV 파일을 읽는 중 오류가 발생했습니다: {e}")
-    
-    print("CSV 데이터:")
-    print(df)
-    
+
     if df.empty:
         raise ValueError("CSV 파일이 비어 있습니다.")
-    
-    print("컬럼:", df.columns.tolist())
     
     required_columns = [
         'participant_id', 
@@ -62,8 +62,28 @@ async def analyze_survey_csv(file: UploadFile, result_id: int):
     if((df["survey_attention_score"] < 0).any() or (df["survey_attention_score"] > 100).any()):
         raise ValueError("설문 집중도 점수는 0에서 100 사이의 값이어야 합니다.")
     
-    average_score = df["survey_attention_score"].mean()
+    average_score = float(df["survey_attention_score"].mean())
     
+    # 발표 특징 별 평균 계산
+    feature_columns = [
+        "db",
+        "pitch",
+        "spm",
+        "silence",
+        "filler",
+        "monotony"
+    ]
+    
+    feature_means: Dict[str, Any] = {}
+    
+    for column in feature_columns:
+        valid_values = df[column].dropna()
+        
+        if valid_values.empty:
+            feature_means[column] = None
+        else:
+            feature_means[column] = round(float(valid_values.mean()), 4)
+            
     participants = []
     
     for _, row in df.iterrows():
@@ -78,11 +98,28 @@ async def analyze_survey_csv(file: UploadFile, result_id: int):
             "feedback": row["feedback"]
         })
         
+    mean_data = None
+    if len(df) >= MIN_RESPONSES:
+
+        mean_data = {
+            "result_id": result_id,
+            "response_count": len(df),
+            "spm_mean": feature_means["spm"],
+            "pitch_mean": feature_means["pitch"],
+            "db_mean": feature_means["db_mean"],
+            "silence_mean": feature_means["silence_mean"],
+            "filler_mean": feature_means["filler_mean"],
+            "monotony_mean": feature_means["monotony_mean"],
+            "attention_mean": round(average_score,4,),
+        }
+
+    # result 값을 DB에 저장하도록 수정 필요
     result = {
         "result_id": result_id,
         "participant_count": len(df),
         "average_attention_score": round(float(average_score), 2),
         "participants": participants,
+        "feature_means": feature_means,
         "feedbacks": [
             {
                 "id": participant["participant_id"],
@@ -90,10 +127,9 @@ async def analyze_survey_csv(file: UploadFile, result_id: int):
             }
             for participant in participants
             if participant["feedback"]
-        ]
+        ],
+        "mean_data_available": (len(df) >= MIN_RESPONSES),
+        "mean_data": mean_data
     }
-    
-    print("분석 결과:")
-    print(result)
     
     return result
