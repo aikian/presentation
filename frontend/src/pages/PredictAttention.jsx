@@ -88,20 +88,82 @@ export default function PredictAttention() {
 
                 {/* 설문 결과가 없으면 업로드 버튼 표시 */}
                 {!surveyResult ? (
-                    <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-                        <h2 className="mb-2 text-lg font-semibold text-gray-800">
-                            청중 설문 결과가 없습니다.
-                        </h2>
-                        <p className="mb-5 text-sm text-gray-500">
-                            아래 버튼을 클릭하여 설문 결과를 CSV 파일로 업로드해주세요.
-                        </p>
-                        <CsvUpload 
-                            resultId={id}
-                            onUploaded={(data) => {
-                                console.log("CSV 분석 결과:", data)
-                                setSurveyResult(data.analysis_result)
-                            }}
-                        />
+                    <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-8">
+                        <div className="mb-6 text-center">
+                            <h2 className="mb-2 text-lg font-semibold text-gray-800">
+                                청중 설문 결과
+                            </h2>
+
+                            <p className="text-sm leading-6 text-gray-500">
+                                다음 설문 문항을 참고하여 청중 설문을 진행한 후
+                                <br/>
+                                응답 결과를 CSV 파일로 업로드해주세요.
+                            </p>
+                        </div>
+
+                        {/* 권장 설문 문항 */}
+                        <details className="mb-6 rounded-lg border border-gray-200 bg-white">
+                            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-800">
+                                권장 설문 문항 보기
+                            </summary>
+
+                            <div className="border-t border-gray-100 px-5 py-4">
+                                <ol className="list-decimal list-inside space-y-3 text-left text-sm leading-6 text-gray-700">
+                                    <li>
+                                        발표자의 말하는 속도는 적절했나요?
+                                    </li>
+
+                                    <li>
+                                        발표자의 목소리에 적절한 변화가 있어서 집중하기 좋았나요?
+                                    </li>
+
+                                    <li>
+                                        목소리 크기 강조가 적절했나요?
+                                    </li>
+
+                                    <li>
+                                        발표 중 멈춤이나 침묵이 발표 내용을 이해하는 데 적절했나요?
+                                    </li>
+
+                                    <li>
+                                        "음", "어", "그..." 등의 군말이 발표 집중에 방해가 되었나요?
+                                    </li>
+
+                                    <li>
+                                        발표를 얼마나 집중해서 들으셨나요?
+                                    </li>
+
+                                    <li>
+                                        발표가 진행되는 동안 집중력이 잘 유지되었나요?
+                                    </li>
+
+                                    <li>
+                                        자유 의견
+                                    </li>
+                                </ol>
+
+                                <div className="mt-5 rounded-lg bg-indigo-50 p-4">
+                                    <p className="text-xs leading-5 text-indigo-800">
+                                        객관식 문항은 1~5점 척도로 구성하는 것을 권장합니다.
+                                        자유 의견 문항은 서술형으로 설정해주세요.
+                                    </p>
+                                </div>
+                            </div>
+                        </details>
+
+                        {/* CSV 업로드 */}
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
+                            <h3 className="mb-2 text-sm font-semibold text-gray-800">
+                                설문 결과 CSV 업로드
+                            </h3>
+                            <CsvUpload 
+                                resultId={id}
+                                onUploaded={(data) => {
+                                    console.log("CSV 분석 결과:", data)
+                                    setSurveyResult(data.analysis_result)
+                                }}
+                            />
+                        </div>
                     </div>
                 ) : (
                     <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-8">
@@ -133,6 +195,7 @@ export default function PredictAttention() {
                                     ))}
                                 </div>
                             </div>
+
                         )}
                     </div>
                 )}
