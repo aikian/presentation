@@ -4,33 +4,6 @@ import pandas as pd
 from pandas import DataFrame
 from scipy.stats import spearmanr
 
-'''
-음성 특징 정규화 -> 스피어만 상관게수 -> 가중치 조정
-전체 발표 시간 대비 군말횟수
-임계치 업데이트 공식 
-New_threshold = Current_threshold + (learning_rate*ErrorRate*Current_threshold)
-'''
-
-'''
-각 발표에 대한 속성과 집중도 평균 구해서 데이터베이스에 저장
-저장된 데이터가 10개 이상이면 가중치와 임계치 업데이트
-
-청중 설문 데이터로 스피어만 상관계수 구하기
-스피어만 상관계수로 가중치 업데이트
-가중치 업데이트
-target_weight = DEFAULT_WEIGHT * abs(rho)
-new_weight = old_weight + learning_rate * (
-    target_weight - old_weight
-)
-
-임계치 업데이트
-error = predicted_attention - actual_attention
-delta = learning_rate * error * abs(rho)
-new_threshold = old_threshold + direction * delta 
- -> direction은 규칙에 따라서
-
-'''
-
 LEARNING_RATE = 0.1 # 학습률 지정
 
 MIN_PRESENTATIONS = 10 # 가중치 업데이트에 필요한 최소 발표 수
@@ -41,7 +14,7 @@ FEATURES = [
     "db_mean",
     "silence_mean",
     "filler_mean",
-    "monotony_mean",
+    "monotony_mean"
 ]
 
 TARGET = "attention_mean"
@@ -49,12 +22,12 @@ TARGET = "attention_mean"
 # 초기 가중치
 # DB에 저장 후 가져와서 사용하도록 수정 필요
 DEFAULT_WEIGHT: Dict[str, float] = {
-    "spm_penalty_weight" : 0.2,
-    "pitch_penalty_weight" : 0.2,
-    "db_boost_weight" : 0.2,
-    "silence_penalty_weight" : 0.2,
-    "filler_penalty_weight" : 0.2,
-    "monotone_penalty_weight" : 0.2,
+    "spm_penalty_weight" : 0.5,
+    "pitch_penalty_weight" : 0.5,
+    "db_boost_weight" : 0.5,
+    "silence_penalty_weight" : 0.5,
+    "filler_penalty_weight" : 0.5,
+    "monotone_penalty_weight" : 0.5
 }
 
 DEFAULT_THRESHOLD: Dict[str, float] = {
@@ -63,7 +36,7 @@ DEFAULT_THRESHOLD: Dict[str, float] = {
     "silence_penalty_threshold": 5.0,
     "filler_60sec_limit": 5.0,
     "monotone_penalty_threshold": 0.08,
-    "excessive_pitch_threshold": 0.25,
+    "excessive_pitch_threshold": 0.25
 }
 
 FEATURE_WEIGHT_KEY = {
@@ -72,15 +45,17 @@ FEATURE_WEIGHT_KEY = {
     "db_mean": "db_boost_weight",
     "silence_mean": "silence_penalty_weight",
     "filler_mean": "filler_penalty_weight",
-    "monotony_mean": "monotone_penalty_weight",
+    "monotony_mean": "monotone_penalty_weight"
 }
 
-FEATURE_THRESHOLD_KEY = {
-    "spm_mean": ["fast_spm_threshold", "slow_spm_threshold"],
-    "pitch_mean": ["excessive_pitch_threshold"],
-    "silence_mean": ["silence_penalty_threshold"],
-    "filler_mean": ["filler_60sec_limit"],
-    "monotony_mean": ["monotone_penalty_threshold"],
+# Feature별 모델 적용 방향
+FEATURE_DIRECTION = {
+    "spm_mean": -1,
+    "pitch_mean": -1,
+    "db_mean": +1,
+    "silence_mean": -1,
+    "filler_mean": -1,
+    "monotony_mean": -1
 }
 
 # 청중의 설문 데이터를 기반으로 각 속성들과의 스피어만 상관계수 계산
@@ -90,15 +65,16 @@ def calculate_spearmanr(result: DataFrame, feature: str) -> Dict[str, Any]:
     
     sample_length = len(data)
     
-    if sample_length == 0:
+    if sample_length < 2:
         return {
             "correlation": None,
             "p_value": None,
-            "sample_size": 0,
+            "sample_size": sample_length,
             "updated": False,
-            "reason": "유효한 데이터가 없습니다."
+            "reason": "유효한 데이터가 부족합니다."
         }
-        
+    
+    # feature 값이 모두 동일한 경우
     if data[feature].nunique() <= 1:
         return {
             "correlation": 0.0,
@@ -107,7 +83,8 @@ def calculate_spearmanr(result: DataFrame, feature: str) -> Dict[str, Any]:
             "updated": False,
             "reason": f"'{feature}' 값의 변화가 없습니다.",
         }
-
+        
+    # 집중도 값이 모두 동일한 경우
     if data[TARGET].nunique() <= 1:
         return {
             "correlation": 0.0,
@@ -142,29 +119,54 @@ def feature_corr(result: DataFrame)-> Dict[str, Dict[str, Any]]:
 
 # default_weight는 데이터 베이스에 저장 후 가져옴
 def correlation_to_weights(correlations: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-    absolute_correlations: Dict[str, float] = {}
-    result: Dict[str, float] = {}
+    target_weights: Dict[str, float] = {}
     
     for feature in FEATURES:
-        result = correlations.get(feature, {})
-        correlation = result.get("correlation") 
+        correlation_data = correlations.get(feature, {})
+        rho = correlation_data.get("correlation") 
         
-        if correlation is None:
+        if rho is None:
+            target_weights[feature] = 0.0
             continue
         
-        absolute_correlations[feature] = abs(float(correlation))
+        target_weights[feature] = abs(float(rho))
+  
+    return target_weights
 
-    total = sum(absolute_correlations.values())
-    
-    if total <= 0:
-        for feature in FEATURES:
-            result[feature] = 1 / len(FEATURES)
-            
-    else:
-        for feature in FEATURES:
-            result[feature] = absolute_correlations.get(feature, 0.0) / total
-            
-    return result
+def make_directional_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+
+    target_weights = {}
+
+    for feature in FEATURES:
+        correlation_data = correlations.get(feature, {})
+        rho = correlation_data.get("correlation")
+
+        if rho is None:
+            target_weights[feature] = 0.0
+            continue
+
+        rho = float(rho)
+        model_direction = FEATURE_DIRECTION[feature]
+
+        if rho > 0:
+            data_direction = 1
+        elif rho < 0:
+            data_direction = -1
+        else:
+            data_direction = 0
+
+        if data_direction == model_direction:
+            target_weight = abs(rho)
+
+        elif data_direction != 0:
+            target_weight = abs(rho) * 0.5
+
+        else:
+            target_weight = 0.0
+
+        target_weights[feature] = target_weight
+
+    return target_weights
 
 def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, float]) -> Dict[str, float]:
     updated_weights = {}
@@ -173,59 +175,61 @@ def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, floa
         
         weight_key = FEATURE_WEIGHT_KEY[feature]
         
-        old_weight = old_weights.get(weight_key, 0.0)
-        target_weight = target_weights.get(weight_key, 0.0)
-
-        updated_weights[weight_key] = (old_weight + LEARNING_RATE * (target_weight - old_weight))
-    
-    # 업데이트 후에도 가중치 합이 1이 되도록 정규화
-    total = sum(updated_weights.values())
-    
-    if total > 0:
-        for key, value in updated_weights:
-            updated_weights[key] = value / total
+        old_weight = old_weights.get(weight_key, DEFAULT_WEIGHT[weight_key])
+        target_weight = target_weights.get(feature, old_weight)
+        
+        new_weight = (old_weight + LEARNING_RATE * (target_weight - old_weight))
+        updated_weights[weight_key] = max(0.0, new_weight)
     
     return updated_weights        
 
-# DB에 저장하도록 코드 수정 필요
-def update_group_weight(presentation_data: DataFrame, audience_group: str, old_weights: Dict[str, float] | None = None) -> Dict[str, Any]:
+def analyze_feature_direction(correlations: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    result = {}
     
-    # 특정 청중 그룹의 발표가 10개 이상 쌓이면 해당 그룹의 가중치 업데이트
-    
-    group_data = presentation_data[presentation_data["audience_group"]== audience_group].copy
-    
-    presentation_count = len(group_data)
-    if presentation_count < MIN_PRESENTATIONS:
-        return {
-            "updated": False,
-            "audience_group": audience_group,
-            "presentation_count": presentation_count,
-            "reason": (f"{audience_group} 그룹의 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.")
+    for feature in FEATURES:
+        correlation_data = correlations.get(feature, {})
+        rho = correlation_data.get("correlation")
+        
+        model_direction = FEATURE_DIRECTION[feature]
+        
+        if rho is None:
+            result[feature] = {
+                "rho": None,
+                "model_direction": model_direction,
+                "data_direction": 0,
+                "direction_match": None
+            }
+            
+            continue
+        
+        rho = float(rho)
+        
+        if rho > 0:
+            data_direction = 1
+        elif rho < 0:
+            data_direction = -1
+        else:
+            data_direction = 0
+        
+        if data_direction == 0:
+            direction_match = None
+        else:
+            direction_match = (data_direction == model_direction)
+            
+        result[feature] = {
+            "rho": rho,
+            "model_direction": model_direction,
+            "data_direction": data_direction,
+            "direction_match": direction_match
         }
-    
-    if old_weights is None:
-        old_weights = DEFAULT_WEIGHT.copy()
-    
-    correlations = feature_corr(group_data)
-    target_weights = correlation_to_weights(correlations)
-    
-    updated_weights = update_weights(old_weights, target_weights)
-    
-    return {
-        "updated": True,
-        "audience_group": audience_group,
-        "presentation_count": presentation_count,
-        "correlations": correlations,
-        "old_weights": old_weights,
-        "updated_weights": updated_weights,
-    }
+        
+    return result
 
 '''
 def update_threshold(df: DataFrame, corr: Dict[str, Any]):
     actual_attention = df['attention']
     error = predicted_attention - actual_attention
     delta = learning_rate * error * abs(corr)
-    #
     new_threshold = old_threshold + direction * delta 
 '''
 
@@ -249,7 +253,7 @@ def update_group_model(
             "updated": False,
             "audience_group": audience_group,
             "presentation_count": presentation_count,
-            "reason": (f"{audience_group} 그룹의 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다."),
+            "reason": (f"{audience_group} 그룹의 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.")
         }
         
     batch_count = presentation_count // MIN_PRESENTATIONS
@@ -265,7 +269,7 @@ def update_group_model(
             "updated": False,
             "audience_group": audience_group,
             "presentation_count": presentation_count,
-            "reason": "완성된 발표 배치가 없습니다.",
+            "reason": "완성된 발표 배치가 없습니다."
         }
         
     if old_weights is None:
@@ -278,6 +282,7 @@ def update_group_model(
     target_weights = correlation_to_weights(correlations)
     updated_weights = update_weights(old_weights=old_weights, target_weights=target_weights)
     
+    directions = analyze_feature_direction(correlations)
     # 임계치 업데이트
     # updated_thresholds = update_thresholds(current_thresholds=current_thresholds,correlations=correlations)
     
@@ -295,11 +300,11 @@ def update_group_model(
         "batch_size": len(batch_data),
 
         "correlations": correlations,
-
+        "directions": directions,
         "old_weights": old_weights,
         "target_weights": target_weights,
         "updated_weights": updated_weights,
 
         # "old_thresholds": current_thresholds,
-        # "updated_thresholds": updated_thresholds,
+        # "updated_thresholds": updated_thresholds
     }

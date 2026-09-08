@@ -23,12 +23,14 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
     
     required_columns = [
         'participant_id', 
-        'db', 
-        'pitch', 
         'spm',
+        'pitch',
+        'db', 
+        'silence',
         'filler',
         'monotony',
-        "survey_attention_score",
+        "attention_score",
+        "attention_maintenance_score",
         "feedback"
     ]
     
@@ -45,7 +47,8 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
         "silence",
         "filler",
         "monotony",
-        "survey_attention_score",
+        "attention_score",
+        "attention_maintenance_score"
     ]
 
     for column in numeric_columns:
@@ -59,10 +62,10 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
     if df.empty:
         raise ValueError("CSV 파일에 유효한 데이터가 없습니다.")
     
-    if((df["survey_attention_score"] < 0).any() or (df["survey_attention_score"] > 100).any()):
+    if((df["attention_score"] < 0).any() or (df["attention_score"] > 100).any()):
         raise ValueError("설문 집중도 점수는 0에서 100 사이의 값이어야 합니다.")
     
-    average_score = float(df["survey_attention_score"].mean())
+    average_score = float(df["attention_score"].mean())
     
     # 발표 특징 별 평균 계산
     feature_columns = [
@@ -94,7 +97,7 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
             "spm": row["spm"],
             "filler": row["filler"],
             "monotony": row["monotony"],
-            "survey_attention_score": round(float(row["survey_attention_score"]),2),
+            "attention_score": round(float(row["attention_score"]),2),
             "feedback": row["feedback"]
         })
         
@@ -106,11 +109,11 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
             "response_count": len(df),
             "spm_mean": feature_means["spm"],
             "pitch_mean": feature_means["pitch"],
-            "db_mean": feature_means["db_mean"],
-            "silence_mean": feature_means["silence_mean"],
-            "filler_mean": feature_means["filler_mean"],
-            "monotony_mean": feature_means["monotony_mean"],
-            "attention_mean": round(average_score,4,),
+            "db_mean": feature_means["db"],
+            "silence_mean": feature_means["silence"],
+            "filler_mean": feature_means["filler"],
+            "monotony_mean": feature_means["monotony"],
+            "attention_mean": round(average_score, 4),
         }
 
     # result 값을 DB에 저장하도록 수정 필요
