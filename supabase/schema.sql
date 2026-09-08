@@ -106,8 +106,27 @@ alter table public.reports
   add constraint reports_session_id_fkey
   foreign key (session_id) references public.sessions(session_id) on delete cascade;
 
+-- 롤모델 벤치마킹: 명연사 발표 1편 = 레코드 1개.
+-- 사용자 세션의 audio.summary와 비교해 코칭 근거로 쓴다.
+create table if not exists public.reference_speakers (
+  id text primary key,
+  name text not null,
+  affiliation text,
+  source text,
+  source_url text,
+  title text,
+  duration_sec double precision,
+  usable_sec double precision,     -- 연사가 화면에 크게 잡힌 구간의 합 (영상 지표 신뢰도 판단용)
+  audio_summary jsonb,
+  video_summary jsonb,             -- 표정·시선 등. 담당자 구현 전까지 null
+  created_at timestamptz not null default now()
+);
+
+create index if not exists reference_speakers_name_idx on public.reference_speakers (name);
+
 alter table public.users enable row level security;
 alter table public.analysis_results enable row level security;
+alter table public.reference_speakers enable row level security;
 alter table public.sessions enable row level security;
 alter table public.reports enable row level security;
 
@@ -204,6 +223,19 @@ begin
     create policy "sessions_delete_own"
       on public.sessions for delete
       using (user_id = (select auth.uid()::text));
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'reference_speakers' and policyname = 'reference_speakers_read_all'
+  ) then
+    -- 롤모델은 개인 데이터가 아니라 모든 사용자가 읽는다. 쓰기는 서버(service_role)만.
+    create policy "reference_speakers_read_all"
+      on public.reference_speakers for select
+      using (true);
   end if;
 end $$;
 
