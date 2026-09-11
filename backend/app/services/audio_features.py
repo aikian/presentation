@@ -20,9 +20,17 @@ PITCH_MAX_HZ = 400.0
 
 # Silence 판정
 SILENCE_DB_THRESHOLD = -40.0
-SILENCE_RELATIVE_OFFSET_DB = 15.0
-SILENCE_BASE_PERCENTILE = 80.0
-MIN_SILENCE_SEC = 1.0
+
+# 정상적인 음성의 기준 음량
+REFERENCE_DB = -20.0
+
+# 정적 상태에서 이 값만큼 높은 dB까지는 정적으로 유지
+SILENCE_HYSTERESIS_DB = 3.0
+
+# 파일의 대표 음량을 계산할 percentile
+SILENCE_BASE_PERCENTILE = 70.0
+
+MIN_SILENCE_SEC = 1.5
 
 # 음성 분석 frame 설정
 FRAME_LENGTH = 2048
@@ -145,15 +153,30 @@ def extract_db(
             
     return result
     
+def calculate_silence_threshold(rms_db: np.ndarray) -> float:
+    valid_db = rms_db[np.isfinite(rms_db)]
+
+    if valid_db.size == 0:
+        return SILENCE_DB_THRESHOLD
+
+    # 파일의 대표 음량
+    base_db = float(np.percentile(valid_db, SILENCE_BASE_PERCENTILE))
+
+    # 파일 음량이 기준 음량에서 얼마나 차이나는지 계산
+    volume_offset_db = (base_db - REFERENCE_DB)
+    
+    dynamic_threshold = (SILENCE_DB_THRESHOLD + volume_offset_db)
+    
+    return dynamic_threshold
+
 # 정적 계산
 def extract_silences(
     rms_db: np.ndarray,
     rms_times: np.ndarray,
     duration: float,
-    silence_db_threshold: float = SILENCE_DB_THRESHOLD,
     min_silence_sec: float = MIN_SILENCE_SEC
 ) -> list[dict[str, Any]]:
-    # pitch와 dB를 사용하여 정적 추출
+    # dB를 사용하여 정적 추출
     
     if duration <= 0 or rms_db.size == 0:
         return []
@@ -162,56 +185,77 @@ def extract_silences(
     
     if not np.any(valid):
         return []
-    
-    valid_db = rms_db[valid]
-    
-    # 파일의 기준 음량을 통해 silence 기준 조정
-    base_db = float(np.percentile(valid_db, SILENCE_BASE_PERCENTILE))
-    
-    relative_threshold = base_db - SILENCE_RELATIVE_OFFSET_DB
-    
-    dynamic_threshold = min(silence_db_threshold, relative_threshold)
-    
-    silence_mask = valid & (rms_db <= dynamic_threshold)
 
-    result: list[dict[str, Any]] = []
+    adaptive_threshold = calculate_silence_threshold(rms_db)
+
+    # 정적 상태에서 이 값까지는 정적으로 유지
+    silence_end_threshold = adaptive_threshold + SILENCE_HYSTERESIS_DB
+
+    silence_candidates: list[dict[str, float]] = []
     
     start_time: float | None = None
+    is_silence = False
     
-    for idx, is_silence in enumerate(silence_mask):
+    for idx, db in enumerate(rms_db):
+        
+        if not np.isfinite(db):
+            continue
         
         current_time = float(rms_times[idx])
         
-        if is_silence:
-            if start_time is None:
+        if not is_silence:
+            if db <= adaptive_threshold:
+                # 정적 시작
+                is_silence = True
                 start_time = current_time
             
         else:
-            if start_time is not None:
+            if db > silence_end_threshold:
                 end_time = current_time
                 
-                silence_duration = end_time - start_time
+                if start_time is not None:
+                    silence_duration = end_time - start_time
                 
-                if silence_duration >= min_silence_sec:
-                    result.append({
-                        "start": round(start_time, 1),
-                        "end": round(end_time, 1),
-                        "duration": round(silence_duration, 1)
-                    })
+                    if silence_duration >= min_silence_sec:
+                        silence_candidates.append({
+                            "start": start_time,
+                            "end": end_time,
+                            "duration": silence_duration
+                        })
+                
+                is_silence = False
                 start_time= None
             
-    if start_time is not None:
-        end_time = duration
-        
+    if is_silence and start_time is not None:
+        end_time = float(duration)
         silence_duration = end_time - start_time
                 
         if silence_duration >= min_silence_sec:
-            result.append({
-                "start": round(start_time, 1),
-                "end": round(end_time, 1),
-                "duration": round(silence_duration, 1)
+            silence_candidates.append({
+                "start": start_time,
+                "end": end_time,
+                "duration": silence_duration
             })
     
+    result = [
+        {
+            "start": round(item["start"], 1),
+            "end": round(item["end"], 1),
+            "duration": round(item["duration"], 1)
+        }
+        for item in silence_candidates
+    ]
+    
+    print(f"silence threshold: {adaptive_threshold:.1f} dB")
+    print(f"silence count: {len(result)}")
+
+    for idx, item in enumerate(result, start=1):
+        print(
+            f"{idx}. "
+            f"{item['start']:.1f} ~ "
+            f"{item['end']:.1f} "
+            f"({item['duration']:.1f}s)"
+        )
     return result
  
 def merge_timeline(pitch: list[dict[str, Any]], db: list[dict[str, Any]]) -> list[dict[str, Any]]:
