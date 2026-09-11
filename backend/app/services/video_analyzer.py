@@ -13,6 +13,8 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.habit_detector import analyze_posture_habits
+
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -514,6 +516,19 @@ def _video_duration_sec(video_path: Path) -> float | None:
 def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str, Any]:
     metrics = analyze_video(video_path, on_step)
 
+    # TODO:
+    # 아래 습관 탐지 임계값은 기능 연동 테스트를 위한 임시값이다.
+    # 최종값은 문헌 검토 및 실험 결과를 바탕으로 재설정한다.
+    temp_persistent_threshold_sec = 6.0
+    temp_repeated_threshold_count = 2
+
+    metrics["posture_habits"] = analyze_posture_habits(
+        video_timeline=metrics.get("video_timeline", []),
+        frame_interval_sec=settings.frame_interval_sec,
+        persistent_threshold_sec=temp_persistent_threshold_sec,
+        repeated_threshold_count=temp_repeated_threshold_count,
+    )
+
     # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
@@ -524,6 +539,8 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
 
     if on_step:
         on_step(5)
+
     coaching = _gemini_coaching(metrics, api_key)
     metrics["coaching"] = coaching
+
     return metrics
