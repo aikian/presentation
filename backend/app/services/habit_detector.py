@@ -83,22 +83,71 @@ def group_posture_segments(problem_points: list[dict], frame_interval_sec: float
     return segments
 
 
+def detect_posture_habits(segments: list[dict], persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+    """
+    문제 자세 구간을 바탕으로 지속형/반복형 자세 습관을 탐지한다.
+
+    persistent_threshold_sec:
+        한 문제 자세 구간이 이 시간 이상 지속되면 지속형으로 판단한다.
+
+    repeated_threshold_count:
+        같은 방향의 문제 자세 구간이 이 횟수 이상 나타나면 반복형으로 판단한다.
+
+    임계값은 현재 함수 내부에서 고정하지 않고 외부에서 전달받는다.
+    """
+
+    persistent = []
+    repeated = []
+
+    # 1. 지속형 탐지
+    for segment in segments:
+        if segment["duration_sec"] >= persistent_threshold_sec:
+            persistent.append(segment)
+
+    # 2. 방향별 반복 횟수 계산
+    direction_counts = {}
+
+    for segment in segments:
+        direction = segment.get("direction")
+
+        if direction in ("left", "right"):
+            direction_counts[direction] = direction_counts.get(direction, 0) + 1
+
+    # 3. 반복형 탐지
+    for direction, count in direction_counts.items():
+        if count >= repeated_threshold_count:
+            repeated.append({
+                "direction": direction,
+                "count": count,
+            })
+
+    return {
+        "persistent": persistent,
+        "repeated": repeated,
+    }
 
 
+def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+    """
+    video_timeline을 기반으로 자세 습관 탐지 전체 과정을 수행한다.
+    """
 
+    problem_points = extract_problem_posture_points(video_timeline)
 
+    segments = group_posture_segments(
+        problem_points,
+        frame_interval_sec,
+    )
 
+    habits = detect_posture_habits(
+        segments,
+        persistent_threshold_sec,
+        repeated_threshold_count,
+    )
 
+    return {
+        "problem_points": problem_points,
+        "segments": segments,
+        "habits": habits,
+    }
 
-
-
-# 아래는 테스트용
-test_points = [
-    {"sec": 2.0, "tilt": 15.7, "direction": "right"},
-    {"sec": 4.0, "tilt": 14.1, "direction": "right"},
-    {"sec": 6.0, "tilt": 16.2, "direction": "right"},
-    {"sec": 10.0, "tilt": 13.0, "direction": "left"},
-    {"sec": 12.0, "tilt": 18.5, "direction": "left"},
-]
-
-print(group_posture_segments(test_points, 2.0))
