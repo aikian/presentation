@@ -25,7 +25,7 @@ SILENCE_DB_THRESHOLD = -40.0
 REFERENCE_DB = -20.0
 
 # 정적 상태에서 이 값만큼 높은 dB까지는 정적으로 유지
-SILENCE_HYSTERESIS_DB = 3.0
+SILENCE_HYSTERESIS_DB = 2.0
 
 # 파일의 대표 음량을 계산할 percentile
 SILENCE_BASE_PERCENTILE = 70.0
@@ -35,6 +35,13 @@ MIN_SILENCE_SEC = 1.5
 # 음성 분석 frame 설정
 FRAME_LENGTH = 2048
 HOP_LENGTH = 512
+
+SMALL_VOICE_DB_MARGIN = 3.0
+
+MAX_VOICE_RATIO = 0.20
+
+MIN_CONSECUTIVE_VOICE_SEC = 0.30
+MIN_VOICE_TO_END_SILENCE_SEC  = 0.10
 
 def load_audio(wav_path: Path) -> tuple[np.ndarray, int]:
     y, sr = librosa.load(str(wav_path), sr=SAMPLE_RATE, mono=True)
@@ -161,13 +168,25 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
 
     # 파일의 대표 음량
     base_db = float(np.percentile(valid_db, SILENCE_BASE_PERCENTILE))
-
+    
     # 파일 음량이 기준 음량에서 얼마나 차이나는지 계산
     volume_offset_db = (base_db - REFERENCE_DB)
-    
     dynamic_threshold = (SILENCE_DB_THRESHOLD + volume_offset_db)
     
     return dynamic_threshold
+
+def find_max_consecutive_voice_frames(voice_mask: np.ndarray) -> int:
+    max_consecutive = 0
+    current_consecutive = 0
+
+    for is_voice in voice_mask:
+        if is_voice:
+            current_consecutive += 1
+            max_consecutive = max(max_consecutive, current_consecutive)
+        else:
+            current_consecutive = 0
+
+    return max_consecutive
 
 # 정적 계산
 def extract_silences(
@@ -186,15 +205,20 @@ def extract_silences(
     if not np.any(valid):
         return []
 
-    adaptive_threshold = calculate_silence_threshold(rms_db)
+    adaptive_threshold= calculate_silence_threshold(rms_db)
 
     # 정적 상태에서 이 값까지는 정적으로 유지
     silence_end_threshold = adaptive_threshold + SILENCE_HYSTERESIS_DB
-
     silence_candidates: list[dict[str, float]] = []
     
     start_time: float | None = None
     is_silence = False
+    
+    # silence 종료 후보
+    end_voice_start_time: float | None = None
+    end_voice_frames = 0
+    
+    min_silence_end_frames = int(np.ceil(MIN_VOICE_TO_END_SILENCE_SEC * SAMPLE_RATE / HOP_LENGTH))
     
     for idx, db in enumerate(rms_db):
         
@@ -208,23 +232,45 @@ def extract_silences(
                 # 정적 시작
                 is_silence = True
                 start_time = current_time
+                
+                end_voice_start_time = None
+                end_voice_frames = 0
             
         else:
             if db > silence_end_threshold:
-                end_time = current_time
                 
-                if start_time is not None:
-                    silence_duration = end_time - start_time
+                if end_voice_frames == 0:
+                    end_voice_start_time = current_time
+                    
+                end_voice_frames += 1
                 
-                    if silence_duration >= min_silence_sec:
-                        silence_candidates.append({
-                            "start": start_time,
-                            "end": end_time,
-                            "duration": silence_duration
-                        })
+                if end_voice_frames >= min_silence_end_frames:
+
+                    end_time = (
+                        end_voice_start_time
+                        if end_voice_start_time is not None
+                        else current_time
+                    )
+                    
+                    if start_time is not None:
+                        silence_duration = end_time - start_time
                 
-                is_silence = False
-                start_time= None
+                        if silence_duration >= min_silence_sec:
+                            silence_candidates.append({
+                                "start": start_time,
+                                "end": end_time,
+                                "duration": silence_duration
+                            })
+                
+                    is_silence = False
+                    start_time= None
+                    
+                    end_voice_start_time = None
+                    end_voice_frames = 0
+            
+            else:
+                end_voice_start_time = None
+                end_voice_frames = 0
             
     if is_silence and start_time is not None:
         end_time = float(duration)
@@ -236,26 +282,69 @@ def extract_silences(
                 "end": end_time,
                 "duration": silence_duration
             })
+            
+    voice_threshold = adaptive_threshold - SMALL_VOICE_DB_MARGIN
+
+    print(f"adaptive silence threshold: {adaptive_threshold:.1f} dB")
+    print(f"silence end threshold: {silence_end_threshold:.1f} dB")
+    print(f"voice threshold: {voice_threshold:.1f} dB")
+    print(f"max voice ratio: {MAX_VOICE_RATIO:.2f}")
+    print(f"min consecutive voice: {MIN_CONSECUTIVE_VOICE_SEC:.2f}s")
     
-    result = [
-        {
+    result: list[dict[str, Any]] = []
+    frame_duration = HOP_LENGTH / SAMPLE_RATE
+    
+    for idx, item in enumerate(silence_candidates, start=1):
+        mask = (
+            (rms_times >= item["start"])
+            & (rms_times < item["end"])
+            & np.isfinite(rms_db)
+        )
+
+        values = rms_db[mask]
+    
+        if values.size == 0:
+            continue
+        
+        voice_mask = (
+            (values >= voice_threshold)
+            & (values <= silence_end_threshold)
+        )
+        voice_frames = int(np.sum(voice_mask))
+        voice_ratio = voice_frames / values.size
+        
+        max_consecutive_frames = find_max_consecutive_voice_frames(voice_mask)
+        max_consecutive_sec = max_consecutive_frames * frame_duration
+        
+        has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
+        has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
+        has_voice = has_voice_ratio and has_continuous_voice
+        
+        print(f"{idx}. {item['start']:.1f} ~ {item['end']:.1f} ({item['duration']:.1f}s)")
+        print(f"   voice_frames = {voice_frames}/{values.size}")
+        print(f"   voice_ratio = {voice_ratio:.2f}")
+        print(f"   max_consecutive = {max_consecutive_frames} frames ({max_consecutive_sec:.2f}s)")
+        print(f"   ratio_condition = {has_voice_ratio}")
+        print(f"   consecutive_condition = {has_continuous_voice}")
+        
+        if has_voice:
+
+            print("   -> 작은 음성 포함, silence 제외")
+
+            continue
+
+        print("   -> 최종 silence")
+        
+        result.append({
             "start": round(item["start"], 1),
             "end": round(item["end"], 1),
             "duration": round(item["duration"], 1)
-        }
-        for item in silence_candidates
-    ]
-    
-    print(f"silence threshold: {adaptive_threshold:.1f} dB")
+        })
+        
     print(f"silence count: {len(result)}")
-
     for idx, item in enumerate(result, start=1):
-        print(
-            f"{idx}. "
-            f"{item['start']:.1f} ~ "
-            f"{item['end']:.1f} "
-            f"({item['duration']:.1f}s)"
-        )
+        print(f"{idx}. {item['start']:.1f} ~ {item['end']:.1f} ({item['duration']:.1f}s)")
+        
     return result
  
 def merge_timeline(pitch: list[dict[str, Any]], db: list[dict[str, Any]]) -> list[dict[str, Any]]:
