@@ -21,15 +21,12 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     
     # 단조로움 가중치
     "monotone_consecutive_count_limit": 15, # 15초 이상 단조로울 시 감점 
-    "monotone_penalty_weight": 0.5,
-    
     # 단조로움 이후 환기
-    "reengagement_boost_weight": 0.5, 
     "reengagement_count": 3, # 3초 이상 지속 시 가점
-    
     # 과도한 어조 변화
     "excessive_count": 3,
-    "excessive_penalty_weight": 0.5,
+    # pitch 가중치
+    "pitch_weight": 0.5,
     
     # 군말
     "filler_penalty_weight": 0.5, 
@@ -317,7 +314,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     }
 
     silence_idx = 0
-    
+    filler_penalty_applied = False
+
     # 초 단위 평가
     for idx, item in enumerate(timeline):
         sec = int(item.get("sec", idx))
@@ -432,7 +430,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 excessive_duration = 0
                 
                 if monotone_duration >= monotone_limit:
-                    penalty = weight["monotone_penalty_weight"]
+                    penalty = weight["pitch_weight"]
                     sec_delta -= penalty
                     penalties_applied.append(f"{monotone_duration}초 연속 단조로운 어조 (-{penalty:.1f})")
                     total_stats["total_monotone_counts"] += 1
@@ -451,7 +449,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             if reengagement_threshold <= pitch_v < excessive_threshold :
                 reengagement_duration += 1
                 if reengagement_duration >= reengagement_limit:
-                    boost = weight["reengagement_boost_weight"]
+                    boost = weight["pitch_weight"]
                     sec_delta += boost
                     boosts_applied.append(f"단조로움 이후 피치 변화 (+{boost:.1f})")
                     total_stats["total_reengagement_boost_counts"] += 1
@@ -479,7 +477,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             if excessive_threshold <= pitch_v:
                 excessive_duration += 1
                 if excessive_duration >= excessive_limit:
-                    penalty = weight["excessive_penalty_weight"]
+                    penalty = weight["pitch_weight"]
                     sec_delta -= penalty
                     penalties_applied.append(f"{excessive_duration}초 연속 과도한 어조 변화 (-{penalty:.1f})")
                     total_stats["total_monotone_counts"] += 1
@@ -516,12 +514,16 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         filler_count = get_filler_count_last_60sec(fillers_by_sec, sec)
         
         if filler_count >= threshold["filler_60sec_limit"]:
-            penalty = weight["filler_penalty_weight"]
-            sec_delta -= penalty
-            penalties_applied.append(f"60초간 군말 과다 ({filler_count}회) (-{penalty:.1f})")
-            total_stats["total_filler_counts"] += 1
+            if not filler_penalty_applied:
+                penalty = weight["filler_penalty_weight"]
+                sec_delta -= penalty
+                penalties_applied.append(f"60초간 군말 과다 ({filler_count}회) (-{penalty:.1f})")
+                total_stats["total_filler_counts"] += 1
+                filler_penalty_applied = True
+        
+        else:
+            filler_penalty_applied = False
             
-
         prev_score = sec_scores[-1]["score"] if sec_scores else weight["base_score"]
         current_score = max(0.0, min(100.0, prev_score + sec_delta))
         
