@@ -16,6 +16,7 @@ FEATURES = [
 ]
 
 TARGET = "attention_mean"
+VOICE_SATISFACTION = "voice_satisfaction"
 PREDICTION = "predicted_attention"
 
 # 초기 가중치
@@ -37,9 +38,9 @@ FEATURE_WEIGHT_KEY = {
 }
 
 # 청중의 설문 데이터를 기반으로 각 속성들과의 스피어만 상관계수 계산
-def calculate_spearmanr(result: DataFrame, feature: str) -> Dict[str, Any]:
+def calculate_spearmanr(result: DataFrame, column_x: str, column_y: str) -> Dict[str, Any]:
     
-    data = result[[feature, TARGET]].dropna()
+    data = result[[column_x, column_y]].dropna()
     
     sample_length = len(data)
     
@@ -53,26 +54,26 @@ def calculate_spearmanr(result: DataFrame, feature: str) -> Dict[str, Any]:
         }
     
     # feature 값이 모두 동일한 경우
-    if data[feature].nunique() <= 1:
+    if data[column_x].nunique() <= 1:
         return {
             "correlation": 0.0,
             "p_value": 1.0,
             "sample_size": sample_length,
             "updated": False,
-            "reason": f"'{feature}' 값의 변화가 없습니다.",
+            "reason": f"'{column_x}' 값의 변화가 없습니다.",
         }
         
     # 집중도 값이 모두 동일한 경우
-    if data[TARGET].nunique() <= 1:
+    if data[column_y].nunique() <= 1:
         return {
             "correlation": 0.0,
             "p_value": 1.0,
             "sample_size": sample_length,
             "updated": False,
-            "reason": "집중도 값의 변화가 없습니다.",
+            "reason": "'{column_y}' 값의 변화가 없습니다.",
         }
         
-    correlation, p_value = spearmanr(data[feature], data[TARGET])
+    correlation, p_value = spearmanr(data[column_x], data[column_y])
     
     if pd.isna(correlation):
         correlation = 0.0
