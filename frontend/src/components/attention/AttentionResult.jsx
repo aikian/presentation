@@ -198,7 +198,9 @@ function TotalScore({ predictResult }) {
 
             <div className="mt-2 flex items-end gap-2">
                 <span className="text-4xl font-bold text-gray-600">
-                    {predictResult.attention_score}
+                    {Number(
+                        predictResult.attention_score ?? 0
+                    ).toFixed(1)}
                 </span>
 
                 <span className="mb-1 text-lg text-gray-500">
@@ -248,7 +250,7 @@ function Graph({ predictResult }) {
                 </div> 
     }
 
-    const labels = isSecondTimeline ? timeline.map((item) => `${item.sec}초`) : timeline.map((item) => `${item.min}분`);
+    const labels = isSecondTimeline ? timeline.map((item) => `${item.sec}초`) : timeline.map((item) => `${item.minute}분`);
 
     const data = {
         labels: labels,
@@ -262,7 +264,7 @@ function Graph({ predictResult }) {
 
                 borderWidth: 2,
 
-                pointRadius: 2,
+                pointRadius: isSecondTimeline ? 1 : 2,
                 pointHoverRadius: 5,
 
                 tension: 0.3,
@@ -349,7 +351,10 @@ function Graph({ predictResult }) {
 
     return (
         <div className="mb-10">
-            <h2 className="mb-4 text-xl font-bold text-gray-900">청중의 집중도 흐름</h2>
+            <h2 className="mb-4 text-xl font-bold text-gray-900">
+                청중의 집중도 흐름
+            </h2>
+
             <div className="rounded-xl border border-gray-200 bg-white p-6">
                 <div className="h-[350px] w-full">
                     <Line data={data} options={options}/>
@@ -357,7 +362,7 @@ function Graph({ predictResult }) {
 
                 <div className="mt-4 flex gap-6 text-sm text-gray-500">
                     <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-blue-500" />
+                        <span className="h-3 w-3 rounded-full bg-blue-500"/>
                         집중도
                     </span>
 
@@ -380,14 +385,15 @@ function Graph({ predictResult }) {
     );    
 }
 
-export default function AttentionResult({predictResult, summary, feedbacks = []}){
+export default function AttentionResult({predictResult}){
     
-    const result =
-    predictResult &&
-    Array.isArray(predictResult.timeline_second) &&
-    predictResult.timeline_second.length > 0
-        ? predictResult
-        : TEST_PREDICT_RESULT;
+    if(!predictResult) {
+        return (
+            <div className="text-sm text-gray-400">
+                집중도 분석 결과가 없습니다.
+            </div>
+        )
+    }
 
     return(
         <div>

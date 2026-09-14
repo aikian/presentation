@@ -19,10 +19,8 @@ export default function PredictAttention() {
         async function loadPrediction() {
             try {
                 const data = await fetchAttentionResult(id)
-                console.log("청중 집중도 조회 결과:", data)
                 setPredictResult(data)
             } catch (error) {
-                console.error("청중 집중도 조회 실패:", error)
                 setError("예측 결과를 가져오는 데 실패했습니다.")
             } finally {
                 setLoading(false)
@@ -31,6 +29,45 @@ export default function PredictAttention() {
 
         loadPrediction()
     }, [id])
+
+    // 청중의 실제 집중도를 0~100점으로 환산
+    const getActualAttentionScore = () => {
+        if (!surveyResult) return null
+        
+        const score = Number(surveyResult.average_attention_score)
+
+        if (!Number.isFinite(score)) {
+            return null
+        }
+
+        return (score / 5) * 100
+    }
+
+    // 신뢰도 계산
+    const getPredictConfidence = () => {
+        if(!predictResult || !surveyResult) {
+            return null
+        }
+
+        const predictedScore = Number(predictResult.attention_score)
+        const actualScore = getActualAttentionScore()
+
+        if(!Number.isFinite(predictedScore) || actualScore===null){
+            return null
+        }
+
+        const error = Math.abs(predictedScore - actualScore)
+        const confidence = Math.max(0, 100 - error)
+
+        return {
+            predictedScore,
+            actualScore,
+            error,
+            confidence
+        }
+    }
+
+    const predictConfidence = getPredictConfidence()
 
     if (loading) {
         return (
@@ -46,7 +83,7 @@ export default function PredictAttention() {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
-                    <p className="text-red-500">
+                    <p className="text-red-500 mb-4">
                         {error}
                     </p>
 
@@ -174,12 +211,64 @@ export default function PredictAttention() {
                         <div className="grid grid-cols-3 gap-4">
                             <div className="rounded-lg bg-white p-4">
                                 <p className="text-sm text-gray-600">참여 인원</p>
-                                <p className="mt-1 text-2xl font-bold">{surveyResult.participant_count}</p>
+                                <p className="mt-1 text-2xl font-bold">
+                                    {surveyResult.participant_count}
+                                    <span className="ml-1 text-base font-normal text-gray-500">
+                                        명
+                                    </span>
+                                </p>
                             </div>
 
+                            {/* 실제 집중도 */}
                             <div className="rounded-lg bg-white p-4">
-                                <p className="text-sm text-gray-600">집중도 평균</p>
-                                <p className="mt-1 text-2xl font-bold">{surveyResult.average_attention_score}</p>
+                                <p className="text-sm text-gray-600">실제 청중 집중도</p>
+                                <p className="mt-1 text-3xl font-bold text-green-600">
+                                    {predictConfidence
+                                        ? predictConfidence.actualScore.toFixed(1)
+                                        : "-"
+                                    }
+
+                                    <span className="ml-1 text-base font-normal text-gray-500">
+                                        / 100
+                                    </span>
+                                </p>
+
+                                <p className="mt-1 text-xs text-gray-400">
+                                    집중도 평균{" "}
+                                    {surveyResult.average_attention_score}
+                                    {" / 5"}
+                                </p>
+                            </div>
+
+                            {/* 예측 신뢰도 */}
+                            <div className="rounded-lg bg-white p-5">
+                                <p className="text-sm text-gray-500">
+                                    예측 신뢰도
+                                </p>
+
+                                {predictConfidence ? (
+                                    <div>
+                                        <p className="mt-1 text-3xl font-bold text-indigo-600">
+                                            {predictConfidence.confidence.toFixed(1)} %
+                                        </p>
+
+                                        <p className="mt-1 text-xs text-gray-400">
+                                            예측{" "}
+                                            {predictConfidence.predictedScore.toFixed(1)}
+
+                                            {" / "}
+
+                                            실제{" "}
+                                            {predictConfidence.actualScore.toFixed(1)}
+                                            점
+                                        </p>
+                                    </div>
+                                        
+                                ): (
+                                    <p className="mt-1 text-3xl font-bold text-gray-400">
+                                        -
+                                    </p>
+                                )}
                             </div>
                         </div>
 
