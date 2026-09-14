@@ -24,17 +24,13 @@ SILENCE_DB_THRESHOLD = -40.0
 # 정상적인 음성의 기준 음량
 REFERENCE_DB = -20.0
 
+# 임계값에서 2.0 낮은 값까지는 일정 프레임 이상 나올시 정적으로 인식
+# -> 작은 음성을 정적으로 인식하는 것응ㄹ 방지
+LOW_SILENCE_START_DB = 2.0
 # 정적 상태에서 이 값만큼 높은 dB까지는 정적으로 유지
-SILENCE_HYSTERESIS_DB = 2.0
+SILENCE_END_DB = 2.0
 
-# 파일의 대표 음량을 계산할 percentile
-SILENCE_BASE_PERCENTILE = 70.0
-
-MIN_SILENCE_SEC = 1.5
-
-# 음성 분석 frame 설정
-FRAME_LENGTH = 2048
-HOP_LENGTH = 512
+MIN_SILENCE_SEC = 1.0
 
 SMALL_VOICE_DB_MARGIN = 3.0
 
@@ -42,6 +38,12 @@ MAX_VOICE_RATIO = 0.20
 
 MIN_CONSECUTIVE_VOICE_SEC = 0.30
 MIN_VOICE_TO_END_SILENCE_SEC  = 0.10
+
+SILENCE_THRESHOLD_OFFSET_DB = 3.5
+
+# 음성 분석 frame 설정
+FRAME_LENGTH = 2048
+HOP_LENGTH = 512
 
 def load_audio(wav_path: Path) -> tuple[np.ndarray, int]:
     y, sr = librosa.load(str(wav_path), sr=SAMPLE_RATE, mono=True)
@@ -165,13 +167,50 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
 
     if valid_db.size == 0:
         return SILENCE_DB_THRESHOLD
-
-    # 파일의 대표 음량
-    base_db = float(np.percentile(valid_db, SILENCE_BASE_PERCENTILE))
     
-    # 파일 음량이 기준 음량에서 얼마나 차이나는지 계산
-    volume_offset_db = (base_db - REFERENCE_DB)
-    dynamic_threshold = (SILENCE_DB_THRESHOLD + volume_offset_db)
+    p0, p25, p50, p75, p90, p95, p100 = np.percentile(
+        valid_db,
+        [0, 25, 50, 75, 90, 95, 100]
+    )
+    
+    stats = {
+        "p0": p0,
+        "p25": p25,
+        "p50": p50,
+        "p75": p75,
+        "p90": p90,
+        "p95": p95,
+        "p100": p100,
+    }
+    
+    # 1. 전체적으로 작은 파일
+    if p95 < -30:
+        base_db = p50 - 3.0
+
+    # 2. 정적 중심 파일
+    elif (p100 - p75) < 3.0:
+        base_db = p50
+
+    # 3. 음성과 정적이 비교적 잘 분리된 파일
+    elif (p95 - p75) > 8.0:
+        base_db = p75
+
+    # 4. 일반적인 경우
+    else:
+        base_db = p50 - 3.0
+
+    base_db = float(np.clip(base_db, -60.0, -20.0))
+    volume_offset_db = base_db - REFERENCE_DB
+    dynamic_threshold = SILENCE_DB_THRESHOLD + volume_offset_db + SILENCE_THRESHOLD_OFFSET_DB
+    
+    print(
+        f"P0={stats['p0']:.1f}, "
+        f"P25={stats['p25']:.1f}, "
+        f"P50={stats['p50']:.1f}, "
+        f"P75={stats['p75']:.1f}, "
+        f"P95={stats['p95']:.1f}, "
+        f"P100={stats['p100']:.1f}"
+    )
     
     return dynamic_threshold
 
@@ -206,18 +245,21 @@ def extract_silences(
         return []
 
     adaptive_threshold= calculate_silence_threshold(rms_db)
-
+    
     # 정적 상태에서 이 값까지는 정적으로 유지
-    silence_end_threshold = adaptive_threshold + SILENCE_HYSTERESIS_DB
+    silence_end_threshold = adaptive_threshold + SILENCE_END_DB
     silence_candidates: list[dict[str, float]] = []
     
     start_time: float | None = None
     is_silence = False
     
+    start_silence_frames = 0
+    
     # silence 종료 후보
     end_voice_start_time: float | None = None
     end_voice_frames = 0
     
+    min_silence_start_frames = int(np.ceil(MIN_VOICE_TO_END_SILENCE_SEC * SAMPLE_RATE / HOP_LENGTH))
     min_silence_end_frames = int(np.ceil(MIN_VOICE_TO_END_SILENCE_SEC * SAMPLE_RATE / HOP_LENGTH))
     
     for idx, db in enumerate(rms_db):
@@ -229,12 +271,26 @@ def extract_silences(
         
         if not is_silence:
             if db <= adaptive_threshold:
-                # 정적 시작
-                is_silence = True
-                start_time = current_time
+                if adaptive_threshold - LOW_SILENCE_START_DB < db:
+                    start_silence_frames += 1
                 
-                end_voice_start_time = None
-                end_voice_frames = 0
+                    if start_silence_frames >= min_silence_start_frames:
+                        is_silence = True
+                        start_time = (current_time - (start_silence_frames - 1) * frame_duration)
+
+                        end_voice_start_time = None
+                        end_voice_frames = 0
+                else:
+        
+                    is_silence = True
+                    start_time = current_time
+
+                    start_silence_frames = 0
+                    end_voice_start_time = None
+                    end_voice_frames = 0
+
+            else:
+                start_silence_frames = 0
             
         else:
             if db > silence_end_threshold:
@@ -320,7 +376,13 @@ def extract_silences(
         has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
         has_voice = has_voice_ratio and has_continuous_voice
         
-        print(f"{idx}. {item['start']:.1f} ~ {item['end']:.1f} ({item['duration']:.1f}s)")
+        print(
+            f"{idx}. " 
+            f"{item['start']:.1f} ~ {item['end']:.1f} "
+            f"({item['duration']:.1f}s) "
+            f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
+            f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
+        )
         print(f"   voice_frames = {voice_frames}/{values.size}")
         print(f"   voice_ratio = {voice_ratio:.2f}")
         print(f"   max_consecutive = {max_consecutive_frames} frames ({max_consecutive_sec:.2f}s)")
@@ -335,15 +397,22 @@ def extract_silences(
 
         print("   -> 최종 silence")
         
-        result.append({
-            "start": round(item["start"], 1),
-            "end": round(item["end"], 1),
-            "duration": round(item["duration"], 1)
-        })
+        if item["duration"] >= 2.0:
+            result.append({
+                "start": round(item["start"], 1),
+                "end": round(item["end"], 1),
+                "duration": round(item["duration"], 1)
+            })
         
     print(f"silence count: {len(result)}")
     for idx, item in enumerate(result, start=1):
-        print(f"{idx}. {item['start']:.1f} ~ {item['end']:.1f} ({item['duration']:.1f}s)")
+        print(
+            f"{idx}. " 
+            f"{item['start']:.1f} ~ {item['end']:.1f} "
+            f"({item['duration']:.1f}s) "
+            f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
+            f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
+        )
         
     return result
  
