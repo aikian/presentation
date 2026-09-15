@@ -44,7 +44,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "silence_penalty_threshold": 5.0,
     
     # pitch 변동률이 0.08 이하면 단조로움 감점
-    "monotone_penalty_threshold": 0.08,
+    "monotone_penalty_threshold": 0.15,
     
     # pitch 변동률이 0.15 이상이면 환기 가점
     "reengagement_pitch_threshold": 0.15,
@@ -59,11 +59,6 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "db_zscore_threshold": 1.0,
     "db_zscore_change_threshold": 1.2
 }
-
-MONOTONE_NORMAL = "NORMAL"
-MONOTONE_ACTIVE = "MONOTONE"
-MONOTONE_REENGAGEMENT = "REENGAGEMENT_CANDIDATE"
-MONOTONE_EXCESSIVE = "EXCESSIVE"
 
 # 에러 발생 시 에러 결과 반환
 def make_error_result(code: str, message: str) -> dict[str, Any]:
@@ -120,11 +115,10 @@ def preprocess_silences(silence_list: List[dict[str, Any]]) -> List[dict[str, fl
     for s in silence_list:
         start_sec = s.get("start", 0.0)
         end_sec = s.get("end", 0.0)
+        duration = s.get("duration", end_sec - start_sec)
         
         if end_sec <= start_sec:
             continue
-        
-        duration = end_sec - start_sec
         
         silence_times.append({
             "start": start_sec,
@@ -135,16 +129,20 @@ def preprocess_silences(silence_list: List[dict[str, Any]]) -> List[dict[str, fl
     return silence_times
           
 # 군말 전처리 
-def preprocess_fillers(filler_list: List[dict[str, Any]]) -> List[float]:
-    filler_by_sec: List[float] = []
+def preprocess_fillers(filler_list: List[dict[str, Any]]) -> List[dict[str, Any]]:
+    filler_by_sec: List[dict[str, Any]] = []
     
     for filler in filler_list:
         sec = filler.get("sec")
+        word = filler.get("word")
         
         if sec is None:
             continue
         
-        filler_by_sec.append(sec)
+        filler_by_sec.append({
+            "sec": sec,
+            "word": word,
+        })
         
     return filler_by_sec
  
@@ -184,17 +182,17 @@ def preprocess_db(timeline_list: List[dict[str, Any]]) -> dict[int, float]:
     return norm_db_sec
 
 # pitch 변동률 계산
-def calculate_pitch_v(pitches: List[float]) -> float:
+def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
     valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch > 0]
     
     if len(valid_pitches) < 2:
-        return 0.0
+        return None
     
     mean_pitch = statistics.mean(valid_pitches)
     std_pitch = statistics.stdev(valid_pitches)
     
-    return (std_pitch / mean_pitch) if mean_pitch > 0 else 0.0
+    return (std_pitch / mean_pitch) if mean_pitch > 0 else None
 
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 2) -> Optional[float]:
@@ -209,7 +207,7 @@ def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 2) -> Opti
     return statistics.mean(spm_values)
 
 # 최근 pitch 변동
-def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 5) -> float:
+def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 5) -> Optional[float]:
     start = max(0, sec - window + 1)
     
     pitches = [pitch_data[i] for i in range(start, sec + 1) if i in pitch_data and pitch_data[i] > 0]
@@ -217,16 +215,20 @@ def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 5)
     return calculate_pitch_v(pitches)
 
 # 최근 60초 군말 개수
-def get_filler_count_last_60sec(filler_by_sec: List[float], sec: int) -> int:
+def get_filler_count_last_60sec(filler_by_sec: List[dict[str, Any]], sec: int) -> tuple[int, List[str]]:
     
     start = max(0.0, float(sec) - 60.0)
     filler_count = 0
+    filler_words: List[str] = []
     
-    for filler_sec in filler_by_sec:
+    for filler in filler_by_sec:
+        filler_sec = filler["sec"]
+        word = filler["word"]
         if start <= filler_sec <= sec:
             filler_count += 1
+            filler_words.append(word)
             
-    return filler_count
+    return filler_count, filler_words
 
 # 분단위 결과 생성
 def make_min_timeline(sec_scores: List[dict[str, Any]]) -> List[dict[str, Any]]:
@@ -265,7 +267,7 @@ def make_min_timeline(sec_scores: List[dict[str, Any]]) -> List[dict[str, Any]]:
     return min_scores
 
 # 집중도 예측 함수
-def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: Optional[dict[str, Any]]) -> dict[str, Any]:
     weight = DEFAULT_WEIGHT.copy()
     threshold = DEFAULT_THRESHOLD.copy()
     
@@ -278,9 +280,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     
     transcript = data.get("transcript", [])
     if transcript and timeline:
-        trans = transcript[-1].get("end", 0.0)
-        time = timeline[-1].get("sec", 0.0)
-        duration = max(trans, time)
+        transcript_end = transcript[-1].get("end", 0.0)
+        timeline_end  = timeline[-1].get("sec", 0.0)
+        duration = max(transcript_end, timeline_end )
     else:
         duration = 0.0
     
@@ -294,27 +296,40 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     pitch_data = preprocess_pitches(timeline)
     norm_db_data = preprocess_db(timeline)
     
+    # 초 단위 집중도 저장
     sec_scores: List[dict[str, Any]] = []
     
     # 상태 변수 초기화
-    monotone_state = MONOTONE_NORMAL
     monotone_duration = 0
     reengagement_duration = 0
     excessive_duration = 0
+    monotone_detected = False
+    
     fast_spm_count = 0
     slow_spm_count = 0
+    
+    previous_spm_sec: Optional[int] = None
     
     total_stats = {
         "total_spm_penalty_counts": 0,
         "total_monotone_counts": 0,
+        "total_excessive_pitch_counts": 0,
         "total_silence_counts": 0,
         "total_filler_counts": 0,
         "total_reengagement_boost_counts": 0,
         "total_db_boost_counts": 0
     }
 
-    silence_idx = 0
+    silence_idx: float | None = None
     filler_penalty_applied = False
+    
+    monotone_threshold = threshold["monotone_penalty_threshold"]
+    reengagement_threshold = threshold["reengagement_pitch_threshold"]
+    excessive_threshold = threshold["excessive_pitch_threshold"]
+                
+    monotone_limit = weight["monotone_consecutive_count_limit"]
+    reengagement_limit = weight["reengagement_count"]
+    excessive_limit = weight["excessive_count"]
 
     # 초 단위 평가
     for idx, item in enumerate(timeline):
@@ -327,8 +342,14 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         average_spm = get_average_spm(spm_data, sec)
         
         if average_spm is not None:
+            is_continuous = previous_spm_sec is not None and sec == previous_spm_sec + 1
+            
             if average_spm >= threshold["fast_spm_threshold"]:
-                fast_spm_count += 1
+                if is_continuous:
+                    fast_spm_count += 1
+                else:
+                    fast_spm_count = 1
+                    
                 slow_spm_count = 0
                 
                 if fast_spm_count >= weight["fast_spm_consecutive_limit"]:
@@ -340,7 +361,11 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                     fast_spm_count = 0
                     
             elif average_spm <= threshold["slow_spm_threshold"]:
-                slow_spm_count += 1
+                if is_continuous:
+                    slow_spm_count += 1
+                else:
+                    slow_spm_count = 1
+                    
                 fast_spm_count = 0
                 
                 if slow_spm_count >= weight["slow_spm_consecutive_limit"]:
@@ -356,143 +381,79 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 slow_spm_count = 0
         
         # 정적 평가
-        while silence_idx < len(silence_data) and silence_data[silence_idx]["end"] < sec:
-            silence_idx += 1
+        silence_idx = None
+        for i, silence in enumerate(silence_data):
+            if silence["start"] <= sec and sec <= silence["end"]:
+                silence_idx = i
+                break
             
-        if silence_idx < len(silence_data):
+            if silence["start"] > sec:
+                break
+            
+        if silence_idx is not None:
             silence = silence_data[silence_idx]
-            if silence["start"] <= sec <= silence["end"]:
-                duration_s = silence["duration"]
-                silence_elapsed = sec - silence["start"]
+            duration_s = silence["duration"]
                 
-                if (
-                    duration_s >= threshold["silence_penalty_threshold"] 
-                    and silence_elapsed >= threshold["silence_penalty_threshold"]
-                    and silence_elapsed < threshold["silence_penalty_threshold"] + 1
-                ):
-                    
+            if duration_s >= threshold["silence_penalty_threshold"]:
+                if silence["end"] <= sec < silence["end"] + 1:
                     silence_penalty = weight["silence_penalty_weight"]
                     sec_delta -= silence_penalty
                     penalties_applied.append(f"{duration_s:.1f}초 정적 감지 (-{silence_penalty:.1f})")
         
-                    if silence["end"]-1 < sec <= silence["end"]:
-                        total_stats["total_silence_counts"] += 1
+                    total_stats["total_silence_counts"] += 1
          
         # 단조로움 평가
         pitch_v = get_pitch_variation(pitch_data, sec)
         
-        monotone_threshold = threshold["monotone_penalty_threshold"]
-        reengagement_threshold = threshold["reengagement_pitch_threshold"]
-        excessive_threshold = threshold["excessive_pitch_threshold"]
-                
-        monotone_limit = weight["monotone_consecutive_count_limit"]
-        reengagement_limit = weight["reengagement_count"]
-        excessive_limit = weight["excessive_count"]
-        
-        if pitch_v == 0.0:
-            monotone_duration = 0
-            excessive_duration = 0
-            reengagement_duration = 0
-            monotone_state = MONOTONE_NORMAL
-            
-        elif monotone_state == MONOTONE_NORMAL:
+        if pitch_v is not None:
             if pitch_v <= monotone_threshold:
                 monotone_duration += 1
-                excessive_duration = 0
-                
-                if monotone_duration >= 2:
-                    monotone_state = MONOTONE_ACTIVE
-                
-            elif excessive_threshold <= pitch_v:
-                excessive_duration += 1
-                monotone_duration = 0
-                
-                if excessive_duration >= 2:
-                    monotone_state = MONOTONE_EXCESSIVE
-                        
-            else:
-                monotone_duration = 0
-                excessive_duration = 0
-                    
-        elif monotone_state == MONOTONE_ACTIVE:
-        
-            if reengagement_threshold <= pitch_v < excessive_threshold:
-                if monotone_duration >= monotone_limit:
-                    monotone_state = MONOTONE_REENGAGEMENT
-                    reengagement_duration += 1
-                
-                else:
-                    monotone_state = MONOTONE_NORMAL
-                    monotone_duration = 0
-                
-            elif pitch_v <= monotone_threshold:
-                monotone_duration += 1
-                excessive_duration = 0
+                reengagement_duration = 0
                 
                 if monotone_duration >= monotone_limit:
                     penalty = weight["pitch_weight"]
                     sec_delta -= penalty
                     penalties_applied.append(f"{monotone_duration}초 연속 단조로운 어조 (-{penalty:.1f})")
                     total_stats["total_monotone_counts"] += 1
+                    
+                    monotone_detected = True
                     monotone_duration = 0
                     
-            elif excessive_threshold <= pitch_v:
-                monotone_state = MONOTONE_EXCESSIVE
-                excessive_duration = 1
-                reengagement_duration = 0
+            elif reengagement_threshold <= pitch_v < excessive_threshold:
+                if monotone_detected:
+                    reengagement_duration += 1
                 
-            else:
-                monotone_state = MONOTONE_NORMAL
-                monotone_duration = 0
-        
-        elif monotone_state == MONOTONE_REENGAGEMENT:
-            if reengagement_threshold <= pitch_v < excessive_threshold :
-                reengagement_duration += 1
-                if reengagement_duration >= reengagement_limit:
-                    boost = weight["pitch_weight"]
-                    sec_delta += boost
-                    boosts_applied.append(f"단조로움 이후 피치 변화 (+{boost:.1f})")
-                    total_stats["total_reengagement_boost_counts"] += 1
+                    if reengagement_duration >= reengagement_limit:
+                        boost = weight["pitch_weight"]
+                        sec_delta += boost
+                        boosts_applied.append(f"단조로움 이후 피치 변화 (+{boost:.1f})")
+                        total_stats["total_reengagement_boost_counts"] += 1
                     
-                    monotone_state = MONOTONE_NORMAL
-                    monotone_duration = 0
+                        monotone_detected = False
+                        reengagement_duration = 0
+                    
+                else:
                     reengagement_duration = 0
+                
+                monotone_duration = 0
                         
-            elif pitch_v <= monotone_threshold:
-                monotone_state = MONOTONE_ACTIVE
-                monotone_duration = 1
-                reengagement_duration = 0
-                    
             elif excessive_threshold <= pitch_v:
-                monotone_state = MONOTONE_EXCESSIVE
-                excessive_duration = 1
                 reengagement_duration = 0
-                    
-            else:
-                monotone_state = MONOTONE_NORMAL
-                monotone_state = 0
-                reengagement_duration = 0
-                    
-        elif monotone_state == MONOTONE_EXCESSIVE:
-            if excessive_threshold <= pitch_v:
+                monotone_duration = 0
+                
                 excessive_duration += 1
                 if excessive_duration >= excessive_limit:
                     penalty = weight["pitch_weight"]
                     sec_delta -= penalty
                     penalties_applied.append(f"{excessive_duration}초 연속 과도한 어조 변화 (-{penalty:.1f})")
-                    total_stats["total_monotone_counts"] += 1
+                    total_stats["total_excessive_pitch_counts"] += 1
                     
                     excessive_duration = 0
-            
-            elif pitch_v <= monotone_threshold:
-                monotone_state = MONOTONE_ACTIVE
-                monotone_duration = 1
-                reengagement_duration = 0
                 
             else:
-                monotone_state = MONOTONE_NORMAL
                 monotone_duration = 0
                 excessive_duration = 0
+                reengagement_duration = 0
             
             
         # 음량 강조 평가
@@ -511,21 +472,29 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 
         
         # 군말 검사
-        filler_count = get_filler_count_last_60sec(fillers_by_sec, sec)
+        filler_count, filler_words = get_filler_count_last_60sec(fillers_by_sec, sec)
         
         if filler_count >= threshold["filler_60sec_limit"]:
             if not filler_penalty_applied:
-                penalty = weight["filler_penalty_weight"]
+                excess_count = filler_count - threshold["filler_60sec_limit"]
+            
+                if excess_count < 3:
+                    penalty = weight["filler_penalty_weight"]
+                elif excess_count < 7:
+                    penalty = weight["filler_penalty_weight"] * 2
+                else:
+                    penalty = weight["filler_penalty_weight"] * 3
+                
                 sec_delta -= penalty
-                penalties_applied.append(f"60초간 군말 과다 ({filler_count}회) (-{penalty:.1f})")
+                penalties_applied.append(f"60초간 군말 과다 ({filler_count}회): {', '.join(dict.fromkeys(filler_words))} (-{penalty:.1f})")
                 total_stats["total_filler_counts"] += 1
                 filler_penalty_applied = True
-        
+            
         else:
             filler_penalty_applied = False
             
-        prev_score = sec_scores[-1]["score"] if sec_scores else weight["base_score"]
-        current_score = max(0.0, min(100.0, prev_score + sec_delta))
+        current_score = weight["base_score"] + sec_delta
+        current_score = max(0.0, min(100.0, current_score))
         
         sec_scores.append({
             "sec": sec,
@@ -534,7 +503,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             "boosts": boosts_applied
         })
     
-    final_score = sec_scores[-1].get("score", 0.0) if sec_scores else 0.0
+    final_score = round(statistics.mean(item["score"] for item in sec_scores), 1)
     
     # 분 단위 결과
     min_score = make_min_timeline(sec_scores)
@@ -552,10 +521,10 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
 def analyze_audience(video_path: Path) -> dict[str, Any]:
     audio_result = analyze_audio(video_path)
     '''
-    청중 정보(전문가/비전문가/노년층/청년층/청소년층) 비교 후 알맞은 청중 가중치 적용 예정
+    청중 정보(전문가/비전문가) 비교 후 알맞은 청중 가중치 적용 예정
     '''
     
-    audience_attention = predict_attention(audio_result)
+    audience_attention = predict_attention(audio_result, None)
     
     return audience_attention
 

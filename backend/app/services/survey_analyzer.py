@@ -19,7 +19,7 @@ SURVEY_COLUMNS = [
     "pitch_variation",
     "db",
     "silence",
-    "filler"
+    "filler",
     "attention_score",
     "feedback"
 ] 

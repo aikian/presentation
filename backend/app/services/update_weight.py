@@ -12,7 +12,7 @@ FEATURES = [
     "pitch_variation_mean",
     "db_mean",
     "silence_mean",
-    "filler_mean"
+    "filler_reversed_mean"
 ]
 
 TARGET = "attention_mean"
@@ -103,10 +103,11 @@ def correlation_to_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Di
     for feature in FEATURES:
         correlation_data = correlations.get(feature, {})
         rho = correlation_data.get("correlation")
-
-        if rho is None:
+        p_value = correlation_data.get("p_value")
+        
+        if rho is None or p_value < 0.05:
             continue
-
+        
         target_weights[feature] = abs(float(rho))
 
     return target_weights
@@ -153,7 +154,7 @@ def update_group_model(
         }
         
     # 랜덤으로 10개 추출
-    batch_data = group_data.sample(n=MIN_PRESENTATIONS, random_state=None).copy()
+    batch_data = group_data.tail(MIN_PRESENTATIONS).copy()
     
     if len(batch_data) < MIN_PRESENTATIONS:
         return {
