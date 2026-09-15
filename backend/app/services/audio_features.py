@@ -36,7 +36,7 @@ SMALL_VOICE_DB_MARGIN = 3.0
 
 MAX_VOICE_RATIO = 0.20
 
-MIN_CONSECUTIVE_VOICE_SEC = 0.30
+MIN_CONSECUTIVE_VOICE_SEC = 0.15
 MIN_VOICE_TO_END_SILENCE_SEC  = 0.10
 
 SILENCE_THRESHOLD_OFFSET_DB = 3.5
@@ -243,7 +243,8 @@ def extract_silences(
     
     if not np.any(valid):
         return []
-
+    
+    frame_duration = HOP_LENGTH / SAMPLE_RATE
     adaptive_threshold= calculate_silence_threshold(rms_db)
     
     # 정적 상태에서 이 값까지는 정적으로 유지
@@ -348,7 +349,6 @@ def extract_silences(
     print(f"min consecutive voice: {MIN_CONSECUTIVE_VOICE_SEC:.2f}s")
     
     result: list[dict[str, Any]] = []
-    frame_duration = HOP_LENGTH / SAMPLE_RATE
     
     for idx, item in enumerate(silence_candidates, start=1):
         mask = (
