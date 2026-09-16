@@ -197,7 +197,7 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
 
     # 4. 일반적인 경우
     else:
-        base_db = p50 - 3.0
+        base_db = p25
 
     base_db = float(np.clip(base_db, -60.0, -20.0))
     volume_offset_db = base_db - REFERENCE_DB
