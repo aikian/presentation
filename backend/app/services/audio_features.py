@@ -34,7 +34,7 @@ MIN_SILENCE_SEC = 1.0
 
 SMALL_VOICE_DB_MARGIN = 3.0
 
-MAX_VOICE_RATIO = 0.20
+MAX_VOICE_RATIO = 0.15
 
 MIN_CONSECUTIVE_VOICE_SEC = 0.15
 MIN_VOICE_TO_END_SILENCE_SEC  = 0.10
@@ -192,7 +192,7 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
         base_db = p50
 
     # 3. 음성과 정적이 비교적 잘 분리된 파일
-    elif (p95 - p75) > 8.0:
+    elif (p95 - p75) > 10.0:
         base_db = p75
 
     # 4. 일반적인 경우
@@ -200,9 +200,7 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
         base_db = p25
 
     base_db = float(np.clip(base_db, -60.0, -20.0))
-    volume_offset_db = base_db - REFERENCE_DB
-    dynamic_threshold = SILENCE_DB_THRESHOLD + volume_offset_db + SILENCE_THRESHOLD_OFFSET_DB
-    
+
     print(
         f"P0={stats['p0']:.1f}, "
         f"P25={stats['p25']:.1f}, "
@@ -212,7 +210,7 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
         f"P100={stats['p100']:.1f}"
     )
     
-    return dynamic_threshold
+    return base_db
 
 def find_max_consecutive_voice_frames(voice_mask: np.ndarray) -> int:
     max_consecutive = 0
@@ -351,51 +349,6 @@ def extract_silences(
     result: list[dict[str, Any]] = []
     
     for idx, item in enumerate(silence_candidates, start=1):
-        mask = (
-            (rms_times >= item["start"])
-            & (rms_times < item["end"])
-            & np.isfinite(rms_db)
-        )
-
-        values = rms_db[mask]
-    
-        if values.size == 0:
-            continue
-        
-        voice_mask = (
-            (values >= voice_threshold)
-            & (values <= silence_end_threshold)
-        )
-        voice_frames = int(np.sum(voice_mask))
-        voice_ratio = voice_frames / values.size
-        
-        max_consecutive_frames = find_max_consecutive_voice_frames(voice_mask)
-        max_consecutive_sec = max_consecutive_frames * frame_duration
-        
-        has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
-        has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
-        has_voice = has_voice_ratio and has_continuous_voice
-        
-        print(
-            f"{idx}. " 
-            f"{item['start']:.1f} ~ {item['end']:.1f} "
-            f"({item['duration']:.1f}s) "
-            f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
-            f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
-        )
-        print(f"   voice_frames = {voice_frames}/{values.size}")
-        print(f"   voice_ratio = {voice_ratio:.2f}")
-        print(f"   max_consecutive = {max_consecutive_frames} frames ({max_consecutive_sec:.2f}s)")
-        print(f"   ratio_condition = {has_voice_ratio}")
-        print(f"   consecutive_condition = {has_continuous_voice}")
-        
-        if has_voice:
-
-            print("   -> 작은 음성 포함, silence 제외")
-
-            continue
-
-        print("   -> 최종 silence")
         
         if item["duration"] >= 2.0:
             result.append({
