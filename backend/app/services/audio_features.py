@@ -21,27 +21,24 @@ PITCH_MAX_HZ = 400.0
 # Silence 판정
 SILENCE_DB_THRESHOLD = -32.0
 
-# 정상적인 음성의 기준 음량
-REFERENCE_DB = -20.0
-
-# 임계값에서 2.0 낮은 값까지는 일정 프레임 이상 나올시 정적으로 인식
-# -> 작은 음성을 정적으로 인식하는 것응ㄹ 방지
-LOW_SILENCE_START_DB = 2.0
 # 정적 상태에서 이 값만큼 높은 dB까지는 정적으로 유지
 SILENCE_END_DB = 1.0
 
 MIN_SILENCE_SEC = 1.5
 
-SMALL_VOICE_DB_MARGIN = 2.0
-
+# 정적 중 소리 비율이 0.25이상일 경우 정적 제외
 MAX_VOICE_RATIO = 0.25
 
+# 정적 중 소리가 연속으로 0.25 동안 나올시 정적에서 제외
 MIN_CONSECUTIVE_VOICE_SEC = 0.25
 
+# silence 시작/종료 시 debounce
 MIN_SILENCE_START_SEC = 0.20
 MIN_SILENCE_END_SEC = 0.12
 
-SILENCE_THRESHOLD_OFFSET_DB = 1.0
+MIN_CLUSTER_SEPARATION_DB = 8.0
+
+SILENCE_ONLY_DB = -40.0
 
 # 음성 분석 frame 설정
 FRAME_LENGTH = 2048
@@ -119,7 +116,7 @@ def extract_pitch(
         
         if values.size > 0:
             
-            if values.size >=3:
+            if values.size >= 3:
                 lo, hi = np.percentile(values, [5, 95])
                 
                 values = values[(values >= lo) & (values <= hi)]
@@ -170,30 +167,55 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
     if valid_db.size == 0:
         return SILENCE_DB_THRESHOLD
     
-    p0, p10, p15, p20, p25, p50, p75, p90, p95, p100 = np.percentile(
-        valid_db,
-        [0, 10, 15, 20, 25, 50, 75, 90, 95, 100]
-    )
+    # dB 히스토그램에서 정적과 정적이 아닌 구간으로 분리하는 경계값을 Otsu 방식으로 구함
+    hist, bin_edges = np.histogram(valid_db, bins=200)
+    hist = hist.astype(np.float64)
+    total = hist.sum()
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
     
-    spread = p75 - p25
+    sum_total = np.sum(hist * bin_centers)
+    sum_bg = 0.0
+    weight_bg = 0.0
+    max_variance = -1.0
+    best_threshold: float | None = None
+    best_separation = 0.0
     
-    if spread > 15.0:
-        threshold = p25 - 4.0
-    elif spread > 10.0:
-        threshold = p25 - 3.0
-    else:
-        threshold = p25 - 2.0
+    for i in range(len(hist)):
+        weight_bg += hist[i]
+        if weight_bg == 0:
+            continue
+        weight_fg = total - weight_bg
+        if weight_fg == 0:
+            break
+        
+        sum_bg += hist[i] * bin_centers[i]
+        mean_bg = sum_bg / weight_bg
+        mean_fg = (sum_total - sum_bg) / weight_fg
+        
+        variance_between = weight_bg * weight_fg * (mean_bg - mean_fg) ** 2
+
+        if variance_between > max_variance:
+            max_variance = variance_between
+            best_threshold = float(bin_centers[i])
+            best_separation = float(mean_fg - mean_bg)
     
-    adaptive_threshold = float(np.clip(threshold, -55.0, -28.0))
-    
-    print(
-        f"P0={p0:.1f}, "
-        f"P25={p25:.1f}, "
-        f"P50={p50:.1f}, "
-        f"P75={p75:.1f}, "
-        f"P95={p95:.1f}, "
-        f"P100={p100:.1f}"
-    )
+    # 음성에 정적이 없거나 정적만 있을 때 실행
+    if best_threshold is None or best_separation < MIN_CLUSTER_SEPARATION_DB:
+        median_db = float(np.median(valid_db))
+        
+        # 전체가 정적
+        if median_db <= SILENCE_ONLY_DB:
+            threshold = float(np.max(valid_db)) + 2.0
+            print(f"[전체무음] threshold={threshold:.1f} dB")
+            return threshold
+        
+        # 정적이 없음
+        threshold = float(np.min(valid_db)) - 1.0
+        print(f"[전체발화] threshold={threshold:.1f} dB")
+        return threshold
+
+    adaptive_threshold = float(np.clip(best_threshold, -60.0, -28.0))
+    print(f"separation={best_separation:.1f} dB, threshold={adaptive_threshold:.1f} dB")
     
     return adaptive_threshold
 
@@ -230,11 +252,13 @@ def extract_silences(
     frame_duration = HOP_LENGTH / SAMPLE_RATE
     adaptive_threshold= calculate_silence_threshold(rms_db)
     
+    is_silence = False
+    
     # 정적 상태에서 이 값까지는 정적으로 유지
     silence_end_threshold = adaptive_threshold + SILENCE_END_DB
     silence_candidates: list[dict[str, float]] = []
-    is_silence = False
     
+    # silence 시작 후보
     silence_start_candidate: float | None = None
     silence_start_frames = 0
     
@@ -322,19 +346,17 @@ def extract_silences(
     print(f"adaptive silence threshold: {adaptive_threshold:.1f} dB")
     print(f"silence end threshold: {silence_end_threshold:.1f} dB")
     print(f"voice threshold: {voice_threshold:.1f} dB")
-    print(f"max voice ratio: {MAX_VOICE_RATIO:.2f}")
-    print(f"min consecutive voice: {MIN_CONSECUTIVE_VOICE_SEC:.2f}s")
     
     result: list[dict[str, Any]] = []
     
     for idx, item in enumerate(silence_candidates, start=1):
-        mask = (
+        rms_mask  = (
             (rms_times >= item["start"])
             & (rms_times < item["end"])
             & np.isfinite(rms_db)
         )
 
-        values = rms_db[mask]
+        values = rms_db[rms_mask]
     
         if values.size == 0:
             continue
@@ -344,12 +366,12 @@ def extract_silences(
         voice_frames = int(np.sum(voice_mask))
         voice_ratio = voice_frames / values.size
         
-        max_consecutive_frames = find_max_consecutive_voice_frames(voice_mask)
-        max_consecutive_sec = max_consecutive_frames * frame_duration
-        
+        max_consecutive_frames  = find_max_consecutive_voice_frames(voice_mask)
+        max_consecutive_sec  = max_consecutive_frames * frame_duration
+
         has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
         has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
-        has_voice = has_voice_ratio or (max_consecutive_frames >= 6 and has_continuous_voice)
+        has_sound = has_voice_ratio or (max_consecutive_frames >= 6 and has_continuous_voice)
         
         print(
             f"{idx}. " 
@@ -358,15 +380,10 @@ def extract_silences(
             f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
             f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
         )
-        print(f"   voice_frames = {voice_frames}/{values.size}")
-        print(f"   voice_ratio = {voice_ratio:.2f}")
-        print(f"   max_consecutive = {max_consecutive_frames} frames ({max_consecutive_sec:.2f}s)")
-        print(f"   ratio_condition = {has_voice_ratio}")
-        print(f"   consecutive_condition = {has_continuous_voice}")
-        if has_voice:
-
+        print(f"   voice_ratio = {voice_ratio:.2f}, max_consecutive = {max_consecutive_sec:.2f}s")
+           
+        if has_sound:
             print("   -> 작은 음성 포함, silence 제외")
-
             continue
 
         print("   -> 최종 silence")
