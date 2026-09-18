@@ -379,6 +379,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             else:
                 fast_spm_count = 0
                 slow_spm_count = 0
+                
+            previous_spm_sec = sec
         
         # 정적 평가
         silence_idx = None

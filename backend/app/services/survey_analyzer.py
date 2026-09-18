@@ -59,13 +59,7 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
         raise ValueError(f"CSV 파일을 읽는 중 오류가 발생했습니다: {e}")
 
     if df.empty:
-        raise ValueError("CSV 파일이 비어 있습니다.")
-    
-    first_row_types = df.iloc[0].map(type)
-    second_row_types = df.iloc[1].map(type)
-    
-    if not first_row_types.equals(second_row_types):
-        df = df.drop(0).reset_index(drop=True)   
+        raise ValueError("CSV 파일이 비어 있습니다.")   
     
     if len(df.columns) != len(SURVEY_COLUMNS):
         raise ValueError(
@@ -73,13 +67,13 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
             f"필요한 컬럼 수: {len(SURVEY_COLUMNS)}, "
             f"현재 컬럼 수: {len(df.columns)}"
         )
-    
-    first_row_types = df.iloc[0].map(type)
-    second_row_types = df.iloc[1].map(type)
         
-    if not first_row_types.equals(second_row_types):
-        df = df.drop(0).reset_index(drop=True)  
-            
+    # 숫자여야 하는 컬럼의 SURVEY_COLUMNS 내 위치
+    NUMERIC_COLUMN_POSITIONS = [SURVEY_COLUMNS.index(c) for c in NUMERIC_COLUMNS]
+    first_row_numeric = pd.to_numeric(df.iloc[0, NUMERIC_COLUMN_POSITIONS], errors="coerce")
+    if first_row_numeric.isna().any():
+        df = df.drop(0).reset_index(drop=True)
+
     df.columns = SURVEY_COLUMNS
 
     for column in NUMERIC_COLUMNS:

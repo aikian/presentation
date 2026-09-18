@@ -34,7 +34,7 @@ FEATURE_WEIGHT_KEY = {
     "pitch_variation_mean": "pitch_weight",
     "db_mean": "db_boost_weight",
     "silence_mean": "silence_penalty_weight",
-    "filler_mean": "filler_penalty_weight"
+    "filler_reversed_mean": "filler_penalty_weight"
 }
 
 # 청중의 설문 데이터를 기반으로 각 속성들과의 스피어만 상관계수 계산
@@ -105,7 +105,7 @@ def correlation_to_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Di
         rho = correlation_data.get("correlation")
         p_value = correlation_data.get("p_value")
         
-        if rho is None or p_value < 0.05:
+        if rho is None or p_value is None or p_value >= 0.05:
             continue
         
         target_weights[feature] = abs(float(rho))
@@ -117,7 +117,7 @@ def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, floa
     
     for feature in FEATURES:
 
-        weight_key = FEATURE_WEIGHT_KEY[feature]
+        weight_key = FEATURE_WEIGHT_KEY.get(feature)
             
         if weight_key is None:
             continue
