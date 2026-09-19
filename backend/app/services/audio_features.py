@@ -26,11 +26,11 @@ SILENCE_END_DB = 1.0
 
 MIN_SILENCE_SEC = 1.5
 
-# 정적 중 소리 비율이 0.15이상일 경우 정적 제외
+# 정적 중 소리 비율이 0.15 초과일 경우 정적 제외
 MAX_VOICE_RATIO = 0.15
 
-# 정적 중 소리가 연속으로 0.15 동안 나올시 정적에서 제외
-MIN_CONSECUTIVE_VOICE_SEC = 0.15
+# 정적 중 소리가 연속으로 0.20 동안 나올시 정적에서 제외
+MIN_CONSECUTIVE_VOICE_SEC = 0.20
 
 # silence 시작/종료 시 debounce
 MIN_SILENCE_START_SEC = 0.20
@@ -236,8 +236,6 @@ def find_max_consecutive_voice_frames(voice_mask: np.ndarray) -> int:
 def extract_silences(
     rms_db: np.ndarray,
     rms_times: np.ndarray,
-    f0: np.ndarray,
-    pitch_times: np.ndarray,
     duration: float,
     min_silence_sec: float = MIN_SILENCE_SEC
 ) -> list[dict[str, Any]]:
@@ -270,9 +268,9 @@ def extract_silences(
     
     min_silence_start_frames = np.ceil(MIN_SILENCE_START_SEC  / frame_duration)
     min_silence_end_frames = np.ceil(MIN_SILENCE_END_SEC  / frame_duration)
-    
-    start_time: float | None = None
+
     current_time: float | None = None
+    start_time: float | None = None
     
     for idx, db in enumerate(rms_db):
         
@@ -280,16 +278,8 @@ def extract_silences(
             continue
         
         current_time = float(rms_times[idx])
-        
-        # 해당 프레임에 유효한 목소리 피치가 존재하는지 확인
-        f0_val = f0[idx]
-        has_pitch = np.isfinite(f0_val) and (PITCH_MIN_HZ <= f0_val <= PITCH_MAX_HZ)
-        
-        # 음성 프레임 판정: dB가 높거나 목소리 피치가 감지되면 발화 중으로 판단
-        is_voice_frame = (db > adaptive_threshold) or has_pitch
-        
         if not is_silence:
-            if not is_voice_frame:
+            if db <= adaptive_threshold:
                 
                 if silence_start_frames == 0:
                     silence_start_candidate = current_time
@@ -311,10 +301,7 @@ def extract_silences(
                 silence_start_frames = 0
             
         else:
-            
-            # 정적 상태: 소리가 크거나(종료 임계값 초과) OR 피치가 다시 감지되면 정적 종료 후보로 인정
-            is_end_frame = (db > silence_end_threshold) or has_pitch
-            if is_end_frame:
+            if db > silence_end_threshold:
                 
                 if silence_end_frames == 0:
                     silence_end_candidate = current_time
@@ -364,40 +351,33 @@ def extract_silences(
     result: list[dict[str, Any]] = []
     
     for idx, item in enumerate(silence_candidates, start=1):
-        mask  = (
+        rms_mask  = (
             (rms_times >= item["start"])
             & (rms_times < item["end"])
             & np.isfinite(rms_db)
         )
 
-        db_segment = rms_db[mask]
-        f0_segment = f0[mask]
+        values = rms_db[rms_mask]
     
-        if db_segment.size == 0:
+        if values.size == 0:
             continue
         
-        is_voice_db = db_segment >= voice_threshold
-        is_voice_pitch = (
-            np.isfinite(f0_segment)
-            & (f0_segment >= PITCH_MIN_HZ)
-            & (f0_segment <= PITCH_MAX_HZ)
-        )
-        voice_mask = is_voice_db | is_voice_pitch
+        voice_mask = values >= voice_threshold
         
         voice_frames = int(np.sum(voice_mask))
-        voice_ratio = voice_frames / db_segment.size
+        voice_ratio = voice_frames / values.size
         
         max_consecutive_frames  = find_max_consecutive_voice_frames(voice_mask)
         max_consecutive_sec  = max_consecutive_frames * frame_duration
 
         has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
         has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
-        has_sound = has_voice_ratio or (max_consecutive_frames >= 6 and has_continuous_voice)
+        has_sound = has_voice_ratio or has_continuous_voice
         
         print(
             f"{idx}. " 
             f"{item['start']:.1f} ~ {item['end']:.1f} "
-            f"({item['duration']:.1f}s) "
+            f"({item['duration']:.2f}s) "
             f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
             f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
         )
@@ -475,7 +455,7 @@ def analyze_audio_features(video_path: Path) -> dict[str, Any]:
         db = extract_db(rms_db, rms_times, duration)
         
         # Silence
-        silences = extract_silences(rms_db, rms_times, f0, pitch_times, duration)
+        silences = extract_silences(rms_db, rms_times, duration)
         
         timeline = merge_timeline(pitch, db)
         
