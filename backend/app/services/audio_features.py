@@ -372,7 +372,7 @@ def extract_silences(
 
         has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
         has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
-        has_sound = has_voice_ratio or has_continuous_voice
+        has_sound = has_voice_ratio and has_continuous_voice
         
         print(
             f"{idx}. " 
