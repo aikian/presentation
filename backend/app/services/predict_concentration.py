@@ -4,6 +4,8 @@ import logging
 
 from pathlib import Path
 from app.services.audio_analyzer import analyze_audio
+from app.core.weights_db import get_group_weights
+from app.services.survey_analyzer import VALID_GROUPS
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +43,10 @@ DEFAULT_WEIGHT: dict[str, Any] = {
 
 DEFAULT_THRESHOLD: dict[str, Any] = {
     # 말속도(동시통역에 적합한 한국어 발화 속도 연구)
-    "fast_spm_threshold": 350.0,
+    "fast_spm_threshold": 340.0,
     "slow_spm_threshold": 200.0,
     
-    # 정적(4초 이상 지속 시 감점)
+    # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting tempo: The effect of conversational lapses on affective and cognitive responses
     "silence_penalty_threshold": 4.0,
     
     # pitch 변동률이 0.15 이하면 단조로움 감점
@@ -205,7 +207,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
     valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch > 0]
     
-    if len(valid_pitches) < 2:
+    if len(valid_pitches) < 3:
         return None
     
     mean_pitch = statistics.mean(valid_pitches)
@@ -375,7 +377,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         if average_spm is not None:
             is_continuous = previous_spm_sec is not None and sec == previous_spm_sec + 1
             
-            if average_spm >= threshold["fast_spm_threshold"]:
+            if average_spm > threshold["fast_spm_threshold"]:
                 if is_continuous:
                     fast_spm_count += 1
                 else:
@@ -392,7 +394,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                     
                     fast_spm_count = 0
                     
-            elif average_spm <= threshold["slow_spm_threshold"]:
+            elif average_spm < threshold["slow_spm_threshold"]:
                 if is_continuous:
                     slow_spm_count += 1
                 else:
@@ -559,20 +561,25 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
 
 
 # 음성 데이터를 분석 모듈에서 받아오는 코드 -> 수정 필요
-def analyze_audience(video_path: Path) -> dict[str, Any]:
-    audio_result = analyze_audio(video_path)
-    '''
-    청중 정보(전문가/비전문가) 비교 후 알맞은 청중 가중치 적용 예정
-    '''
+def analyze_audience(video_path: Path, audience_group: Optional[str]  = None) -> dict[str, Any]:
+    audience_weight: Optional[dict[str, Any]] = None
     
-    audience_attention = predict_attention(audio_result, None)
-    
-    return audience_attention
+    if audience_group:
+        audience_group = audience_group.strip().lower()
 
-    """
-    normalize, error_messege = calculate_normalize(data)
-    
-    if error_messege:
-            return None, None, error_messege
-    """
-    
+        if audience_group not in VALID_GROUPS:
+            return make_error_result("INVALID_AUDIENCE_GROUP", f"잘못된 audience_group 값입니다: {audience_group}")
+
+        try:
+            audience_weight = get_group_weights(audience_group)["weights"]
+        except Exception:
+            # 가중치 조회에 실패해도 예측 자체는 기본 가중치로 계속 진행
+            logger.exception("그룹 가중치 조회 실패, 기본 가중치를 사용합니다: %s", audience_group)
+
+    try:
+        audio_result = analyze_audio(video_path)
+    except Exception:
+        logger.exception("음성 분석 실패: %s", video_path)
+        return make_error_result("AUDIO_ANALYSIS_FAILED", "음성 분석 중 오류가 발생했습니다.")
+
+    return predict_attention(audio_result, audience_weight)

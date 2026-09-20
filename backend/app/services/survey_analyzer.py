@@ -74,8 +74,9 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
     if not content:
         raise ValueError("업로드된 파일이 비어 있습니다.")
     
+    text = decode_csv(content)
     try:
-        df = pd.read_csv(io.BytesIO(content), header=None, encoding='utf-8', na_values=["Null", "NULL", "none", ""])
+        df = pd.read_csv(io.StringIO(text), header=None, encoding='utf-8', na_values=["Null", "NULL", "none", ""])
     except Exception as e: 
         raise ValueError(f"CSV 파일을 읽는 중 오류가 발생했습니다: {e}")
 
@@ -149,13 +150,9 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
     average_score = float(df["attention_score"].mean())
     df["filler_reversed"] = MAX_SURVEY_SCORE + MIN_SURVEY_SCORE - df["filler"]
     
-    feature_means: Dict[str, Any] = {}
-    
-    for column in FEATURE_COLUMNS:
-        
-        feature_means.append({
-            column: mean_or_none(df[column])
-        })
+    feature_means: Dict[str, Any] = {
+        column: mean_or_none(df[column]) for column in FEATURE_COLUMNS
+    }
             
     feature_means["filler_reversed"] = mean_or_none(df["filler_reversed"])
         

@@ -76,7 +76,7 @@ def calculate_spearmanr(result: DataFrame, column_x: str, column_y: str) -> Dict
             "p_value": 1.0,
             "sample_size": sample_length,
             "updated": False,
-            "reason": "'{column_y}' 값의 변화가 없습니다.",
+            "reason": f"'{column_y}' 값의 변화가 없습니다.",
         }
         
     correlation, p_value = spearmanr(data[column_x], data[column_y])

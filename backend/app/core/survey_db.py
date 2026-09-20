@@ -24,7 +24,7 @@ def insert_survey_result(session_id: str, survey: dict[str, Any]) -> dict[str, A
         "feature_means": survey.get("feature_means", {}),
         "feedbacks": survey.get("feedbacks", []),
     }
-    res = get_supabase().table("survey_results").insert(payload, on_conflict="session_id").execute()
+    res = get_supabase().table("survey_results").upsert(payload, on_conflict="session_id").execute()
     return res.data[0] if res.data else None
 
 

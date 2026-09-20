@@ -39,7 +39,7 @@ def update_group_weights(audience_group: str, weights: dict[str, float], present
         {"weights": weights, "last_trained_presentation_count": presentation_count}
     ).eq("audience_group", audience_group).execute()
 
-def fetch_group_presentation_data(audience_group: str, limit: int = 200) -> pd.DataFrame:
+def fetch_group_presentation_data(audience_group: str) -> pd.DataFrame:
     res = (
         get_supabase()
         .table("survey_group_means")
@@ -53,7 +53,6 @@ def fetch_group_presentation_data(audience_group: str, limit: int = 200) -> pd.D
         .execute()
     )
     return pd.DataFrame(res.data)
-
 
 def maybe_update_group_model(audience_group: str) -> dict[str, Any] | None:
     current = get_group_weights(audience_group)

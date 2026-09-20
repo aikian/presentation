@@ -43,9 +43,9 @@ export default function CsvUpload({ resultId, onUploaded }) {
             }
         } catch(error){
             console.error("🔥 CSV 업로드 실패:", error)
-            const detail = error.response?.data?.detail || '설문 결과 업로드에 실패했습니다.'
-
-            setMessage(detail)
+            
+            const detail = error.response?.data?.detail
+            setMessage(typeof detail === 'string' ? detail : '설문 결과 업로드에 실패했습니다.')
         } finally {
             setLoading(false)
 

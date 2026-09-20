@@ -13,6 +13,7 @@ export default function PredictAttention() {
     const [surveyResult, setSurveyResult] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [surveyError, setSurveyError] = useState(null)
 
     // 집중도 분석 결과 가져오기
     useEffect(() => {
@@ -30,6 +31,20 @@ export default function PredictAttention() {
         loadPrediction()
     }, [id])
 
+    const handleSurveyUploaded = (data) => {
+
+        const result = data?.analysis_result ?? data?.survey_result ?? null
+
+        if (!result) {
+            setSurveyError("설문 결과를 불러오지 못했습니다. 다시 업로드해 주세요.")
+            return
+        }
+
+        setSurveyError(null)
+        setSurveyResult(result)
+    }
+
+
     // 청중의 실제 집중도를 0~100점으로 환산
     const getActualAttentionScore = () => {
         if (!surveyResult) return null
@@ -46,6 +61,11 @@ export default function PredictAttention() {
     // 신뢰도 계산
     const getPredictConfidence = () => {
         if(!predictResult || !surveyResult) {
+            return null
+        }
+
+        // 예측에 실패한 경우(점수 없음)에는 계산하지 않음
+        if (predictResult.attention_score == null) {
             return null
         }
 
@@ -195,11 +215,14 @@ export default function PredictAttention() {
                             </h3>
                             <CsvUpload 
                                 resultId={id}
-                                onUploaded={(data) => {
-                                    console.log("CSV 분석 결과:", data)
-                                    setSurveyResult(data.analysis_result)
-                                }}
+                                onUploaded={handleSurveyUploaded}
                             />
+
+                            {surveyError && (
+                                <p className="mt-2 text-sm text-red-500">
+                                    {surveyError}
+                                </p>
+                            )}
                         </div>
                     </div>
                 ) : (
@@ -277,11 +300,18 @@ export default function PredictAttention() {
                             <div className="mt-6">
                                 <h3 className="mb-3 text-base font-semibold text-gray-800">청중 피드백</h3>
                                 <div className="space-y-2">
-                                    {surveyResult.feedbacks.map((item, index) => (
-                                        <div key={item.id ?? index} className="rounded-lg bg-white p-4">
-                                            <p className="text-sm text-gray-700">{item.text}</p>
-                                        </div>
-                                    ))}
+                                    {surveyResult.feedbacks.map((item, index) => {
+                                        
+                                        const text = typeof item === 'string' ? item : item?.text
+
+                                        if (!text) return null
+
+                                        return (
+                                            <div key={item?.id ?? index} className="rounded-lg bg-white p-4">
+                                                <p className="text-sm text-gray-700">{text}</p>
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
 

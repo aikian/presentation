@@ -13,6 +13,7 @@ import {
     Title,
     Tooltip,
     Legend,
+    Filler
 } from "chart.js";
 
 ChartJS.register(
@@ -22,7 +23,8 @@ ChartJS.register(
     LineElement,
     Title,
     Tooltip,
-    Legend
+    Legend,
+    Filler
 );
 
 const TEST_PREDICT_RESULT = {
@@ -190,6 +192,8 @@ function TotalScore({ predictResult }) {
         return null;
     }
 
+    const score = predictResult.attention_score;
+
     return (
         <div className="mb-8 rounded-xl border border-gray-200 bg-white p-6">
             <p className="text-sm font-medium text-gray-500">
@@ -198,9 +202,7 @@ function TotalScore({ predictResult }) {
 
             <div className="mt-2 flex items-end gap-2">
                 <span className="text-4xl font-bold text-gray-600">
-                    {Number(
-                        predictResult.attention_score ?? 0
-                    ).toFixed(1)}
+                    {score == null ? "-" : Number(score).toFixed(1)}
                 </span>
 
                 <span className="mb-1 text-lg text-gray-500">
@@ -310,7 +312,7 @@ function Graph({ predictResult }) {
 
                         return isSecondTimeline
                             ? `${item.sec}초`
-                            : `${item.min}분`;
+                            : `${item.minute}분`;
                     },
 
                     label: function (context) {
@@ -395,12 +397,26 @@ export default function AttentionResult({predictResult}){
         )
     }
 
+    if (predictResult.status === "ERROR") {
+        return (
+            <div className="mb-8 rounded-xl border border-red-200 bg-red-50 p-6">
+                <p className="text-sm font-semibold text-red-600">
+                    청중 집중도를 예측하지 못했습니다.
+                </p>
+
+                <p className="mt-1 text-sm text-red-500">
+                    {predictResult.message ?? "음성 분석 중 오류가 발생했습니다."}
+                </p>
+            </div>
+        )
+    }
+
     return(
         <div>
-            <TotalScore predictResult={result} />
-            <Graph predictResult={result} />
-            {/*<TotalScore predictResult={predictResult} />
-            <Graph predictResult={predictResult} />*/}
+            {/*<TotalScore predictResult={result} />
+            <Graph predictResult={result} />*/}
+            <TotalScore predictResult={predictResult} />
+            <Graph predictResult={predictResult} />
         </div>
     )
 }
