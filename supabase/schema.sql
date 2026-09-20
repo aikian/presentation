@@ -111,6 +111,78 @@ alter table public.analysis_results enable row level security;
 alter table public.sessions enable row level security;
 alter table public.reports enable row level security;
 
+-- 음성 기반 집중도 예측 결과
+create table if not exists public.attention_predictions (
+  id uuid primary key default gen_random_uuid(),
+  session_id text not null references public.sessions(session_id) on delete cascade,
+  status text not null,
+  error_code text,
+  message text,
+  attention_score double precision,
+  timeline_second jsonb not null default '[]'::jsonb,
+  timeline_minute jsonb not null default '[]'::jsonb,
+  total_stats jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists attention_predictions_session_id_idx
+  on public.attention_predictions (session_id);
+
+-- 청중 설문 분석 결과 
+create table if not exists public.survey_results (
+  id uuid primary key default gen_random_uuid(),
+  session_id text not null references public.sessions(session_id) on delete cascade,
+  participant_count integer not null,
+  average_attention_score double precision not null,
+  feature_means jsonb not null default '{}'::jsonb,
+  feedbacks jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists survey_results_session_id_idx
+  on public.survey_results (session_id);
+
+-- 청중 그룹별 설문 집계 
+create table if not exists public.survey_group_means (
+  id uuid primary key default gen_random_uuid(),
+  survey_result_id uuid not null references public.survey_results(id) on delete cascade,
+  session_id text not null references public.sessions(session_id) on delete cascade,
+  audience_group text not null check (audience_group in ('major', 'non_major')),
+  response_count integer not null,
+  spm_mean double precision,
+  pitch_variation_mean double precision,
+  db_mean double precision,
+  silence_mean double precision,
+  filler_mean double precision,
+  filler_reversed_mean double precision,
+  attention_mean double precision not null,
+  learning_data_available boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (survey_result_id, audience_group)
+);
+
+create index if not exists survey_group_means_group_created_idx
+  on public.survey_group_means (audience_group, created_at);
+
+-- 청중 그룹별 현재 가중치
+create table if not exists public.group_weights (
+  audience_group text primary key check (audience_group in ('major', 'non_major')),
+  weights jsonb not null default '{
+    "spm_penalty_weight": 0.5,
+    "pitch_weight": 0.5,
+    "db_boost_weight": 0.5,
+    "silence_penalty_weight": 0.5,
+    "filler_penalty_weight": 0.5
+  }'::jsonb,
+  last_trained_presentation_count integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.attention_predictions enable row level security;
+alter table public.survey_results enable row level security;
+alter table public.survey_group_means enable row level security;
+alter table public.group_weights enable row level security;
+
 do $$
 begin
   if not exists (
@@ -215,6 +287,57 @@ begin
   ) then
     create policy "reports_select_own"
       on public.reports for select
+      using (
+        session_id in (
+          select session_id from public.sessions
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'attention_predictions' and policyname = 'attention_predictions_select_own'
+  ) then
+    create policy "attention_predictions_select_own"
+      on public.attention_predictions for select
+      using (
+        session_id in (
+          select session_id from public.sessions
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'survey_results' and policyname = 'survey_results_select_own'
+  ) then
+    create policy "survey_results_select_own"
+      on public.survey_results for select
+      using (
+        session_id in (
+          select session_id from public.sessions
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'survey_group_means' and policyname = 'survey_group_means_select_own'
+  ) then
+    create policy "survey_group_means_select_own"
+      on public.survey_group_means for select
       using (
         session_id in (
           select session_id from public.sessions

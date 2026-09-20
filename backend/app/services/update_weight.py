@@ -1,11 +1,17 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+import logging
 import pandas as pd
+
 from pandas import DataFrame
 from scipy.stats import spearmanr
 
+logger = logging.getLogger(__name__)
+
 WEIGHT_LEARNING_RATE = 0.1 # 가중치 학습률
 MIN_PRESENTATIONS = 10 # 가중치 업데이트에 필요한 최소 발표 수
+
+ORDER_COLUMN = "created_at"
 
 FEATURES = [
     "spm_mean",
@@ -92,7 +98,7 @@ def feature_corr(result: DataFrame)-> Dict[str, Dict[str, Any]]:
     correlations = {}
     
     for feature in FEATURES:
-        correlations[feature] = (calculate_spearmanr(result, feature))
+        correlations[feature] = (calculate_spearmanr(result, feature, TARGET))
         
     return correlations
 
@@ -105,7 +111,7 @@ def correlation_to_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Di
         rho = correlation_data.get("correlation")
         p_value = correlation_data.get("p_value")
         
-        if rho is None or p_value is None or p_value >= 0.05:
+        if rho is None or p_value is None or p_value >= 0.05 or rho <= 0:
             continue
         
         target_weights[feature] = abs(float(rho))
@@ -115,17 +121,12 @@ def correlation_to_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Di
 def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, float]) -> Dict[str, float]:
     updated_weights = old_weights.copy()
     
-    for feature in FEATURES:
-
-        weight_key = FEATURE_WEIGHT_KEY.get(feature)
-            
-        if weight_key is None:
-            continue
+    for feature, weight_key in FEATURE_WEIGHT_KEY.items():
         
         old_weight = old_weights.get(weight_key, DEFAULT_WEIGHT[weight_key])
         target_weight = target_weights.get(feature, old_weight)
 
-        new_weight = (old_weight + WEIGHT_LEARNING_RATE * (target_weight - old_weight))
+        new_weight = old_weight + WEIGHT_LEARNING_RATE * (target_weight - old_weight)
 
         updated_weights[weight_key] = max(0.0, min(1.0, new_weight))
         
@@ -135,27 +136,34 @@ def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, floa
 def update_group_model(
     presentation_data: DataFrame,
     audience_group: str,
-    old_weights: Dict[str, float] | None = None
+    old_weights: Optional[Dict[str, float]],
+    last_trained_count: int = 0
 ) -> Dict[str, Any]:
+    
     group_data = presentation_data[presentation_data["audience_group"] == audience_group].copy()
     
-    # 발표 ID 기준으로 오래된 발표부터 정렬
-    if "presentation_id" in group_data.columns:
-        group_data = group_data.sort_values("presentation_id")
-        
-    presentation_count = len(group_data)
+    if "learning_data_available" in group_data.columns:
+        group_data = group_data[group_data["learning_data_available"].fillna(False).astype(bool)]
     
-    if presentation_count < MIN_PRESENTATIONS:
+    if ORDER_COLUMN in group_data.columns:
+        group_data = group_data.sort_values(ORDER_COLUMN)
+    else:
+        logger.warning("'%s' 컬럼이 없어 입력된 순서를 발표 순서로 사용합니다.", ORDER_COLUMN)
+ 
+    presentation_count = len(group_data)
+    new_count = presentation_count - last_trained_count
+ 
+    if new_count < MIN_PRESENTATIONS:
         return {
             "updated": False,
             "audience_group": audience_group,
             "presentation_count": presentation_count,
-            "reason": (f"{audience_group} 그룹의 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.")
+            "reason": f"{audience_group} 그룹의 새 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.",
         }
         
-    # 랜덤으로 10개 추출
-    batch_data = group_data.tail(MIN_PRESENTATIONS).copy()
-    
+    # 아직 학습하지 않은 발표 중 가장 오래된 10개를 한 배치로 사용
+    batch_data = group_data.iloc[last_trained_count:last_trained_count + MIN_PRESENTATIONS].copy()
+
     if len(batch_data) < MIN_PRESENTATIONS:
         return {
             "updated": False,
@@ -176,7 +184,7 @@ def update_group_model(
         "audience_group": audience_group,
         "presentation_count": presentation_count,
         "batch_size": len(batch_data),
-
+        "trained_presentation_count": last_trained_count + len(batch_data),
         "correlations": correlations,
 
         "old_weights": old_weights,

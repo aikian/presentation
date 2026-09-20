@@ -1,5 +1,5 @@
 import io
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 from fastapi import UploadFile
@@ -10,6 +10,10 @@ MIN_RESPONSES = 20
 # 설문 점수 범위
 MIN_SURVEY_SCORE = 1
 MAX_SURVEY_SCORE = 5
+
+# 집중도 점수 범위
+MIN_ATTENTION_SCORE = 0
+MAX_ATTENTION_SCORE = 100
 
 # 필수 컬럼
 SURVEY_COLUMNS = [
@@ -47,7 +51,24 @@ FEATURE_COLUMNS = [
 # 청중 그룹
 VALID_GROUPS = {"major", "non_major"}
 
-async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]:
+def decode_csv(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "cp949"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+ 
+    raise ValueError("CSV 파일 인코딩을 읽을 수 없습니다. UTF-8 또는 CP949로 저장해 주세요.")
+
+def mean_or_none(series: pd.Series, digits: int = 4) -> Optional[float]:
+    values = series.dropna()
+ 
+    if values.empty:
+        return None
+ 
+    return round(float(values.mean()), digits)
+
+async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]:
     content = await file.read()
     
     if not content:
@@ -69,27 +90,29 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
         )
         
     # 숫자여야 하는 컬럼의 SURVEY_COLUMNS 내 위치
-    NUMERIC_COLUMN_POSITIONS = [SURVEY_COLUMNS.index(c) for c in NUMERIC_COLUMNS]
-    first_row_numeric = pd.to_numeric(df.iloc[0, NUMERIC_COLUMN_POSITIONS], errors="coerce")
+    required_positions = [
+        SURVEY_COLUMNS.index("participant_id"),
+        SURVEY_COLUMNS.index("attention_score")
+    ]
+    first_row_numeric = pd.to_numeric(df.iloc[0, required_positions], errors="coerce")
     if first_row_numeric.isna().any():
         df = df.drop(0).reset_index(drop=True)
 
     df.columns = SURVEY_COLUMNS
 
     for column in NUMERIC_COLUMNS:
-        df[column] = pd.to_numeric(
-            df[column],
-            errors="coerce"
-        )
+        df[column] = pd.to_numeric(df[column], errors="coerce")
     
     # 필수 데이터가 없는 응답제거
-    df = df.dropna(subset=["participant_id", "audience_group", "attention_score"])
+    df = df.dropna(subset=["participant_id", "audience_group", "attention_score"]).copy()
     
     if df.empty:
         raise ValueError("CSV 파일에 유효한 데이터가 없습니다.")
     
-    if((df["attention_score"] < 0).any() or (df["attention_score"] > 100).any()):
-        raise ValueError("설문 집중도 점수는 0에서 100 사이의 값이어야 합니다.")
+    df["audience_group"] = df["audience_group"].astype(str).str.strip().str.lower()
+    
+    if((df["attention_score"] < MIN_ATTENTION_SCORE).any() or (df["attention_score"] > MAX_ATTENTION_SCORE).any()):
+        raise ValueError(f"설문 집중도 점수는 {MIN_ATTENTION_SCORE}에서 {MAX_ATTENTION_SCORE} 사이의 값이어야 합니다.")
     
     # 청중 그룹 검사
     invalid_groups = set(df["audience_group"].dropna()) - VALID_GROUPS
@@ -124,25 +147,17 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
             )
             
     average_score = float(df["attention_score"].mean())
+    df["filler_reversed"] = MAX_SURVEY_SCORE + MIN_SURVEY_SCORE - df["filler"]
     
     feature_means: Dict[str, Any] = {}
     
     for column in FEATURE_COLUMNS:
-        valid_values = df[column].dropna()
         
-        if valid_values.empty:
-            feature_means[column] = None
-        else:
-            feature_means[column] = round(float(valid_values.mean()), 4)
+        feature_means.append({
+            column: mean_or_none(df[column])
+        })
             
-    df["filler_reversed"] = (MAX_SURVEY_SCORE + MIN_SURVEY_SCORE - df["filler"])
-
-    filler_reversed_values = (df["filler_reversed"].dropna())
-
-    if filler_reversed_values.empty:
-        filler_reversed_mean = None
-    else:
-        filler_reversed_mean = round(float(filler_reversed_values.mean()), 4)
+    feature_means["filler_reversed"] = mean_or_none(df["filler_reversed"])
         
     # 청중 그룹별 평균
     group_means = {}
@@ -158,19 +173,17 @@ async def analyze_survey_csv(file: UploadFile, result_id: int) -> Dict[str, Any]
         group_data = {
             "result_id": result_id,
             "audience_group": group,
-            "response_count": len(group_df),
+            "response_count": response_count,
             
-            "spm_mean": round(float(group_df["spm"].mean()), 4) if group_df["spm"].notna().any() else None,
+            "spm_mean": mean_or_none(group_df["spm"]),
            
-            "pitch_variation_mean": round(float(group_df["pitch_variation"].mean()), 4) if group_df["pitch_variation"].notna().any() else None,
+            "pitch_variation_mean": mean_or_none(group_df["pitch_variation"]),
+            
+            "db_mean": mean_or_none(group_df["db"]),
            
-            "db_mean": round(float(group_df["db"].mean()), 4) if group_df["db"].notna().any() else None,
+            "silence_mean": mean_or_none(group_df["silence"]),
            
-            "silence_mean": round(float(group_df["silence"].mean()), 4) if group_df["silence"].notna().any() else None,
-           
-            "filler_mean": round(float(group_df["filler"].mean()),4) if group_df["filler"].notna().any() else None,
-           
-            "filler_reversed_mean": round(float(group_df["filler_reversed"].mean()),4) if group_df["filler_reversed"].notna().any() else None,
+            "filler_reversed_mean": mean_or_none(group_df["filler_reversed"]),
            
             "attention_mean": round(float(group_df["attention_score"].mean()), 4),
            
