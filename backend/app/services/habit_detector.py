@@ -265,3 +265,79 @@ def analyze_gesture_habits(video_timeline: list[dict],frame_interval_sec: float,
         "persistent": persistent,
     }
 
+
+# 음성 - 군말
+
+def extract_filler_points(filler_words: list[dict]) -> list[dict]:
+    """
+    filler_words에서 군말 발생 시점과 단어를 추출한다.
+    """
+    filler_points = []
+
+    for item in filler_words:
+        sec = item.get("sec")
+        word = item.get("word")
+
+        if sec is None or word is None:
+            continue
+
+        filler_points.append({
+            "sec": sec,
+            "word": word,
+        })
+
+    return filler_points
+
+
+def count_fillers(filler_points: list[dict]) -> dict:
+    """
+    군말 발생 정보를 바탕으로 단어별 사용 횟수를 집계한다.
+    """
+    filler_counts = {}
+
+    for point in filler_points:
+        word = point.get("word")
+
+        if word is None:
+            continue
+
+        filler_counts[word] = filler_counts.get(word, 0) + 1
+
+    return filler_counts
+
+
+def detect_repeated_filler_habits(filler_counts: dict, repeated_threshold_count: int) -> list[dict]:
+    """
+    단어별 군말 사용 횟수를 바탕으로 반복 군말 습관을 탐지한다.
+
+    repeated_threshold_count:
+        같은 군말이 이 횟수 이상 사용되면 반복형으로 판단한다.
+
+    임계값은 현재 함수 내부에서 고정하지 않고 외부에서 전달받는다.
+    """
+    repeated = []
+
+    for word, count in filler_counts.items():
+        if count >= repeated_threshold_count:
+            repeated.append({
+                "word": word,
+                "count": count,
+            })
+
+    return repeated
+
+
+def analyze_filler_habits(filler_words: list[dict], repeated_threshold_count: int) -> dict:
+    """
+    filler_words를 기반으로 반복 군말 습관 탐지 전체 과정을 수행한다.
+    """
+    filler_points = extract_filler_points(filler_words)
+
+    filler_counts = count_fillers(filler_points)
+
+    repeated = detect_repeated_filler_habits(
+        filler_counts,
+        repeated_threshold_count,
+    )
+
+    return {"filler_points": filler_points, "filler_counts": filler_counts, "repeated": repeated}
