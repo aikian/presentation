@@ -107,14 +107,15 @@ def correlation_to_target_weights(correlations: Dict[str, Dict[str, Any]]) -> Di
     target_weights = {}
 
     for feature in FEATURES:
+        base = DEFAULT_WEIGHT[FEATURE_WEIGHT_KEY[feature]]
         correlation_data = correlations.get(feature, {})
         rho = correlation_data.get("correlation")
         p_value = correlation_data.get("p_value")
         
-        if rho is None or p_value is None or p_value >= 0.05 or rho <= 0:
+        if rho is None or p_value is None or p_value >= 0.05:
             continue
         
-        target_weights[feature] = abs(float(rho))
+        target_weights[feature] = max(0.0, min(1.0, base + 0.5 * float(rho)))
 
     return target_weights
 
