@@ -10,8 +10,11 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
 
     가중치: 시선 30%, 자세 25%, 제스처 15%, 시간 30%
     """
-    gaze = _score(metrics.get("gaze_away_ratio", 0), 0.0, 0.5)
-    pose = _score(metrics.get("shoulder_tilt_avg", 0), 0.0, 20.0)
+    gaze_raw = metrics.get("gaze_away_ratio")
+    gaze = _score(gaze_raw, 0.0, 0.5) if gaze_raw is not None else None
+
+    pose_raw = metrics.get("shoulder_tilt_avg")
+    pose = _score(pose_raw, 0.0, 20.0) if pose_raw is not None else None
 
     g = metrics.get("gesture_count", 0)
     if g <= 15:
@@ -27,7 +30,21 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
     else:
         time_score = 80  # 목표 시간 미설정 시 기본값
 
-    total = int(gaze * 0.30 + pose * 0.25 + gesture * 0.15 + time_score * 0.30)
+    items = [
+    (gaze, 0.30),
+    (pose, 0.25),
+    (gesture, 0.15),
+    (time_score, 0.30),
+    ]
+
+    parts = [(v, w) for v, w in items if v is not None]
+
+    if parts:
+        total = round(
+            sum(v * w for v, w in parts) / sum(w for _, w in parts)
+        )
+    else:
+        total = None
 
     return {
         "score_gaze": gaze,
