@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -10,10 +11,12 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import get_supabase
 from app.middleware.auth import CurrentUser, get_current_user
-from app.services.analysis_schema import build_details
+from app.services.analysis_schema import build_audio_block, build_details
+from app.services.rolemodel import compare
 from app.services.score_calculator import calculate_scores
 from app.services.video_analyzer import run_full_analysis
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
@@ -42,6 +45,17 @@ def _run_job(
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
+
+        # 롤모델 비교. 연사 데이터를 못 읽어도 분석 결과는 그대로 살린다.
+        try:
+            audio_block = build_audio_block(
+                result.get("audio_metrics"), result.get("duration_sec")
+            )
+            if audio_block:
+                refs = get_supabase().table("reference_speakers").select("*").execute().data
+                result["rolemodel_comparison"] = compare(audio_block["summary"], refs or [])
+        except Exception:
+            logger.warning("롤모델 비교를 건너뜁니다", exc_info=True)
 
         # 팀 공유 스키마(docs/schema/) 형식. analysis_results.details에 통째로 저장한다.
         details = build_details(
