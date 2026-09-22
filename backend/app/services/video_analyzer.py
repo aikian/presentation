@@ -13,9 +13,9 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.rolemodel import coaching_lines
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
-
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -315,16 +315,64 @@ def _gemini_model_candidates() -> list[str]:
     return list(dict.fromkeys(model for model in candidates if model))
 
 
+def _voice_metric_lines(metrics: dict) -> str:
+    """음성 지표를 프롬프트용 줄로 만든다. 분석이 안 됐으면 빈 문자열."""
+    audio = metrics.get("audio_metrics")
+    if not audio or not audio.get("speech_available"):
+        return ""
+
+    lines = [
+        f"- 말 속도: 분당 {audio['speech_rate_spm']:.0f}음절"
+        " (한국어 발표는 분당 300~350음절 정도가 편안하게 들립니다)",
+        f"- 군말(필러워드): 총 {audio['filler_count']}회, 분당 {audio['filler_per_min']:.1f}회",
+    ]
+
+    detail = audio.get("filler_detail") or {}
+    if detail:
+        top = sorted(detail.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        lines.append("- 자주 쓴 군말: " + ", ".join(f"'{w}' {n}회" for w, n in top))
+
+    lines.append(f"- 침묵 비율: {audio['audio_silence_ratio'] * 100:.1f}%")
+    if audio.get("long_silence_count"):
+        lines.append(f"- 2초 이상 끊긴 구간: {audio['long_silence_count']}회")
+
+    monotone = audio.get("monotone_ratio")
+    if monotone is not None:
+        lines.append(
+            f"- 억양이 평평한 구간 비율: {monotone * 100:.0f}%"
+            " (높을수록 단조롭게 들립니다)"
+        )
+
+    return "\n" + "\n".join(lines)
+
+
 def _build_coaching_prompt(metrics: dict) -> str:
+    voice = _voice_metric_lines(metrics)
+    rolemodel = coaching_lines(metrics.get("rolemodel_comparison"))
+    rolemodel_block = ("\n\n" + "\n".join(rolemodel)) if rolemodel else ""
+
     gaze_ratio = metrics.get("gaze_away_ratio")
     shoulder_tilt = metrics.get("shoulder_tilt_avg")
     blink_ratio = metrics.get("ear_blink_ratio")
     silence_ratio = metrics.get("silence_ratio")
 
+    # 얼굴이 안 잡히면 지표가 None으로 온다. 0으로 적으면 "완벽했다"는 뜻이 되므로
+    # 측정을 못 했다는 사실을 그대로 프롬프트에 넘긴다.
     gaze_text = f"{gaze_ratio * 100:.1f}%" if gaze_ratio is not None else "분석 불가"
     pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
     blink_text = f"{blink_ratio * 100:.1f}%" if blink_ratio is not None else "분석 불가"
     silence_text = f"{silence_ratio * 100:.1f}%" if silence_ratio is not None else "분석 불가"
+
+    # 음성 분석이 되면 입 모양으로 추정한 침묵 대신 실제 음성 지표로 발화를 평가한다.
+    # 둘 다 넣으면 같은 항목을 서로 다른 수치로 말하게 되므로, 음성이 없을 때만 남긴다.
+    silence_line = "" if voice else f"\n- 침묵 구간 비율: {silence_text}"
+    speech_section = (
+        "**진단:** 말 속도, 군말, 침묵, 억양을 종합해 발표 흐름을 평가하세요.\n"
+        "**코칭:** 가장 문제가 되는 항목 하나를 골라 연습 방법을 제안하세요."
+        if voice else
+        "**진단:** 침묵 구간 비율을 바탕으로 발표 흐름을 평가하세요.\n"
+        "**코칭:** 말의 흐름을 유지하는 연습 방법을 제안하세요."
+    )
 
     return f"""
 당신은 발표 코치입니다. 다음 발표 분석 지표를 보고 한국어로 구체적인 개선 코칭을 작성하세요.
@@ -332,8 +380,7 @@ def _build_coaching_prompt(metrics: dict) -> str:
 - 시선 이탈 비율: {gaze_text}
 - 어깨 기울기 평균: {pose_text}
 - 제스처 횟수: {metrics['gesture_count']}회
-- 눈 감음 비율: {blink_text}
-- 침묵 구간 비율: {silence_text}
+- 눈 감음 비율: {blink_text}{silence_line}{voice}{rolemodel_block}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
 각 섹션은 짧고 실행 가능한 문장으로 작성하고, 코드블록이나 표는 사용하지 마세요.
@@ -358,8 +405,7 @@ def _build_coaching_prompt(metrics: dict) -> str:
 **코칭:** 카메라와 청중을 더 안정적으로 마주 보는 방법을 제안하세요.
 
 ## 발화
-**진단:** 침묵 구간 비율을 바탕으로 발표 흐름을 평가하세요.
-**코칭:** 말의 흐름을 유지하는 연습 방법을 제안하세요.
+{speech_section}
 
 ## 다음 연습 우선순위
 1. 가장 먼저 개선할 항목 하나를 제안하세요.
@@ -401,6 +447,83 @@ def _gemini_coaching(metrics: dict, api_key: str) -> str:
             logger.warning("Gemini REST coaching failed with %s: %s", model_name, exc)
 
     return _fallback_coaching(metrics)
+
+
+def _object_particle(word: str) -> str:
+    """받침 유무에 맞는 목적격 조사. '어' -> 를, '음' -> 을."""
+    last = word[-1] if word else ""
+    if "가" <= last <= "힣" and (ord(last) - 0xAC00) % 28:
+        return "을"
+    return "를"
+
+
+def _fallback_speech(metrics: dict, mar_silence: float | None) -> tuple[str, str]:
+    """발화 진단. 음성 분석 결과가 있으면 그걸 쓰고, 없으면 입 모양 기반 추정으로 돌아간다.
+
+    Gemini 무료 등급 한도가 하루치라 폴백이 실제로 자주 쓰인다.
+    음성 지표가 있는데도 폴백이 입 모양 추정만 말하면 앞뒤가 안 맞는다.
+    """
+    audio = metrics.get("audio_metrics")
+    if not audio or not audio.get("speech_available"):
+        # 얼굴이 안 잡히면 입 모양 기반 침묵도 None이다. 음성까지 없으면 근거가 하나도 없다.
+        if mar_silence is None:
+            return (
+                "얼굴이 충분히 검출되지 않아 입 움직임 기반 침묵 비율을 분석하기 어렵습니다.",
+                "얼굴과 입이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요.",
+            )
+        if mar_silence > 50:
+            return (
+                f"침묵 구간이 {mar_silence:.0f}%로 많아 발표 흐름이 자주 끊길 수 있습니다.",
+                "슬라이드마다 첫 문장과 연결 문장을 미리 정해두고, 다음 장으로 넘어갈 때 짧은 브릿지 문장을 사용하세요.",
+            )
+        return (
+            f"침묵 구간이 {mar_silence:.0f}%로 비교적 안정적입니다.",
+            "지금 흐름을 유지하되, 중요한 설명 뒤에는 의도적인 1초 멈춤으로 강조를 만들어보세요.",
+        )
+
+    spm = audio["speech_rate_spm"]
+    per_min = audio["filler_per_min"]
+    silence = audio["audio_silence_ratio"] * 100
+    monotone = audio.get("monotone_ratio")
+
+    # 가장 두드러진 문제 하나만 짚는다. 한꺼번에 다 지적하면 실행하기 어렵다.
+    if per_min >= 5:
+        detail = audio.get("filler_detail") or {}
+        top = max(detail, key=detail.get) if detail else None
+        word = f" 특히 '{top}'{_object_particle(top)} 자주 씁니다." if top else ""
+        return (
+            f"군말이 분당 {per_min:.1f}회로 잦아 내용 전달이 끊깁니다.{word}",
+            "다음 문장이 떠오르지 않을 때 군말 대신 잠깐 멈추는 연습을 하세요. 침묵은 군말보다 훨씬 자연스럽게 들립니다.",
+        )
+
+    if spm >= 400:
+        return (
+            f"말 속도가 분당 {spm:.0f}음절로 빠른 편이라 청중이 따라오기 어려울 수 있습니다.",
+            "문장이 끝날 때마다 숨을 한 번 쉬고 다음 문장을 시작하세요. 슬라이드를 넘길 때 한 박자 쉬는 것도 도움이 됩니다.",
+        )
+
+    if spm and spm <= 220:
+        return (
+            f"말 속도가 분당 {spm:.0f}음절로 느린 편이라 집중이 흐트러질 수 있습니다.",
+            "핵심이 아닌 설명은 문장을 짧게 끊어 속도를 올리고, 강조할 곳에서만 천천히 말하세요.",
+        )
+
+    if silence >= 30:
+        return (
+            f"말이 없는 시간이 {silence:.0f}%로 많아 흐름이 자주 끊깁니다.",
+            "슬라이드마다 첫 문장을 미리 정해두면 다음 장으로 넘어갈 때 멈칫하는 시간이 줄어듭니다.",
+        )
+
+    if monotone is not None and monotone >= 0.5:
+        return (
+            f"억양이 평평한 구간이 {monotone * 100:.0f}%로 많아 단조롭게 들릴 수 있습니다.",
+            "강조하고 싶은 단어에서 음을 살짝 올리거나, 그 앞에서 반 박자 멈춰보세요.",
+        )
+
+    return (
+        f"말 속도 분당 {spm:.0f}음절, 군말 분당 {per_min:.1f}회로 발화가 안정적입니다.",
+        "지금 흐름을 유지하되, 중요한 설명 뒤에 의도적인 1초 멈춤을 넣어 강조를 만들어보세요.",
+    )
 
 
 def _fallback_coaching(metrics: dict) -> str:
@@ -461,15 +584,7 @@ def _fallback_coaching(metrics: dict) -> str:
         focus_diagnosis = f"눈 감음 비율이 {blink:.0f}%로 크게 문제되지 않습니다."
         focus_coaching = "발표 속도가 빨라질 때도 눈을 가늘게 뜨지 않도록 카메라 상단을 기준점으로 삼으세요."
 
-    if silence is None:
-        speech_diagnosis = "얼굴이 충분히 검출되지 않아 입 움직임 기반 침묵 비율을 분석하기 어렵습니다."
-        speech_coaching = "얼굴과 입이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요."
-    elif silence > 50:
-        speech_diagnosis = f"침묵 구간이 {silence:.0f}%로 많아 발표 흐름이 자주 끊길 수 있습니다."
-        speech_coaching = "슬라이드마다 첫 문장과 연결 문장을 미리 정해두고, 다음 장으로 넘어갈 때 짧은 브릿지 문장을 사용하세요."
-    else:
-        speech_diagnosis = f"침묵 구간이 {silence:.0f}%로 비교적 안정적입니다."
-        speech_coaching = "지금 흐름을 유지하되, 중요한 설명 뒤에는 의도적인 1초 멈춤으로 강조를 만들어보세요."
+    speech_diagnosis, speech_coaching = _fallback_speech(metrics, silence)
 
     priorities = []
     if ratio is not None and ratio > 15:
@@ -547,8 +662,6 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
 
     if on_step:
         on_step(5)
-
     coaching = _gemini_coaching(metrics, api_key)
     metrics["coaching"] = coaching
-
     return metrics
