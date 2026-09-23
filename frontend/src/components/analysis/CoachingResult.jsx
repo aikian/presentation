@@ -348,7 +348,7 @@ function CoachingSection({ meta, text, frames }) {
   )
 }
 
-export default function CoachingResult({ result }) {
+export default function CoachingResult({ result, resultId }) {
   const navigate = useNavigate()
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_count,
@@ -405,6 +405,15 @@ export default function CoachingResult({ result }) {
             >
               인쇄 / PDF 저장
             </button>
+            {/* [신규 추가] 분석 결과를 발표 사례 라이브러리(게시판)에 공유 */}
+            {resultId && (
+              <button
+                onClick={() => navigate(`/board/new?resultId=${resultId}`)}
+                className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+              >
+                게시판에 공유
+              </button>
+            )}
             <button
               onClick={() => navigate('/')}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
