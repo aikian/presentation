@@ -3,7 +3,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-
 class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
@@ -20,11 +19,15 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # [신규 추가] 발표 영상 공유 게시판 / 성장 분석
+    board_video_bucket: str = "presentation-videos"  # Supabase Storage 버킷 이름
+    board_max_video_mb: int = 50                     # 게시판 영상 최대 크기
+    growth_ai_enabled: bool = True                   # false면 성장 피드백에 AI 호출 안 함
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     model_config = {"env_file": str(BASE_DIR / ".env"), "env_file_encoding": "utf-8"}
-
 
 settings = Settings()
