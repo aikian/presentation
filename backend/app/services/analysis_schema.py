@@ -6,12 +6,14 @@ analysis_results.details 컬럼에 이 JSON을 통째로 저장한다.
 스키마 v0.1 규약 중 이 파일이 지키는 것:
 - 없는 값은 None(null). 0은 "측정된 0"이라는 뜻이라 절대 혼용하지 않는다.
 - 시간은 영상 시작 = 0초 기준 float 초(소수 1자리), 리스트는 시간 오름차순.
-- 블록마다 주인이 1명이다. 지금은 meta·audio만 채우고 나머지는 None으로 둔다.
+- 블록마다 주인이 1명이다. 지금은 meta·audio·scores만 채우고 나머지는 None으로 둔다.
   담당자가 자기 블록을 구현하면 이 파일에 채우는 함수를 추가한다.
 """
 from typing import Any
 
 SCHEMA_VERSION = "0.1"
+WEIGHTS_VERSION = "ahp-v2-partial"
+
 
 
 def _audio_summary(audio: dict[str, Any], duration_sec: float | None) -> dict[str, Any]:
@@ -62,6 +64,44 @@ def build_audio_block(audio: dict[str, Any] | None, duration_sec: float | None) 
     }
 
 
+def _build_time_score(metrics: dict[str, Any], target_time_sec: float | None) -> dict[str, Any] | None:
+    """목표 시간이 설정된 경우에만 별도의 시간 점수 블록을 만든다."""
+    if target_time_sec is None or target_time_sec <= 0:
+        return None
+
+    actual_sec = metrics.get("elapsed_sec")
+
+    return {
+        "target_sec": round(float(target_time_sec), 1),
+        "actual_sec": round(float(actual_sec), 1) if actual_sec is not None else None,
+        "score": metrics.get("score_time"),
+    }
+
+
+def build_scores_block(metrics: dict[str, Any], target_time_sec: float | None) -> dict[str, Any]:
+    """점수 계산 결과를 공유 스키마의 scores 블록으로 변환한다.
+
+    종합점수 가중치(AHP v2):
+    - 시선 35.12%
+    - 자세 18.87%
+    - 제스처 10.89%
+    - 음성 35.12%
+
+    시간 점수는 별도로 저장하며 종합점수에 포함하지 않는다.
+    측정 실패 또는 미구현 점수는 None으로 저장한다.
+    """
+    return {
+        "weights_version": WEIGHTS_VERSION,
+        "gaze": metrics.get("score_gaze"),
+        "posture": metrics.get("score_pose"),
+        "gesture": metrics.get("score_gesture"),
+        "voice": metrics.get("score_voice"),
+        "expression": None,
+        "total": metrics.get("score_total"),
+        "time": _build_time_score(metrics, target_time_sec),
+    }
+
+
 def build_details(
     metrics: dict[str, Any],
     *,
@@ -86,7 +126,7 @@ def build_details(
         "video_timeline": None,   # 시선·표정 / 자세·제스처 담당
         "audio": build_audio_block(audio_metrics, duration_sec or audio_duration),
         "summary": None,          # 영상 지표 집계 담당
-        "scores": None,           # AHP 담당 (지금은 평면 컬럼 score_* 사용)
+        "scores": build_scores_block(metrics, target_time_sec),           # AHP 담당 (AHP 점수 및 시간 점수)
         "habits": None,           # 습관 탐지 담당
         "artifacts": {},          # 생성 파일이 있는 사람이 각자 경로를 넣는다
         # 롤모델 비교. 스키마 v0.1에 없는 실험 필드라 x_ 접두사를 쓴다.
