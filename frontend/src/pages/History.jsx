@@ -2,9 +2,17 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchHistory } from '../api/client'
 
+// [2026-09-22 수정] 값이 null/undefined여도 화면이 깨지지 않게 방어한다.
+// 한 건이라도 값이 비어 있으면 목록 전체가 렌더링에 실패해
+// "기록이 사라진 것처럼" 보이던 문제를 막는다.
+function num(v, fallback = 0) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
 function statusColor(val, thresholds) {
-  if (val > thresholds[1]) return 'text-red-600'
-  if (val > thresholds[0]) return 'text-yellow-600'
+  const v = num(val)
+  if (v > thresholds[1]) return 'text-red-600'
+  if (v > thresholds[0]) return 'text-yellow-600'
   return 'text-green-600'
 }
 
@@ -66,9 +74,9 @@ function DetailPanel({ item, onClose }) {
 
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
-            { label: '시선 이탈률', value: `${(gaze_away_ratio * 100).toFixed(0)}%`, thresholds: [0.15, 0.3], raw: gaze_away_ratio },
-            { label: '어깨 기울기', value: `${shoulder_tilt_avg.toFixed(1)}도`, thresholds: [8, 15], raw: shoulder_tilt_avg },
-            { label: '제스처', value: `${gesture_count}회`, thresholds: [5, 50], raw: gesture_count < 5 ? 0 : gesture_count > 50 ? 100 : 10 },
+            { label: '시선 이탈률', value: `${(num(gaze_away_ratio) * 100).toFixed(0)}%`, thresholds: [0.15, 0.3], raw: num(gaze_away_ratio) },
+            { label: '어깨 기울기', value: `${num(shoulder_tilt_avg).toFixed(1)}도`, thresholds: [8, 15], raw: num(shoulder_tilt_avg) },
+            { label: '제스처', value: `${num(gesture_count)}회`, thresholds: [5, 50], raw: num(gesture_count) < 5 ? 0 : num(gesture_count) > 50 ? 100 : 10 },
           ].map(({ label, value, thresholds, raw }) => (
             <div key={label} className="border rounded-xl p-3 text-center">
               <div className={`text-xl font-bold ${statusColor(raw, thresholds)}`}>{value}</div>
@@ -96,27 +104,57 @@ export default function History() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [selected, setSelected] = useState(null)
+  // [2026-09-22 추가] 조회 실패를 화면에 드러낸다.
+  const [error, setError] = useState(null)
+  const [total, setTotal] = useState(null)
 
   const loadPage = useCallback(async (p, append = false) => {
     try {
       const res = await fetchHistory(p, PAGE_LIMIT)
       const items = res.items ?? res  // 이전 버전 호환
+      if (!Array.isArray(items)) throw new Error('예상과 다른 응답 형식입니다.')
+
+      setError(null)
+      setTotal(res.total ?? null)
+
       if (append) {
-        setRecords((prev) => [...prev, ...items])
+        // [2026-09-22 수정] id 기준 중복 제거. 같은 기록이 두 번 쌓이지 않는다.
+        setRecords((prev) => {
+          const seen = new Set(prev.map((r) => r.id))
+          return [...prev, ...items.filter((r) => !seen.has(r.id))]
+        })
       } else {
-        setRecords(items)
+        // [2026-09-22 수정] 새로 받은 목록이 비어 있고 이미 화면에 기록이 있으면
+        // 기존 기록을 지우지 않는다. (일시적인 조회 실패로 기록이 사라져 보이던 문제)
+        setRecords((prev) => (items.length === 0 && prev.length > 0 ? prev : items))
       }
       setHasMore(items.length === PAGE_LIMIT)
-    } catch {
-      // 조회 실패 시 조용히 처리
+    } catch (e) {
+      // [2026-09-22 수정] 예전에는 여기서 아무것도 하지 않아
+      // 조회가 실패해도 "아직 분석 기록이 없습니다"로 보였다.
+      // 이제 이미 불러온 기록은 그대로 두고, 원인을 화면에 표시한다.
+      setError(e.response?.data?.detail ?? e.message ?? '히스토리를 불러오지 못했습니다.')
+      setHasMore(false)
     }
   }, [])
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      loadPage(1).finally(() => setLoading(false))
-    })
+  // [2026-09-22 수정] 성장 분석 등 다른 화면에 다녀와도 항상 최신 목록을 다시 불러온다.
+  const reload = useCallback(() => {
+    setPage(1)
+    setLoading(true)
+    loadPage(1).finally(() => setLoading(false))
   }, [loadPage])
+
+  useEffect(() => {
+    queueMicrotask(reload)
+
+    // 탭으로 돌아왔을 때도 새로고침
+    function onVisible() {
+      if (document.visibilityState === 'visible') loadPage(1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [reload, loadPage])
 
   async function handleLoadMore() {
     const next = page + 1
@@ -131,12 +169,26 @@ export default function History() {
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-gray-900">발표 히스토리</h1>
-          <button
-            onClick={() => navigate('/')}
-            className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg px-4 py-2 transition-colors"
-          >
-            처음으로
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={reload}
+              className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg px-4 py-2 transition-colors"
+            >
+              새로고침
+            </button>
+            <button
+              onClick={() => navigate('/growth')}
+              className="text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-300 rounded-lg px-4 py-2 transition-colors"
+            >
+              성장 분석
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg px-4 py-2 transition-colors"
+            >
+              처음으로
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -153,16 +205,46 @@ export default function History() {
             ))}
           </div>
         ) : records.length === 0 ? (
-          <div className="text-center text-gray-400 py-20">
-            <p className="text-4xl mb-4">📭</p>
-            <p>아직 분석 기록이 없습니다.</p>
+          <div className="text-center py-20">
+            {/* [2026-09-22 수정] 조회 실패와 "정말 기록이 없음"을 구분해서 보여 준다. */}
+            {error ? (
+              <>
+                <p className="text-red-600 font-medium">{error}</p>
+                <p className="mt-2 text-sm text-gray-500">
+                  기록이 삭제된 것이 아니라 불러오기에 실패한 것입니다. 서버 로그를 확인해 주세요.
+                </p>
+                <button
+                  onClick={reload}
+                  className="mt-6 rounded-lg bg-indigo-600 px-6 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                >
+                  다시 불러오기
+                </button>
+              </>
+            ) : (
+              <div className="text-gray-400">
+                <p className="mb-4 text-4xl">📄</p>
+                <p>아직 분석 기록이 없습니다.</p>
+              </div>
+            )}
           </div>
         ) : (
           <>
+            {/* [2026-09-22 추가] 서버가 알려준 전체 건수. 화면 개수와 다르면 표시 쪽 문제다. */}
+            {total != null && (
+              <p className="mb-3 text-xs text-gray-400">
+                전체 {total}건 중 {records.length}건 표시 중
+              </p>
+            )}
+            {error && (
+              <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                일부 기록을 불러오지 못했습니다: {error}
+              </p>
+            )}
+
             <div className="space-y-3">
               {records.map((r) => {
                 const date = new Date(r.created_at).toLocaleString('ko-KR')
-                const gaze = (r.gaze_away_ratio * 100).toFixed(0)
+                const gaze = (num(r.gaze_away_ratio) * 100).toFixed(0)
                 return (
                   <button
                     key={r.id}
@@ -181,10 +263,10 @@ export default function History() {
                         시선 이탈 {gaze}%
                       </span>
                       <span className={`text-sm font-semibold ${statusColor(r.shoulder_tilt_avg, [8, 15])}`}>
-                        어깨 {r.shoulder_tilt_avg.toFixed(1)}도
+                        어깨 {num(r.shoulder_tilt_avg).toFixed(1)}도
                       </span>
                       <span className="text-sm font-semibold text-gray-600">
-                        제스처 {r.gesture_count}회
+                        제스처 {num(r.gesture_count)}회
                       </span>
                     </div>
                     {r.coaching && (
