@@ -13,6 +13,8 @@ from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_details
 from app.services.score_calculator import calculate_scores
 from app.services.video_analyzer import run_full_analysis
+from app.services.audio_features import analyze_audio_features
+from app.services.predict_concentration import analyze_audience
 
 router = APIRouter()
 
@@ -42,7 +44,19 @@ def _run_job(
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
-
+        
+        # 음성기반 청중의 집중도 추정
+        attention_result = None
+        if settings.enable_audio_analysis:
+            try:
+                audio_metrics = result.get("audio_metrics")
+                audio_features = analyze_audio_features(video_path)
+                
+                if audio_metrics and audio_features:
+                    attention_result = analyze_audience(audio_metrics, audio_features)
+            except Exception:
+                pass
+                    
         # 팀 공유 스키마(docs/schema/) 형식. analysis_results.details에 통째로 저장한다.
         details = build_details(
             result,
@@ -91,6 +105,30 @@ def _run_job(
                             "slide_log": slide_log,
                             "target_time": int(goal_sec),
                         }).execute()
+                    except Exception:
+                        pass
+                    
+                # 청중 집중도 결과 저장   
+                if attention_result and attention_result.get("status") == "SUCCESS":
+                    try:
+                        attention_payload = {
+                            "id": uuid.uuid4().hex,
+                            "saved_id": saved_id,                            "status": attention_result.get("status", "SUCCESS"),
+                            "error": attention_result.get("error", "None"),
+                            "message": attention_result.get("message", "None"),
+                            "attention_score": attention_result.get("attention_score"),
+                            "timeline_second": attention_result.get("timeline_second", []),
+                            "timeline_minute": attention_result.get("timeline_minute", []),
+                            "total_stats": attention_result.get("total_stats", {})
+                        }
+                            
+                        (
+                            get_supabase()
+                            .table("attention_predictions")
+                            .insert(attention_payload)
+                            .execute()
+                        )
+                        
                     except Exception:
                         pass
         except Exception:

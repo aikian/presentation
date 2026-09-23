@@ -114,7 +114,7 @@ alter table public.reports enable row level security;
 -- 음성 기반 집중도 예측 결과
 create table if not exists public.attention_predictions (
   id uuid primary key default gen_random_uuid(),
-  session_id text not null references public.sessions(session_id) on delete cascade,
+  result_id uuid not null references public.analysis_results(id) on delete cascade,
   status text not null,
   error_code text,
   message text,
@@ -305,8 +305,9 @@ begin
     create policy "attention_predictions_select_own"
       on public.attention_predictions for select
       using (
-        session_id in (
-          select session_id from public.sessions
+        result_id in (
+          select id
+          from public.analysis_results
           where user_id = (select auth.uid()::text)
         )
       );

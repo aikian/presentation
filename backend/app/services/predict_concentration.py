@@ -426,7 +426,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         else:
             filler_tier = 0
             
-        running_score += min(sec_delta, threshold["max_penalty_per_sec"])
+        running_score += max(sec_delta, -threshold["max_penalty_per_sec"])
         if running_score < base_score:
             running_score = min(base_score, running_score + recovery)
         elif running_score > base_score:
@@ -449,6 +449,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     
     return {
         "status": "SUCCESS",
+        "error_code": None,
+        "message": "집중도 추정 성공",
         "attention_score": final_score,
         "timeline_second": sec_scores,
         "timeline_minute": min_score,
