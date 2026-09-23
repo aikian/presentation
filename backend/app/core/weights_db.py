@@ -13,12 +13,11 @@ _DEFAULT_GROUP_WEIGHTS = {
 }
 
 
-def get_group_weights(audience_group: str) -> dict[str, Any]:
+def get_weights() -> dict[str, Any]:
     res = (
         get_supabase()
         .table("group_weights")
         .select("*")
-        .eq("audience_group", audience_group)
         .limit(1)
         .execute()
     )
@@ -26,20 +25,19 @@ def get_group_weights(audience_group: str) -> dict[str, Any]:
         return res.data[0]
 
     payload = {
-        "audience_group": audience_group,
         "weights": _DEFAULT_GROUP_WEIGHTS,
-        "last_trained_presentation_count": 0,
+        "last_trained_presentation_count": 0
     }
     res = get_supabase().table("group_weights").insert(payload).execute()
     return res.data[0] if res.data else payload
 
 
-def update_group_weights(audience_group: str, weights: dict[str, float], presentation_count: int) -> None:
+def update_weights(weights: dict[str, float], presentation_count: int) -> None:
     get_supabase().table("group_weights").update(
         {"weights": weights, "last_trained_presentation_count": presentation_count}
-    ).eq("audience_group", audience_group).execute()
+    ).execute()
 
-def fetch_group_presentation_data(audience_group: str) -> pd.DataFrame:
+def fetch_presentation_data() -> pd.DataFrame:
     res = (
         get_supabase()
         .table("survey_group_means")
@@ -47,32 +45,29 @@ def fetch_group_presentation_data(audience_group: str) -> pd.DataFrame:
             "audience_group,spm_mean,pitch_variation_mean,db_mean,"
             "silence_mean,filler_reversed_mean,attention_mean,learning_data_available,created_at"
         )
-        .eq("audience_group", audience_group)
         .eq("learning_data_available", True)
         .order("created_at", desc=False)
         .execute()
     )
     return pd.DataFrame(res.data)
 
-def maybe_update_group_model(audience_group: str) -> dict[str, Any] | None:
-    current = get_group_weights(audience_group)
-    presentation_data = fetch_group_presentation_data(audience_group)
+def maybe_update_model() -> dict[str, Any] | None:
+    current = get_weights()
+    presentation_data = fetch_presentation_data()
     
     if presentation_data.empty:
         return None
     
     result = update_group_model(
         presentation_data,
-        audience_group,
         current["weights"],
-        last_trained_count=current.get("last_trained_presentation_count", 0),
+        last_trained_count=current.get("last_trained_presentation_count", 0)
     )
 
     if result["updated"]:
-        update_group_weights(
-            audience_group,
+        update_weights(
             result["updated_weights"],
-            result["trained_presentation_count"],  # 전체 개수가 아니라 실제로 학습한 개수
+            result["trained_presentation_count"]  # 전체 개수가 아니라 실제로 학습한 개수
         )
 
     return result

@@ -1,11 +1,10 @@
 from typing import Any, List, Optional, Tuple
 import statistics
 import logging
+from collections import deque
 
-from pathlib import Path
-from app.services.audio_analyzer import analyze_audio
-from app.core.weights_db import get_group_weights
-from app.services.survey_analyzer import VALID_GROUPS
+from app.core.weights_db import get_weights
+from app.services.speech_feature import merge_speech_result
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +16,15 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     
     # 말속도 관련 가중치
     "spm_penalty_weight": 0.5,
-    
     # 20초 이상 말속도가 빠르거나 느리면 감점
-    "fast_spm_consecutive_limit": 20,
-    "slow_spm_consecutive_limit": 20,
+    "spm_window_sec": 20,
+    # 윈도우 내 빠름/느림 비율이 이 이상이면 감점
+    "spm_ratio_threshold": 0.6,
+    "spm_penalty_cooldown_sec": 20, 
     
     # 정적 관련 가중치
     "silence_penalty_weight": 0.5,
+    "silence_penalty_max_multiplier": 3.0,
     
     # 단조로움 가중치
     "monotone_consecutive_count_limit": 15, # 15초 이상 단조로울 시 감점 
@@ -46,7 +47,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "fast_spm_threshold": 340.0,
     "slow_spm_threshold": 200.0,
     
-    # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting tempo: The effect of conversational lapses on affective and cognitive responses
+    # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting the flow: How brief silences in group conversations affect social needs
     "silence_penalty_threshold": 4.0,
     
     # pitch 변동률이 0.15 이하면 단조로움 감점
@@ -63,7 +64,9 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     
     # 음량 강조
     "db_zscore_threshold": 1.0,
-    "db_zscore_change_threshold": 1.2
+    "db_zscore_change_threshold": 1.2,
+    
+    "max_penalty_per_sec": 5.0
 }
 
 # 에러 발생 시 에러 결과 반환
@@ -77,130 +80,29 @@ def make_error_result(code: str, message: str) -> dict[str, Any]:
         "timeline_minute": [],
         "total_stats": {}
     }
-         
-         
-def validate_speech_data(speech_result: Optional[dict[str, Any]]) -> Tuple[Optional[dict[str, Any]], Optional[list], Optional[dict[str, Any]]]:
-    if not speech_result:
-        return None, None, make_error_result("NO_SPEECH_RESULT", "음성 분석 데이터가 전달되지 않았습니다.")
-    
-    data = speech_result.get("audio", speech_result)
-    
-    
-    if not data:
-        return None, None, make_error_result("NO_DATA", "데이터가 존재하지 않습니다.")
-    
-    timeline = data.get("timeline", [])
-    if not timeline:
-        return None, None, make_error_result("NO_DATA", "타임라인이 존재하지 않습니다.")
-    
-    return data, timeline, None
-     
-     
-# spm 전처리
-def preprocess_spm(timeline_list: List[dict[str, Any]]) -> dict[int, float]:
-    spm_by_sec: dict[int, float] = {}
-    
-    for t in timeline_list:
-        sec = t.get("sec")
-        spm = t.get("spm")
-        if sec is None or spm is None:
-            continue
-        
-        try:
-            spm_value = float(spm)
-        except (TypeError, ValueError):
-            continue
-        
-        if spm_value <= 0:
-            continue
-        
-        spm_by_sec[int(sec)] = spm_value
-        
-    return spm_by_sec
 
-# 정적 전처리
-def preprocess_silences(silence_list: List[dict[str, Any]]) -> List[dict[str, float]]:
-    silence_times: List[dict[str, Any]] = []
+def build_silence_penalty_secs(
+    silence_data: List[dict[str, float]], 
+    min_duration: float, 
+    penalty_weight: float, 
+    max_multiplier: float
+) -> dict[int, dict[str, float]]:
     
-    for s in silence_list:
-        start_sec = s.get("start", 0.0)
-        end_sec = s.get("end", 0.0)
-        duration = s.get("duration", end_sec - start_sec)
-        
-        if end_sec <= start_sec:
-            continue
-        
-        silence_times.append({
-            "start": start_sec,
-            "end": end_sec,
-            "duration": duration
-        })
-        
-    return silence_times
-
-def build_silence_penalty_secs(silence_data: List[dict[str, float]], min_duration: float) -> dict[int, float]:
     penalty_secs: dict[int, float] = {}
  
     for silence in silence_data:
-        if silence["duration"] < min_duration:
+        duration = silence["duration"]
+        if duration < min_duration:
             continue
- 
-        penalty_secs[int(silence["end"])] = silence["duration"]
+        
+        multiplier = min(duration / min_duration, max_multiplier)
+        
+        penalty_secs[int(silence["end"])] = {
+            "duration": duration,
+            "penalty": round(penalty_weight * multiplier, 3)
+        }
  
     return penalty_secs
-         
-# 군말 전처리 
-def preprocess_fillers(filler_list: List[dict[str, Any]]) -> List[dict[str, Any]]:
-    filler_by_sec: List[dict[str, Any]] = []
-    
-    for filler in filler_list:
-        sec = filler.get("sec")
-        word = filler.get("word")
-        
-        if sec is None:
-            continue
-        
-        filler_by_sec.append({
-            "sec": sec,
-            "word": word,
-        })
-        
-    return filler_by_sec
- 
- # pitch 전처리
-def preprocess_pitches(timeline_list: List[dict[str, Any]]) -> dict[int, float]:
-    pitch_by_sec: dict[int, float] = {}
-    
-    for t in timeline_list:
-        sec = t.get("sec")
-        pitch_hz = t.get("pitch_hz")
-        
-        if sec is None or pitch_hz is None:
-            continue
-        
-        if pitch_hz <= 0:
-            continue
-        pitch_by_sec[int(sec)] = pitch_hz
-        
-    return pitch_by_sec
-
-# dB 전처리
-def preprocess_db(timeline_list: List[dict[str, Any]]) -> dict[int, float]:
-    norm_db_sec: dict[int, float] = {}
-    
-    db_list = [item.get("db") for item in timeline_list if item.get("db") is not None]
-    db_avg = statistics.mean(db_list) if db_list else 0.0
-    db_std = statistics.stdev(db_list) if len(db_list) > 1 else 0.0
-    
-    for t in timeline_list:
-        sec = t.get("sec")
-        db = t.get("db")
-        if db is None or sec is None:
-            continue
-        db_norm = (db - db_avg) / db_std if db_std > 0 else 0.0
-        norm_db_sec[int(sec)] = db_norm
-        
-    return norm_db_sec
 
 # pitch 변동률 계산
 def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
@@ -236,7 +138,7 @@ def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 5)
     return calculate_pitch_v(pitches)
 
 # 최근 60초 군말 개수
-def get_filler_count_last_60sec(filler_by_sec: List[dict[str, Any]], sec: int) -> tuple[int, List[str]]:
+def get_filler_count_per_min(filler_by_sec: List[dict[str, Any]], sec: int) -> tuple[int, List[str]]:
     
     start = max(0.0, float(sec) - 60.0)
     filler_count = 0
@@ -304,25 +206,22 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             logger.warning("알 수 없는 가중치 키 무시: %s", sorted(unknown_keys))
         weight.update({k: v for k, v in audience_weight.items() if k in DEFAULT_WEIGHT})
     
-    data, timeline, error = validate_speech_data(speech_result)
-    if error:
-        return error
+    if not speech_result:
+        return make_error_result("NO_SPEECH_RESULT", "음성 분석 데이터가 전달되지 않았습니다.")
     
-    transcript = data.get("transcript", [])
-    transcript_end = transcript[-1].get("end", 0.0) if transcript else 0.0
-    timeline_end = timeline[-1].get("end", 0.0) if timeline else 0.0
-    duration = max(transcript_end, timeline_end )
-    
+    duration = float(speech_result.get("duration_sec", 0.0))
     if duration <= 0:
         return make_error_result("INVALID_DURATION", "발표 시간을 측정할 수 없습니다")
     
-    # 전처리
-    spm_data = preprocess_spm(timeline)
-    silence_data = preprocess_silences(data.get("silences", []))
-    silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"])
-    fillers_by_sec = preprocess_fillers(data.get("filler_words", []))
-    pitch_data = preprocess_pitches(timeline)
-    norm_db_data = preprocess_db(timeline)
+    seconds = speech_result["seconds"]
+    if not seconds:
+        return make_error_result("NO_DATA", "시간이 존재하지 않습니다")
+    spm_data = speech_result["spm_data"]
+    silence_data = speech_result["silence_data"]
+    silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"], weight["silence_penalty_weight"], weight["silence_penalty_max_multiplier"])
+    fillers_by_sec = speech_result["fillers_by_sec"]
+    pitch_data = speech_result["pitch_data"]
+    norm_db_data = speech_result["norm_db_data"]
     
     # 초 단위 집중도 저장
     sec_scores: List[dict[str, Any]] = []
@@ -333,10 +232,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     excessive_duration = 0
     monotone_detected = False
     
-    fast_spm_count = 0
-    slow_spm_count = 0
-    
-    previous_spm_sec: Optional[int] = None
+    # 말속도: 최근 구간 내 분류 이력 + 감점 쿨다운
+    spm_history: deque = deque()  # (sec, "fast" | "slow" | "normal")
+    last_spm_penalty_sec = {"fast": float("-inf"), "slow": float("-inf")}
     
     total_stats = {
         "total_spm_penalty_counts": 0,
@@ -364,8 +262,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     running_score = base_score
     
     # 초 단위 평가
-    for idx, item in enumerate(timeline):
-        sec = int(item.get("sec", idx))
+    for idx, raw_sec in enumerate(seconds):
+        sec = int(raw_sec if raw_sec is not None else idx)
         sec_delta = 0.0
         penalties_applied = []
         boosts_applied = []
@@ -375,54 +273,52 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         average_spm = get_average_spm(spm_data, sec)
         
         if average_spm is not None:
-            is_continuous = previous_spm_sec is not None and sec == previous_spm_sec + 1
-            
             if average_spm > threshold["fast_spm_threshold"]:
-                if is_continuous:
-                    fast_spm_count += 1
-                else:
-                    fast_spm_count = 1
-                    
-                slow_spm_count = 0
+                classification = "fast"
+            elif average_spm < threshold["slow_spm_threshold"]:
+                classification = "slow"
+            else:
+                classification = "normal"
+            
+            spm_history.append((sec, classification))
+            
+            window_start = max(sec - weight["spm_window_sec"] + 1, 0)
+            
+            while spm_history and spm_history[0][0] < window_start:
+                spm_history.popleft()
                 
-                if fast_spm_count >= weight["fast_spm_consecutive_limit"]:
+            valid_count = len(spm_history)
+            if valid_count >= 3:
+                fast_ratio = sum(1 for _, state in spm_history if state == "fast") / valid_count
+                slow_ratio = sum(1 for _, state in spm_history if state == "slow") / valid_count
+                
+                if (
+                    fast_ratio >= weight["spm_ratio_threshold"] 
+                    and sec - last_spm_penalty_sec["fast"] >= weight["spm_penalty_cooldown_sec"]
+                ):
                     spm_penalty = weight["spm_penalty_weight"]
                     sec_delta -= spm_penalty
-                    penalties_applied.append(f" 빠른 말속도(평균 {average_spm:.1f}SPM) (-{spm_penalty:.1f})")
+                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {fast_ratio:.0%}% 빠른 말속도 (-{spm_penalty:.1f})")
                     total_stats["total_spm_penalty_counts"] += 1
                     events_applied.append("fast_spm")
+                    last_spm_penalty_sec["fast"] = sec
                     
-                    fast_spm_count = 0
-                    
-            elif average_spm < threshold["slow_spm_threshold"]:
-                if is_continuous:
-                    slow_spm_count += 1
-                else:
-                    slow_spm_count = 1
-                    
-                fast_spm_count = 0
-                
-                if slow_spm_count >= weight["slow_spm_consecutive_limit"]:
+                elif (
+                    slow_ratio >= weight["spm_ratio_threshold"] 
+                    and sec - last_spm_penalty_sec["slow"] >= weight["spm_penalty_cooldown_sec"]
+                ):
                     spm_penalty = weight["spm_penalty_weight"]
                     sec_delta -= spm_penalty
-                    penalties_applied.append(f"느린 말속도(평균 {average_spm:.1f}SPM) (-{spm_penalty:.1f})")
+                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {slow_ratio:.0%}% 느린 말속도 (-{spm_penalty:.1f})")
                     total_stats["total_spm_penalty_counts"] += 1
                     events_applied.append("slow_spm")
-                    
-                    slow_spm_count = 0
-                        
-            else:
-                fast_spm_count = 0
-                slow_spm_count = 0
-                
-            previous_spm_sec = sec
+                    last_spm_penalty_sec["slow"] = sec
         
         # 정적 평가
         if sec in silence_penalty_secs:
-            duration_s = silence_penalty_secs[sec]
-            silence_penalty = weight["silence_penalty_weight"]
-            sec_delta -= silence_penalty
-            penalties_applied.append(f"{duration_s:.1f}초 정적 감지 (-{silence_penalty:.1f})")
+            silent = silence_penalty_secs[sec]
+            sec_delta -= silent["penalty"]
+            penalties_applied.append(f"{silent['duration']:.1f}초 정적 감지 (-{silent['penalty']:.1f})")
             events_applied.append("silence")
             total_stats["total_silence_counts"] += 1
          
@@ -506,7 +402,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 events_applied.append("db_boost")
         
         # 군말 검사
-        filler_count, filler_words = get_filler_count_last_60sec(fillers_by_sec, sec)
+        filler_count, filler_words = get_filler_count_per_min(fillers_by_sec, sec)
         
         if filler_count >= threshold["filler_60sec_limit"]:
             excess_count = filler_count - threshold["filler_60sec_limit"]
@@ -530,7 +426,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         else:
             filler_tier = 0
             
-        running_score += sec_delta
+        running_score += min(sec_delta, threshold["max_penalty_per_sec"])
         if running_score < base_score:
             running_score = min(base_score, running_score + recovery)
         elif running_score > base_score:
@@ -559,27 +455,14 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         "total_stats": total_stats,
     }
 
-
-# 음성 데이터를 분석 모듈에서 받아오는 코드 -> 수정 필요
-def analyze_audience(video_path: Path, audience_group: Optional[str]  = None) -> dict[str, Any]:
+def analyze_audience(audio_metrics: dict[str, Any], audio_features: dict[str, Any]) -> dict[str, Any]:
+    # DB에서 가중치를 가져옴 만약에 없으면 DEFAULT_WEIGHT를 가중치로 사용
     audience_weight: Optional[dict[str, Any]] = None
     
-    if audience_group:
-        audience_group = audience_group.strip().lower()
-
-        if audience_group not in VALID_GROUPS:
-            return make_error_result("INVALID_AUDIENCE_GROUP", f"잘못된 audience_group 값입니다: {audience_group}")
-
-        try:
-            audience_weight = get_group_weights(audience_group)["weights"]
-        except Exception:
-            # 가중치 조회에 실패해도 예측 자체는 기본 가중치로 계속 진행
-            logger.exception("그룹 가중치 조회 실패, 기본 가중치를 사용합니다: %s", audience_group)
-
     try:
-        audio_result = analyze_audio(video_path)
+        audience_weight = get_weights()["weights"]
     except Exception:
-        logger.exception("음성 분석 실패: %s", video_path)
-        return make_error_result("AUDIO_ANALYSIS_FAILED", "음성 분석 중 오류가 발생했습니다.")
-
-    return predict_attention(audio_result, audience_weight)
+        logger.exception("가중치 조회 실패, 기본 가중치를 사용합니다")
+        
+    speech_result = merge_speech_result(audio_metrics, audio_features)
+    return predict_attention(speech_result, audience_weight)

@@ -14,6 +14,7 @@ import numpy as np
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
 from app.services.audio_features import analyze_audio_features
+from app.services.predict_concentration import analyze_audience
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -416,8 +417,8 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
         
-        # 피치, 정적, 음량 추출
-        print(analyze_audio_features(video_path))
+        # 음성기반 청중의 집중도 추정
+        analyze_audience(metrics["audio_metrics"], analyze_audio_features(video_path))
         
     else:
         metrics["audio_metrics"] = None
