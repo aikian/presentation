@@ -13,9 +13,12 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.audio_analyzer import MONOTONE_THRESHOLD
 from app.services.rolemodel import coaching_lines
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
+from app.services.habit_detector import analyze_filler_habits
+from app.services.habit_detector import analyze_monotone_habits
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -635,9 +638,16 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # TODO:
     # 아래 습관 탐지 임계값은 기능 연동 테스트를 위한 임시값이다.
     # 최종값은 문헌 검토 및 실험 결과를 바탕으로 재설정한다.
+
+    # 영상 습관 탐지 임시 기준
     temp_persistent_threshold_sec = 6.0
     temp_repeated_threshold_count = 2
     temp_gesture_inactive_threshold_sec = 4.0
+
+    # 음성 습관 탐지 임시 기준
+    temp_filler_repeated_threshold_count = 3
+    temp_monotone_persistent_threshold_sec = 2.0
+
 
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
@@ -655,8 +665,29 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
+
+        audio_metrics = metrics["audio_metrics"]
+
+        if audio_metrics.get("speech_available"):
+            metrics["filler_habits"] = analyze_filler_habits(
+                filler_words=audio_metrics.get("filler_words", []),
+                repeated_threshold_count=temp_filler_repeated_threshold_count,
+            )
+
+            metrics["monotone_habits"] = analyze_monotone_habits(
+                audio_timeline=audio_metrics.get("timeline", []),
+                monotone_threshold=MONOTONE_THRESHOLD,
+                persistent_threshold_sec=temp_monotone_persistent_threshold_sec,
+            )
+        else:
+            metrics["filler_habits"] = None
+            metrics["monotone_habits"] = None
+
     else:
         metrics["audio_metrics"] = None
+        metrics["filler_habits"] = None
+        metrics["monotone_habits"] = None
+
 
     metrics["duration_sec"] = _video_duration_sec(video_path)
 

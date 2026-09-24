@@ -282,7 +282,7 @@ def extract_filler_points(filler_words: list[dict]) -> list[dict]:
             continue
 
         filler_points.append({
-            "sec": sec,
+            "sec": float(sec),
             "word": word,
         })
 
