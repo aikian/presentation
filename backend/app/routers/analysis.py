@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.database import get_supabase
+from app.core.database import get_supabase, save_attention_prediction
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_details
 from app.services.score_calculator import calculate_scores
@@ -54,8 +54,13 @@ def _run_job(
                 
                 if audio_metrics and audio_features:
                     attention_result = analyze_audience(audio_metrics, audio_features)
+                else:
+                    print("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
+
             except Exception:
-                pass
+                print("음성 기반 집중도 예측 실패")
+        else:
+            print("enable_audio_analysis가 꺼져 있어 집중도 예측을 건너뜁니다")
                     
         # 팀 공유 스키마(docs/schema/) 형식. analysis_results.details에 통째로 저장한다.
         details = build_details(
@@ -109,28 +114,13 @@ def _run_job(
                         pass
                     
                 # 청중 집중도 결과 저장   
-                if attention_result and attention_result.get("status") == "SUCCESS":
+                if attention_result:
                     try:
-                        attention_payload = {
-                            "id": uuid.uuid4().hex,
-                            "saved_id": saved_id,                            "status": attention_result.get("status", "SUCCESS"),
-                            "error": attention_result.get("error", "None"),
-                            "message": attention_result.get("message", "None"),
-                            "attention_score": attention_result.get("attention_score"),
-                            "timeline_second": attention_result.get("timeline_second", []),
-                            "timeline_minute": attention_result.get("timeline_minute", []),
-                            "total_stats": attention_result.get("total_stats", {})
-                        }
-                            
-                        (
-                            get_supabase()
-                            .table("attention_predictions")
-                            .insert(attention_payload)
-                            .execute()
-                        )
-                        
+                        save_attention_prediction(saved_id, attention_result)
                     except Exception:
-                        pass
+                        print("집중도 예측 결과 저장 실패")
+                else:
+                    print("집중도 예측 결과가 없어 저장하지 않습니다")
         except Exception:
             pass
     except Exception as e:

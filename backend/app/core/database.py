@@ -119,11 +119,11 @@ def create_user(email: str, hashed_password: str, name: str | None = None) -> di
 def update_user_password(user_id: str, hashed_password: str) -> None:
     get_supabase().table("users").update({"hashed_password": hashed_password}).eq("id", user_id).execute()
 
-def save_attention_prediction(result_id: str, result: dict[str, Any]) -> dict[str, Any]:
+def save_attention_prediction(saved_id: str, result: dict[str, Any]) -> dict[str, Any]:
     
     payload ={
         "id": uuid.uuid4().hex,
-        "result_id": result_id,
+        "result_id": saved_id,
         "status": result.get("status", "ERROR"),
         "error_code": result.get("error_code"),
         "message": result.get("message"),
@@ -142,23 +142,5 @@ def save_attention_prediction(result_id: str, result: dict[str, Any]) -> dict[st
     
     if not res.data:
         raise RuntimeError("집중도 분석 결과 저장에 실패했습니다.")
-    
-    return res.data[0]
-
-def get_attention_prediction_by_session(
-    session_id: str
-) -> dict[str, Any] | None:
-    
-    res = (
-        get_supabase()
-        .table("attention_predictions")
-        .select("*")
-        .eq("session_id", session_id)
-        .limit(1)
-        .execute()
-    )
-    
-    if not res.data:
-        return None
     
     return res.data[0]

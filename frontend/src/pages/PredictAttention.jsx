@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AttentionResult from "../components/attention/AttentionResult"
 import CsvUpload from "../components/attention/CsvUpload"
-import { fetchAttentionResult } from "../api/client"
+import { fetchAttentionResult, fetchSurveyResult } from "../api/client"
 
 export default function PredictAttention() {
 
@@ -15,12 +15,16 @@ export default function PredictAttention() {
     const [error, setError] = useState(null)
     const [surveyError, setSurveyError] = useState(null)
 
-    // 집중도 분석 결과 가져오기
+    // 집중도 분석 결과 + 이전에 저장된 설문 결과 가져오기
     useEffect(() => {
-        async function loadPrediction() {
+        async function loadData() {
             try {
-                const data = await fetchAttentionResult(id)
-                setPredictResult(data)
+                const [prediction, survey] = await Promise.all([
+                    fetchAttentionResult(id),
+                    fetchSurveyResult(id).catch(() => null)
+                ])
+                setPredictResult(prediction)
+                setSurveyResult(survey?.survey_result ?? null)
             } catch (error) {
                 setError("예측 결과를 가져오는 데 실패했습니다.")
             } finally {
@@ -28,7 +32,7 @@ export default function PredictAttention() {
             }
         }
 
-        loadPrediction()
+        loadData()
     }, [id])
 
     const handleSurveyUploaded = (data) => {
@@ -44,19 +48,14 @@ export default function PredictAttention() {
         setSurveyResult(result)
     }
 
-
-    // 청중의 실제 집중도를 0~100점으로 환산
     const getActualAttentionScore = () => {
         if (!surveyResult) return null
         
         const score = Number(surveyResult.average_attention_score)
-
-        if (!Number.isFinite(score)) {
-            return null
-        }
-
-        return (score / 5) * 100
+        return Number.isFinite(score) ? score : null
     }
+
+    const actualScore = getActualAttentionScore()
 
     // 신뢰도 계산
     const getPredictConfidence = () => {
@@ -70,7 +69,6 @@ export default function PredictAttention() {
         }
 
         const predictedScore = Number(predictResult.attention_score)
-        const actualScore = getActualAttentionScore()
 
         if(!Number.isFinite(predictedScore) || actualScore===null){
             return null
@@ -165,6 +163,10 @@ export default function PredictAttention() {
                             </summary>
 
                             <div className="border-t border-gray-100 px-5 py-4">
+                                <p className="mt-2 text-xs leading-5 text-indigo-800">
+                                    CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 8열)
+                                </p>
+                                
                                 <ol className="list-decimal list-inside space-y-3 text-left text-sm leading-6 text-gray-700">
                                     <li>
                                         발표자의 말하는 속도는 적절했나요?
@@ -191,10 +193,6 @@ export default function PredictAttention() {
                                     </li>
 
                                     <li>
-                                        발표가 진행되는 동안 집중력이 잘 유지되었나요?
-                                    </li>
-
-                                    <li>
                                         자유 의견
                                     </li>
                                 </ol>
@@ -202,6 +200,7 @@ export default function PredictAttention() {
                                 <div className="mt-5 rounded-lg bg-indigo-50 p-4">
                                     <p className="text-xs leading-5 text-indigo-800">
                                         객관식 문항은 1~5점 척도로 구성하는 것을 권장합니다.
+                                        단, 집중도 문항(6번)은 0~100점으로 입력해주세요.
                                         자유 의견 문항은 서술형으로 설정해주세요.
                                     </p>
                                 </div>
@@ -227,9 +226,18 @@ export default function PredictAttention() {
                     </div>
                 ) : (
                     <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-8">
-                        <h2 className="mb-4 text-lg font-semibold text-gray-800">
-                            청중 설문 결과
-                        </h2>
+                        <div className="mb-4 flex items-center justify-between">
+                            <h2 className="mb-4 text-lg font-semibold text-gray-800">
+                                청중 설문 결과
+                            </h2>
+
+                            <button
+                                onClick={() => setSurveyResult(null)}
+                                className="text-sm text-indigo-600 hover:text-indigo-800"
+                            >
+                                다시 업로드
+                            </button>
+                        </div>
 
                         <div className="grid grid-cols-3 gap-4">
                             <div className="rounded-lg bg-white p-4">
@@ -246,20 +254,11 @@ export default function PredictAttention() {
                             <div className="rounded-lg bg-white p-4">
                                 <p className="text-sm text-gray-600">실제 청중 집중도</p>
                                 <p className="mt-1 text-3xl font-bold text-green-600">
-                                    {predictConfidence
-                                        ? predictConfidence.actualScore.toFixed(1)
-                                        : "-"
-                                    }
+                                    {actualScore !== null ? actualScore.toFixed(1) : "-"}
 
                                     <span className="ml-1 text-base font-normal text-gray-500">
                                         / 100
                                     </span>
-                                </p>
-
-                                <p className="mt-1 text-xs text-gray-400">
-                                    집중도 평균{" "}
-                                    {surveyResult.average_attention_score}
-                                    {" / 5"}
                                 </p>
                             </div>
 

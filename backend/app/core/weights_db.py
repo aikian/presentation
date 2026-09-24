@@ -1,23 +1,19 @@
 from typing import Any
+from datetime import datetime, timezone
+
 import pandas as pd
 
 from app.core.database import get_supabase
-from app.services.update_weight import update_group_model
+from app.services.update_weight import DEFAULT_WEIGHT, update_model
 
-_DEFAULT_GROUP_WEIGHTS = {
-    "spm_penalty_weight": 0.5,
-    "pitch_weight": 0.5,
-    "db_boost_weight": 0.5,
-    "silence_penalty_weight": 0.5,
-    "filler_penalty_weight": 0.5,
-}
-
+WEIGHTS_ROW_ID = 1
 
 def get_weights() -> dict[str, Any]:
     res = (
         get_supabase()
-        .table("group_weights")
+        .table("attention_weights")
         .select("*")
+        .eq("id", WEIGHTS_ROW_ID)
         .limit(1)
         .execute()
     )
@@ -25,31 +21,49 @@ def get_weights() -> dict[str, Any]:
         return res.data[0]
 
     payload = {
-        "weights": _DEFAULT_GROUP_WEIGHTS,
+        "id": WEIGHTS_ROW_ID,
+        "weights": DEFAULT_WEIGHT.copy(),
         "last_trained_presentation_count": 0
     }
-    res = get_supabase().table("group_weights").insert(payload).execute()
+    res = get_supabase().table("attention_weights").insert(payload).execute()
     return res.data[0] if res.data else payload
 
 
 def update_weights(weights: dict[str, float], presentation_count: int) -> None:
-    get_supabase().table("group_weights").update(
-        {"weights": weights, "last_trained_presentation_count": presentation_count}
-    ).execute()
+    get_supabase().table("attention_weights").update(
+        {
+            "weights": weights, 
+            "last_trained_presentation_count": presentation_count,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+    ).eq("id", WEIGHTS_ROW_ID).execute()
 
 def fetch_presentation_data() -> pd.DataFrame:
     res = (
         get_supabase()
-        .table("survey_group_means")
+        .table("survey_results")
         .select(
-            "audience_group,spm_mean,pitch_variation_mean,db_mean,"
-            "silence_mean,filler_reversed_mean,attention_mean,learning_data_available,created_at"
+            "feature_means,average_attention_score,created_at"
         )
         .eq("learning_data_available", True)
         .order("created_at", desc=False)
         .execute()
     )
-    return pd.DataFrame(res.data)
+    
+    rows = []
+    for row in res.data or []:
+        means = row.get("feature_means") or {}
+        rows.append({
+            "spm_mean": means.get("spm"),
+            "pitch_variation_mean": means.get("pitch_variation"),
+            "db_mean": means.get("db"),
+            "silence_mean": means.get("silence"),
+            "filler_reversed_mean": means.get("filler_reversed"),
+            "attention_mean": row["average_attention_score"],
+            "created_at": row["created_at"],
+        })
+        
+    return pd.DataFrame(rows)
 
 def maybe_update_model() -> dict[str, Any] | None:
     current = get_weights()
@@ -58,7 +72,7 @@ def maybe_update_model() -> dict[str, Any] | None:
     if presentation_data.empty:
         return None
     
-    result = update_group_model(
+    result = update_model(
         presentation_data,
         current["weights"],
         last_trained_count=current.get("last_trained_presentation_count", 0)

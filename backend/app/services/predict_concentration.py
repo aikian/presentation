@@ -16,9 +16,8 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     
     # 말속도 관련 가중치
     "spm_penalty_weight": 0.5,
-    # 20초 이상 말속도가 빠르거나 느리면 감점
+    # 최근 20초 중 60% 이상이 빠르거나 느리면 감점
     "spm_window_sec": 20,
-    # 윈도우 내 빠름/느림 비율이 이 이상이면 감점
     "spm_ratio_threshold": 0.6,
     "spm_penalty_cooldown_sec": 20, 
     
@@ -88,7 +87,7 @@ def build_silence_penalty_secs(
     max_multiplier: float
 ) -> dict[int, dict[str, float]]:
     
-    penalty_secs: dict[int, float] = {}
+    penalty_secs: dict[int, dict[str, float]] = {}
  
     for silence in silence_data:
         duration = silence["duration"]
@@ -119,7 +118,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
 
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Optional[float]:
-    start = max(0,sec-window)
+    start = max(0,sec - window + 1)
     end =  sec + 1
     
     spm_values = [spm_data[i] for i in range(start, end) if i in spm_data and spm_data[i] > 0]
@@ -147,7 +146,7 @@ def get_filler_count_per_min(filler_by_sec: List[dict[str, Any]], sec: int) -> t
     for filler in filler_by_sec:
         filler_sec = filler["sec"]
         word = filler["word"]
-        if start <= filler_sec <= sec:
+        if start < filler_sec <= sec:
             filler_count += 1
             if word:
                 filler_words.append(str(word))
@@ -190,7 +189,7 @@ def make_min_timeline(sec_scores: List[dict[str, Any]]) -> List[dict[str, Any]]:
             "score": round(statistics.mean(scores), 1),
             "penalties": penalties,
             "boosts": boosts,
-            "event": event_counts
+            "events": event_counts
         })
 
     return min_scores
@@ -213,15 +212,23 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     if duration <= 0:
         return make_error_result("INVALID_DURATION", "발표 시간을 측정할 수 없습니다")
     
-    seconds = speech_result["seconds"]
-    if not seconds:
-        return make_error_result("NO_DATA", "시간이 존재하지 않습니다")
-    spm_data = speech_result["spm_data"]
-    silence_data = speech_result["silence_data"]
+    seconds = speech_result.get("seconds", [])
+    spm_data = speech_result.get("spm_data", [])
+    silence_data = speech_result.get("silence_data", [])
     silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"], weight["silence_penalty_weight"], weight["silence_penalty_max_multiplier"])
-    fillers_by_sec = speech_result["fillers_by_sec"]
-    pitch_data = speech_result["pitch_data"]
-    norm_db_data = speech_result["norm_db_data"]
+    fillers_by_sec = speech_result.get("fillers_by_sec", [])
+    pitch_data = speech_result.get("pitch_data", [])
+    norm_db_data = speech_result.get("norm_db_data", [])
+    
+    if not seconds or not spm_data or not pitch_data or not norm_db_data:
+        return make_error_result("NO_DATA", "필수 데이터(seconds)가 존재하지 않습니다")
+    if  not spm_data:
+        return make_error_result("NO_DATA", "필수 데이터(spm_data)가 존재하지 않습니다")
+    if pitch_data:
+        return make_error_result("NO_DATA", "필수 데이터(pitch_data)가 존재하지 않습니다")
+    if not norm_db_data:
+        return make_error_result("NO_DATA", "필수 데이터(norm_db_data)가 존재하지 않습니다")
+    
     
     # 초 단위 집중도 저장
     sec_scores: List[dict[str, Any]] = []
@@ -298,7 +305,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 ):
                     spm_penalty = weight["spm_penalty_weight"]
                     sec_delta -= spm_penalty
-                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {fast_ratio:.0%}% 빠른 말속도 (-{spm_penalty:.1f})")
+                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {fast_ratio:.0%} 빠른 말속도 (-{spm_penalty:.1f})")
                     total_stats["total_spm_penalty_counts"] += 1
                     events_applied.append("fast_spm")
                     last_spm_penalty_sec["fast"] = sec
@@ -309,7 +316,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 ):
                     spm_penalty = weight["spm_penalty_weight"]
                     sec_delta -= spm_penalty
-                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {slow_ratio:.0%}% 느린 말속도 (-{spm_penalty:.1f})")
+                    penalties_applied.append(f"최근 {weight['spm_window_sec']}초 중 {slow_ratio:.0%} 느린 말속도 (-{spm_penalty:.1f})")
                     total_stats["total_spm_penalty_counts"] += 1
                     events_applied.append("slow_spm")
                     last_spm_penalty_sec["slow"] = sec
@@ -467,4 +474,5 @@ def analyze_audience(audio_metrics: dict[str, Any], audio_features: dict[str, An
         logger.exception("가중치 조회 실패, 기본 가중치를 사용합니다")
         
     speech_result = merge_speech_result(audio_metrics, audio_features)
+    print(audio_metrics)
     return predict_attention(speech_result, audience_weight)

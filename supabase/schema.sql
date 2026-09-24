@@ -125,48 +125,24 @@ create table if not exists public.attention_predictions (
   created_at timestamptz not null default now()
 );
 
-create index if not exists attention_predictions_session_id_idx
-  on public.attention_predictions (session_id);
+create index if not exists attention_predictions_result_id_idx
+  on public.attention_predictions (result_id);
 
 -- 청중 설문 분석 결과 
 create table if not exists public.survey_results (
   id uuid primary key default gen_random_uuid(),
-  session_id text not null references public.sessions(session_id) on delete cascade,
+  result_id uuid not null unique references public.analysis_results(id) on delete cascade,
   participant_count integer not null,
   average_attention_score double precision not null,
   feature_means jsonb not null default '{}'::jsonb,
   feedbacks jsonb not null default '[]'::jsonb,
+  learning_data_available boolean not null default false,
   created_at timestamptz not null default now()
 );
 
-create unique index if not exists survey_results_session_id_idx
-  on public.survey_results (session_id);
-
--- 청중 그룹별 설문 집계 
-create table if not exists public.survey_group_means (
-  id uuid primary key default gen_random_uuid(),
-  survey_result_id uuid not null references public.survey_results(id) on delete cascade,
-  session_id text not null references public.sessions(session_id) on delete cascade,
-  audience_group text not null check (audience_group in ('major', 'non_major')),
-  response_count integer not null,
-  spm_mean double precision,
-  pitch_variation_mean double precision,
-  db_mean double precision,
-  silence_mean double precision,
-  filler_mean double precision,
-  filler_reversed_mean double precision,
-  attention_mean double precision not null,
-  learning_data_available boolean not null default false,
-  created_at timestamptz not null default now(),
-  unique (survey_result_id, audience_group)
-);
-
-create index if not exists survey_group_means_group_created_idx
-  on public.survey_group_means (audience_group, created_at);
-
--- 청중 그룹별 현재 가중치
-create table if not exists public.group_weights (
-  audience_group text primary key check (audience_group in ('major', 'non_major')),
+-- 집중도 계산 가중치
+create table if not exists public.attention_weights (
+  id integer primary key default 1 check (id = 1),
   weights jsonb not null default '{
     "spm_penalty_weight": 0.5,
     "pitch_weight": 0.5,
@@ -180,8 +156,7 @@ create table if not exists public.group_weights (
 
 alter table public.attention_predictions enable row level security;
 alter table public.survey_results enable row level security;
-alter table public.survey_group_means enable row level security;
-alter table public.group_weights enable row level security;
+alter table public.attention_weights enable row level security;
 
 do $$
 begin
@@ -323,25 +298,8 @@ begin
     create policy "survey_results_select_own"
       on public.survey_results for select
       using (
-        session_id in (
-          select session_id from public.sessions
-          where user_id = (select auth.uid()::text)
-        )
-      );
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'survey_group_means' and policyname = 'survey_group_means_select_own'
-  ) then
-    create policy "survey_group_means_select_own"
-      on public.survey_group_means for select
-      using (
-        session_id in (
-          select session_id from public.sessions
+        result_id in (
+          select id from analysis_results
           where user_id = (select auth.uid()::text)
         )
       );

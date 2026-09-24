@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 from fastapi import UploadFile
 
-# DB에 저장되기 위한 설문 최소 응답자 수
+# 가중치 학습에 사용할 수 있는 최소 설문 응답자 수
 MIN_RESPONSES = 20
     
 # 설문 점수 범위
@@ -18,7 +18,6 @@ MAX_ATTENTION_SCORE = 100
 # 필수 컬럼
 SURVEY_COLUMNS = [
     "participant_id",
-    "audience_group",
     "spm",
     "pitch_variation",
     "db",
@@ -48,9 +47,6 @@ FEATURE_COLUMNS = [
     "filler",
 ]
 
-# 청중 그룹
-VALID_GROUPS = {"major", "non_major"}
-
 def decode_csv(content: bytes) -> str:
     for encoding in ("utf-8-sig", "cp949"):
         try:
@@ -76,7 +72,7 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
     
     text = decode_csv(content)
     try:
-        df = pd.read_csv(io.StringIO(text), header=None, encoding='utf-8', na_values=["Null", "NULL", "none", ""])
+        df = pd.read_csv(io.StringIO(text), header=None, na_values=["Null", "NULL", "none", ""])
     except Exception as e: 
         raise ValueError(f"CSV 파일을 읽는 중 오류가 발생했습니다: {e}")
 
@@ -105,23 +101,13 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
         df[column] = pd.to_numeric(df[column], errors="coerce")
     
     # 필수 데이터가 없는 응답제거
-    df = df.dropna(subset=["participant_id", "audience_group", "attention_score"]).copy()
+    df = df.dropna(subset=["participant_id", "attention_score"]).copy()
     
     if df.empty:
         raise ValueError("CSV 파일에 유효한 데이터가 없습니다.")
-    
-    df["audience_group"] = df["audience_group"].astype(str).str.strip().str.lower()
-    
+
     if((df["attention_score"] < MIN_ATTENTION_SCORE).any() or (df["attention_score"] > MAX_ATTENTION_SCORE).any()):
         raise ValueError(f"설문 집중도 점수는 {MIN_ATTENTION_SCORE}에서 {MAX_ATTENTION_SCORE} 사이의 값이어야 합니다.")
-    
-    # 청중 그룹 검사
-    invalid_groups = set(df["audience_group"].dropna()) - VALID_GROUPS
-    
-    if invalid_groups:
-        raise ValueError(
-            f"잘못된 audience_group 값입니다: {invalid_groups}"
-        )
     
     for column in FEATURE_COLUMNS:
         invalid_mask = (
@@ -155,41 +141,7 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
     }
             
     feature_means["filler_reversed"] = mean_or_none(df["filler_reversed"])
-        
-    # 청중 그룹별 평균
-    group_means = {}
     
-    for group in VALID_GROUPS:
-        group_df = df[df["audience_group"] == group]
-        
-        if group_df.empty:
-            continue
-        
-        response_count = len(group_df)
-        
-        group_data = {
-            "result_id": result_id,
-            "audience_group": group,
-            "response_count": response_count,
-            
-            "spm_mean": mean_or_none(group_df["spm"]),
-           
-            "pitch_variation_mean": mean_or_none(group_df["pitch_variation"]),
-            
-            "db_mean": mean_or_none(group_df["db"]),
-           
-            "silence_mean": mean_or_none(group_df["silence"]),
-           
-            "filler_reversed_mean": mean_or_none(group_df["filler_reversed"]),
-           
-            "attention_mean": round(float(group_df["attention_score"].mean()), 4),
-           
-            # 그룹별 설문 응답자가 최소 인원 이상일 때만 가중치 업데이트에 사용 가능
-            "learning_data_available": response_count >= MIN_RESPONSES
-        }
-        
-        group_means[group] = group_data
-        
     feedbacks = []
     
     for feedback in df["feedback"]:
@@ -203,14 +155,14 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
         
         feedbacks.append(feedback)
 
-    # result 값을 DB에 저장하도록 수정 필요
     result = {
         "result_id": result_id,
         "participant_count": len(df),
         "average_attention_score": round(float(average_score), 2),
         "feature_means": feature_means,
-        "group_means": group_means,
-        "feedbacks": feedbacks
+        "feedbacks": feedbacks,
+        # 응답자가 최소 인원 이상일 때만 가중치 업데이트에 사용
+        "learning_data_available": len(df) >= MIN_RESPONSES
     }
     
-    return result
+    return result 

@@ -5,7 +5,6 @@ import pandas as pd
 
 from pandas import DataFrame
 from scipy.stats import spearmanr
-
 logger = logging.getLogger(__name__)
 
 WEIGHT_LEARNING_RATE = 0.1 # 가중치 학습률
@@ -50,7 +49,7 @@ def calculate_spearmanr(result: DataFrame, column_x: str, column_y: str) -> Dict
     
     sample_length = len(data)
     
-    if sample_length < 2:
+    if sample_length < 8:
         return {
             "correlation": None,
             "p_value": None,
@@ -134,41 +133,35 @@ def update_weights(old_weights: Dict[str, float], target_weights: Dict[str, floa
     return updated_weights        
 
 # DB에 last_trained_presentation_count를 추가하여 마지막 가중치 업데이트 인덱스를 저장 -> 마지막 가중치 업데이트 이후 다음 업데이트 시점에서 업데이트를 하도록함
-def update_group_model(
+def update_model(
     presentation_data: DataFrame,
-    audience_group: str,
     old_weights: Optional[Dict[str, float]],
-    last_trained_count: int = 0
+    last_trained_count: int
 ) -> Dict[str, Any]:
     
-    group_data = presentation_data[presentation_data["audience_group"] == audience_group].copy()
+    data = presentation_data.copy()
     
-    if "learning_data_available" in group_data.columns:
-        group_data = group_data[group_data["learning_data_available"].fillna(False).astype(bool)]
-    
-    if ORDER_COLUMN in group_data.columns:
-        group_data = group_data.sort_values(ORDER_COLUMN)
+    if ORDER_COLUMN in data.columns:
+        data = data.sort_values(ORDER_COLUMN)
     else:
         logger.warning("'%s' 컬럼이 없어 입력된 순서를 발표 순서로 사용합니다.", ORDER_COLUMN)
  
-    presentation_count = len(group_data)
+    presentation_count = len(data)
     new_count = presentation_count - last_trained_count
  
     if new_count < MIN_PRESENTATIONS:
         return {
             "updated": False,
-            "audience_group": audience_group,
             "presentation_count": presentation_count,
-            "reason": f"{audience_group} 그룹의 새 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.",
+            "reason": f"새 발표 데이터가 {MIN_PRESENTATIONS}개 미만입니다.",
         }
         
     # 아직 학습하지 않은 발표 중 가장 오래된 10개를 한 배치로 사용
-    batch_data = group_data.iloc[last_trained_count:last_trained_count + MIN_PRESENTATIONS].copy()
+    batch_data = data.iloc[last_trained_count:last_trained_count + MIN_PRESENTATIONS].copy()
 
     if len(batch_data) < MIN_PRESENTATIONS:
         return {
             "updated": False,
-            "audience_group": audience_group,
             "presentation_count": presentation_count,
             "reason": "완성된 발표 배치가 없습니다."
         }
@@ -182,7 +175,6 @@ def update_group_model(
         
     return {
         "updated": True,
-        "audience_group": audience_group,
         "presentation_count": presentation_count,
         "batch_size": len(batch_data),
         "trained_presentation_count": last_trained_count + len(batch_data),

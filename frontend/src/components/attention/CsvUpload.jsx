@@ -34,16 +34,13 @@ export default function CsvUpload({ resultId, onUploaded }) {
 
         try {
             const result = await uploadSurveyCsv(selectFile, resultId)
-            console.log("🔥 CSV 업로드 응답:", result)
 
             setMessage('설문 결과가 성공적으로 업로드되었습니다.')
 
             if (onUploaded) {
                 onUploaded(result)
             }
-        } catch(error){
-            console.error("🔥 CSV 업로드 실패:", error)
-            
+        } catch(error){         
             const detail = error.response?.data?.detail
             setMessage(typeof detail === 'string' ? detail : '설문 결과 업로드에 실패했습니다.')
         } finally {
