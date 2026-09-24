@@ -22,7 +22,6 @@ SURVEY_COLUMNS = [
     "pitch_variation",
     "db",
     "silence",
-    "filler",
     "attention_score",
     "feedback"
 ] 
@@ -34,7 +33,6 @@ NUMERIC_COLUMNS = [
     "pitch_variation",
     "db",
     "silence",
-    "filler",
     "attention_score"
 ] 
 
@@ -43,8 +41,7 @@ FEATURE_COLUMNS = [
     "spm",
     "pitch_variation",
     "db",
-    "silence",
-    "filler",
+    "silence"
 ]
 
 def decode_csv(content: bytes) -> str:
@@ -134,14 +131,11 @@ async def analyze_survey_csv(file: UploadFile, result_id: str) -> Dict[str, Any]
             )
             
     average_score = float(df["attention_score"].mean())
-    df["filler_reversed"] = MAX_SURVEY_SCORE + MIN_SURVEY_SCORE - df["filler"]
-    
+
     feature_means: Dict[str, Any] = {
         column: mean_or_none(df[column]) for column in FEATURE_COLUMNS
     }
-            
-    feature_means["filler_reversed"] = mean_or_none(df["filler_reversed"])
-    
+             
     feedbacks = []
     
     for feedback in df["feedback"]:

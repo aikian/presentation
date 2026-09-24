@@ -164,7 +164,7 @@ export default function PredictAttention() {
 
                             <div className="border-t border-gray-100 px-5 py-4">
                                 <p className="mt-2 text-xs leading-5 text-indigo-800">
-                                    CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 8열)
+                                    CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 7열)
                                 </p>
                                 
                                 <ol className="list-decimal list-inside space-y-3 text-left text-sm leading-6 text-gray-700">
