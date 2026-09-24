@@ -185,10 +185,6 @@ export default function PredictAttention() {
                                     </li>
 
                                     <li>
-                                        "음", "어", "그..." 등의 군말이 발표 집중에 방해가 되었나요?
-                                    </li>
-
-                                    <li>
                                         발표를 얼마나 집중해서 들으셨나요?
                                     </li>
 

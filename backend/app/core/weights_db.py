@@ -58,7 +58,6 @@ def fetch_presentation_data() -> pd.DataFrame:
             "pitch_variation_mean": means.get("pitch_variation"),
             "db_mean": means.get("db"),
             "silence_mean": means.get("silence"),
-            "filler_reversed_mean": means.get("filler_reversed"),
             "attention_mean": row["average_attention_score"],
             "created_at": row["created_at"],
         })

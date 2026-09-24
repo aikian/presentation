@@ -16,8 +16,7 @@ FEATURES = [
     "spm_mean",
     "pitch_variation_mean",
     "db_mean",
-    "silence_mean",
-    "filler_reversed_mean"
+    "silence_mean"
 ]
 
 TARGET = "attention_mean"
@@ -30,16 +29,14 @@ DEFAULT_WEIGHT: Dict[str, float] = {
     "spm_penalty_weight" : 0.5,
     "pitch_weight": 0.5,
     "db_boost_weight" : 0.5,
-    "silence_penalty_weight" : 0.5,
-    "filler_penalty_weight" : 0.5
+    "silence_penalty_weight" : 0.5
 }
 
 FEATURE_WEIGHT_KEY = {
     "spm_mean": "spm_penalty_weight",
     "pitch_variation_mean": "pitch_weight",
     "db_mean": "db_boost_weight",
-    "silence_mean": "silence_penalty_weight",
-    "filler_reversed_mean": "filler_penalty_weight"
+    "silence_mean": "silence_penalty_weight"
 }
 
 # 청중의 설문 데이터를 기반으로 각 속성들과의 스피어만 상관계수 계산

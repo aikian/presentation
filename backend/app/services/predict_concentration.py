@@ -34,9 +34,6 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     # pitch 가중치
     "pitch_weight": 0.5,
     
-    # 군말
-    "filler_penalty_weight": 0.5,
-    
     # 음량 강조
     "db_boost_weight": 0.5
 }
@@ -57,9 +54,6 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     
     # pitch 변동률이 0.25 이상이면 과도한 어조 변화로 감점
     "excessive_pitch_threshold": 0.25,
-    
-    # 최근 60초 동안 군말이 12번 이상 나오면 감점
-    "filler_60sec_limit": 12,  
     
     # 음량 강조
     "db_zscore_threshold": 1.0,
@@ -136,23 +130,6 @@ def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 5)
     
     return calculate_pitch_v(pitches)
 
-# 최근 60초 군말 개수
-def get_filler_count_per_min(filler_by_sec: List[dict[str, Any]], sec: int) -> tuple[int, List[str]]:
-    
-    start = max(0.0, float(sec) - 60.0)
-    filler_count = 0
-    filler_words: List[str] = []
-    
-    for filler in filler_by_sec:
-        filler_sec = filler["sec"]
-        word = filler["word"]
-        if start < filler_sec <= sec:
-            filler_count += 1
-            if word:
-                filler_words.append(str(word))
-            
-    return filler_count, filler_words
-
 # 분단위 결과 생성
 def make_min_timeline(sec_scores: List[dict[str, Any]]) -> List[dict[str, Any]]:
     if not sec_scores:
@@ -216,19 +193,11 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     spm_data = speech_result.get("spm_data", [])
     silence_data = speech_result.get("silence_data", [])
     silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"], weight["silence_penalty_weight"], weight["silence_penalty_max_multiplier"])
-    fillers_by_sec = speech_result.get("fillers_by_sec", [])
     pitch_data = speech_result.get("pitch_data", [])
     norm_db_data = speech_result.get("norm_db_data", [])
     
     if not seconds or not spm_data or not pitch_data or not norm_db_data:
         return make_error_result("NO_DATA", "필수 데이터(seconds)가 존재하지 않습니다")
-    if  not spm_data:
-        return make_error_result("NO_DATA", "필수 데이터(spm_data)가 존재하지 않습니다")
-    if pitch_data:
-        return make_error_result("NO_DATA", "필수 데이터(pitch_data)가 존재하지 않습니다")
-    if not norm_db_data:
-        return make_error_result("NO_DATA", "필수 데이터(norm_db_data)가 존재하지 않습니다")
-    
     
     # 초 단위 집중도 저장
     sec_scores: List[dict[str, Any]] = []
@@ -248,13 +217,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         "total_monotone_counts": 0,
         "total_excessive_pitch_counts": 0,
         "total_silence_counts": 0,
-        "total_filler_counts": 0,
         "total_reengagement_boost_counts": 0,
         "total_db_boost_counts": 0
     }
-    
-    # 군말은 '현재 적용 중인 감점 단계(0~3)'로 관리 (단계가 올라갈 때만 추가 감점)
-    filler_tier = 0
     
     monotone_threshold = threshold["monotone_penalty_threshold"]
     reengagement_threshold = threshold["reengagement_pitch_threshold"]
@@ -407,31 +372,6 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 boosts_applied.append(f"음량 강조 가점 (+{boost:.1f})")
                 total_stats["total_db_boost_counts"] += 1
                 events_applied.append("db_boost")
-        
-        # 군말 검사
-        filler_count, filler_words = get_filler_count_per_min(fillers_by_sec, sec)
-        
-        if filler_count >= threshold["filler_60sec_limit"]:
-            excess_count = filler_count - threshold["filler_60sec_limit"]
-            
-            if excess_count < 3:
-                tier = 1
-            elif excess_count < 7:
-                tier = 2
-            else:
-                tier = 3
-                
-            if tier > filler_tier:
-                penalty = weight["filler_penalty_weight"] * (tier - filler_tier)
-                sec_delta -= penalty
-                unique_words = ", ".join(dict.fromkeys(filler_words))
-                penalties_applied.append(f"60초간 군말 과다 ({filler_count}회): {unique_words} (-{penalty:.1f})")
-                events_applied.append("filler")
-                total_stats["total_filler_counts"] += 1
-                
-                filler_tier = tier
-        else:
-            filler_tier = 0
             
         running_score += max(sec_delta, -threshold["max_penalty_per_sec"])
         if running_score < base_score:

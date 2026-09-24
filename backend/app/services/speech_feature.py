@@ -26,7 +26,6 @@ def merge_speech_result(audio_metrics: dict, audio_features: dict) -> dict:
         "seconds": [item.get("sec") for item in timeline],
         "spm_data": preprocess_spm(timeline),
         "silence_data": preprocess_silences(silences),
-        "fillers_by_sec": preprocess_fillers(filler_words),
         "pitch_data": preprocess_pitches(timeline),
         "norm_db_data": preprocess_db(timeline)
     }
@@ -72,24 +71,6 @@ def preprocess_silences(silence_list: List[dict[str, Any]]) -> List[dict[str, fl
         })
         
     return silence_times
-
-# 군말 전처리 
-def preprocess_fillers(filler_list: List[dict[str, Any]]) -> List[dict[str, Any]]:
-    filler_by_sec: List[dict[str, Any]] = []
-    
-    for filler in filler_list:
-        sec = filler.get("sec")
-        word = filler.get("word")
-        
-        if sec is None:
-            continue
-        
-        filler_by_sec.append({
-            "sec": sec,
-            "word": word,
-        })
-        
-    return filler_by_sec
 
 # pitch 전처리
 def preprocess_pitches(timeline_list: List[dict[str, Any]]) -> dict[int, float]:

@@ -154,6 +154,14 @@ create table if not exists public.attention_weights (
   updated_at timestamptz not null default now()
 );
 
+alter table public.attention_weights
+  alter column weights set default '{
+    "spm_penalty_weight": 0.5,
+    "pitch_weight": 0.5,
+    "db_boost_weight": 0.5,
+    "silence_penalty_weight": 0.5
+  }'::jsonb;
+
 alter table public.attention_predictions enable row level security;
 alter table public.survey_results enable row level security;
 alter table public.attention_weights enable row level security;
