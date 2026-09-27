@@ -400,6 +400,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
     shoulder_tilt = metrics.get("shoulder_tilt_avg")
     blink_ratio = metrics.get("ear_blink_ratio")
     silence_ratio = metrics.get("silence_ratio")
+    gesture_per_min = metrics.get("gesture_per_min")
+    gesture_valid_ratio = metrics.get("gesture_valid_ratio")
 
     # 얼굴이 안 잡히면 지표가 None으로 온다. 0으로 적으면 "완벽했다"는 뜻이 되므로
     # 측정을 못 했다는 사실을 그대로 프롬프트에 넘긴다.
@@ -407,6 +409,15 @@ def _build_coaching_prompt(metrics: dict) -> str:
     pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
     blink_text = f"{blink_ratio * 100:.1f}%" if blink_ratio is not None else "분석 불가"
     silence_text = f"{silence_ratio * 100:.1f}%" if silence_ratio is not None else "분석 불가"
+
+    if (
+        gesture_per_min is not None
+        and gesture_valid_ratio is not None
+        and gesture_valid_ratio >= 0.2
+    ):
+        gesture_text = f"분당 {gesture_per_min:.2f}회"
+    else:
+        gesture_text = "분석 불가"
 
     # 음성 분석이 되면 입 모양으로 추정한 침묵 대신 실제 음성 지표로 발화를 평가한다.
     # 둘 다 넣으면 같은 항목을 서로 다른 수치로 말하게 되므로, 음성이 없을 때만 남긴다.
@@ -424,7 +435,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
 
 - 시선 이탈 비율: {gaze_text}
 - 어깨 기울기 평균: {pose_text}
-- 제스처 횟수: {metrics['gesture_count']}회
+- 제스처 빈도: {gesture_text}
+- 제스처 임시 평가 기준: 분당 2~4회를 현재 프로젝트의 적정 범위로 사용하며, 분석 불가인 경우 평가하지 마세요.
 - 눈 감음 비율: {blink_text}{silence_line}{voice}{rolemodel_block}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
@@ -442,8 +454,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
 **코칭:** 상체 균형을 개선할 구체 행동을 제안하세요.
 
 ## 제스처
-**진단:** 제스처 횟수를 바탕으로 현재 상태를 평가하세요.
-**코칭:** 손동작을 더 효과적으로 쓰는 방법을 제안하세요.
+**진단:** 분당 제스처 빈도를 바탕으로 현재 상태를 평가하세요. 분석 불가인 경우 임의로 평가하지 마세요.
+**코칭:** 분석 가능한 경우 손동작을 더 효과적으로 쓰는 방법을 제안하고, 분석 불가인 경우 손이 카메라에 잘 보이도록 안내하세요.
 
 ## 집중도
 **진단:** 눈 감음 비율을 바탕으로 청중 몰입감을 평가하세요.
@@ -579,7 +591,8 @@ def _fallback_coaching(metrics: dict) -> str:
 
     ratio = gaze_ratio * 100 if gaze_ratio is not None else None
     tilt = shoulder_tilt if shoulder_tilt is not None else None
-    gestures = metrics["gesture_count"]
+    gesture_per_min = metrics.get("gesture_per_min")
+    gesture_valid_ratio = metrics.get("gesture_valid_ratio")
     blink = blink_ratio * 100 if blink_ratio is not None else None
     silence = silence_ratio * 100 if silence_ratio is not None else None
 
@@ -609,15 +622,23 @@ def _fallback_coaching(metrics: dict) -> str:
         pose_diagnosis = f"어깨 균형이 {tilt:.1f}도로 잘 유지되고 있습니다."
         pose_coaching = "지금처럼 정면 자세를 유지하면서, 강조 구간에서는 상체를 살짝 앞으로 보내 전달력을 높이세요."
 
-    if gestures < 5:
-        gesture_diagnosis = "손 동작이 거의 없어 핵심 포인트의 강조가 약할 수 있습니다."
-        gesture_coaching = "첫째, 둘째처럼 구조를 말할 때 손가락으로 번호를 보여주고, 결론에서는 양손을 가볍게 열어 강조하세요."
-    elif gestures > 50:
-        gesture_diagnosis = f"제스처가 {gestures}회로 많아 시선이 손동작에 분산될 수 있습니다."
-        gesture_coaching = "문장마다 움직이기보다 핵심 단어 1개에만 손동작을 붙이고, 나머지 시간에는 손을 고정하세요."
-    else:
-        gesture_diagnosis = f"제스처 사용이 {gestures}회로 적절한 편입니다."
+    if (gesture_per_min is None
+        or gesture_valid_ratio is None
+        or gesture_valid_ratio < 0.2 ):
+        gesture_diagnosis = "제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다."
+        gesture_coaching = "상체와 손이 카메라 화면에 잘 보이도록 위치를 조정한 뒤 다시 분석해보세요."
+
+    elif gesture_per_min < 2.0:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 현재 비교적 적게 나타났습니다."
+        gesture_coaching = "핵심 단어나 순서를 설명할 때 손동작을 사용해 중요한 내용을 강조해보세요."
+
+    elif gesture_per_min <= 4.0:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 안정적으로 나타났습니다."
         gesture_coaching = "현재 빈도를 유지하면서 숫자, 방향, 크기 표현에 맞춰 제스처 종류를 분명히 나눠보세요."
+
+    else:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 비교적 자주 나타났습니다."
+        gesture_coaching = "핵심 단어에만 손동작을 사용하고, 강조가 필요하지 않은 구간에서는 손의 움직임을 줄여보세요."
 
     if blink is None:
         focus_diagnosis = "얼굴이 충분히 검출되지 않아 눈 감음 비율을 분석하기 어렵습니다."
@@ -636,7 +657,11 @@ def _fallback_coaching(metrics: dict) -> str:
         priorities.append("시선 이탈을 줄이기 위해 핵심 문장마다 카메라 응시를 고정하세요.")
     if tilt is not None and tilt > 8:
         priorities.append("어깨 균형을 맞추기 위해 발표 전 자세 기준점을 정하세요.")
-    if gestures < 5 or gestures > 50:
+    if (gesture_per_min is not None
+        and gesture_valid_ratio is not None
+        and gesture_valid_ratio >= 0.2
+        and (gesture_per_min < 2.0 or gesture_per_min > 4.0)
+        ):
         priorities.append("제스처 빈도를 조절해 강조 지점에만 손동작을 사용하세요.")
     if blink is not None and blink > 40:
         priorities.append("눈 감음 비율을 낮추기 위해 문장 시작 시 카메라를 또렷하게 바라보세요.")
@@ -649,9 +674,10 @@ def _fallback_coaching(metrics: dict) -> str:
 
     gaze_summary = f"{ratio:.0f}%" if ratio is not None else "분석 불가"
     pose_summary = f"{tilt:.1f}도" if tilt is not None else "분석 불가"
+    gesture_summary = f"분당 {gesture_per_min:.2f}회" if gesture_per_min is not None and gesture_valid_ratio is not None and gesture_valid_ratio >= 0.2 else "분석 불가"
 
     return "\n\n".join([
-        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
+        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gesture_summary}를 기준으로 다음 연습 포인트를 정리했습니다.",
         f"## 시선\n**진단:** {gaze_diagnosis}\n**코칭:** {gaze_coaching}",
         f"## 자세\n**진단:** {pose_diagnosis}\n**코칭:** {pose_coaching}",
         f"## 제스처\n**진단:** {gesture_diagnosis}\n**코칭:** {gesture_coaching}",
