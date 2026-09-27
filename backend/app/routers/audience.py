@@ -6,7 +6,7 @@ from app.core.database import get_supabase
 from app.core.survey_db import insert_survey_result
 from app.middleware.auth import CurrentUser, get_current_user
 from app.core.weights_db import maybe_update_model
-
+from app.core.config import settings
 from app.services.survey_analyzer import analyze_survey_csv
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ async def upload_survey(
     check_result_owner(result_id, current_user.id)
     
     try:
-        result = await analyze_survey_csv(file, result_id)
+        result = await analyze_survey_csv(file, result_id, api_key=settings.gemini_api_key)
         
         if not insert_survey_result(result_id, result):
             raise RuntimeError("설문 결과 저장에 실패했습니다.")
@@ -86,7 +86,7 @@ def get_survey_result(
         res = (
             get_supabase()
             .table("survey_results")
-            .select("participant_count,average_attention_score,feature_means,feedbacks,learning_data_available,created_at")
+            .select("participant_count,average_attention_score,feature_means,feedbacks,top_feedbacks,learning_data_available,created_at")
             .eq("result_id", result_id)
             .limit(1)
             .execute()
@@ -114,7 +114,7 @@ def get_audience_prediction(
         res = (
             get_supabase()
             .table("attention_predictions")
-            .select("attention_score,timeline_second,timeline_minute,status,created_at")
+            .select("attention_score,base_score,timeline_second,timeline_minute,status,created_at")
             .eq("result_id", result_id)
             .order("created_at", desc=True)
             .limit(1)
@@ -140,5 +140,6 @@ def get_audience_prediction(
         "status": data.get("status"),
         "timeline_second": data.get("timeline_second", []),
         "timeline_minute": data.get("timeline_minute", []),
-        "attention_score": data.get("attention_score", 0)
+        "attention_score": data.get("attention_score", 0),
+        "base_score": data.get("base_score")
     }

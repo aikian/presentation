@@ -9,6 +9,7 @@ def insert_survey_result(result_id: str, survey: dict[str, Any]) -> dict[str, An
         "average_attention_score": survey["average_attention_score"],
         "feature_means": survey.get("feature_means", {}),
         "feedbacks": survey.get("feedbacks", []),
+        "top_feedbacks": survey.get("top_feedbacks", []),
         "learning_data_available": survey.get("learning_data_available", False)
     }
     res = get_supabase().table("survey_results").upsert(payload, on_conflict="result_id").execute()

@@ -128,6 +128,7 @@ def save_attention_prediction(saved_id: str, result: dict[str, Any]) -> dict[str
         "error_code": result.get("error_code"),
         "message": result.get("message"),
         "attention_score": result.get("attention_score"),
+        "base_score": result.get("base_score"),
         "timeline_second": result.get("timeline_second", []),
         "timeline_minute": result.get("timeline_minute", []),
         "total_stats": result.get("total_stats", {})

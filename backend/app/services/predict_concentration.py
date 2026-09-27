@@ -69,6 +69,7 @@ def make_error_result(code: str, message: str) -> dict[str, Any]:
         "error_code": code,
         "message": message,
         "attention_score": None,
+        "base_score": None,
         "timeline_second": [],
         "timeline_minute": [],
         "total_stats": {}
@@ -196,8 +197,11 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     pitch_data = speech_result.get("pitch_data", [])
     norm_db_data = speech_result.get("norm_db_data", [])
     
-    if not seconds or not spm_data or not pitch_data or not norm_db_data:
+    if not seconds or not spm_data or not norm_db_data:
         return make_error_result("NO_DATA", "필수 데이터(seconds)가 존재하지 않습니다")
+    
+    if not pitch_data:
+        logger.warning("pitch_data가 비어 있어 단조로움/과도한 어조 변화 평가를 건너뜁니다")
     
     # 초 단위 집중도 저장
     sec_scores: List[dict[str, Any]] = []
@@ -298,10 +302,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         pitch_v = get_pitch_variation(pitch_data, sec)
         
         if pitch_v is None:
-        
-            monotone_duration = 0
-            reengagement_duration = 0
-            excessive_duration = 0
+            pass
         
         elif pitch_v <= monotone_threshold:
             monotone_duration += 1
@@ -399,6 +400,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         "error_code": None,
         "message": "집중도 추정 성공",
         "attention_score": final_score,
+        "base_score": base_score,
         "timeline_second": sec_scores,
         "timeline_minute": min_score,
         "total_stats": total_stats,
@@ -414,5 +416,5 @@ def analyze_audience(audio_metrics: dict[str, Any], audio_features: dict[str, An
         logger.exception("가중치 조회 실패, 기본 가중치를 사용합니다")
         
     speech_result = merge_speech_result(audio_metrics, audio_features)
-    print(audio_metrics)
+
     return predict_attention(speech_result, audience_weight)

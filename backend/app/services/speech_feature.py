@@ -19,7 +19,6 @@ def merge_speech_result(audio_metrics: dict, audio_features: dict) -> dict:
     ]
     
     silences = audio_features.get("silences", [])
-    filler_words = audio_metrics.get("filler_words", [])
  
     return {
         "duration_sec": audio_metrics.get("duration_sec", 0.0),
