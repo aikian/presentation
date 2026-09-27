@@ -13,9 +13,12 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.audio_analyzer import MONOTONE_THRESHOLD
 from app.services.rolemodel import coaching_lines
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
+from app.services.habit_detector import analyze_filler_habits
+from app.services.habit_detector import analyze_monotone_habits
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -103,13 +106,14 @@ def _shoulder_tilt_signed(pose_landmarks) -> float:
     return angle
 
 
-def _lean_direction(pose_landmarks, threshold_deg: float = 5.0) -> str:
+def _lean_direction(pose_landmarks) -> str:
     signed_tilt = _shoulder_tilt_signed(pose_landmarks)
 
-    if abs(signed_tilt) < threshold_deg:
-        return "none"
-
-    return "left" if signed_tilt < 0 else "right"
+    if signed_tilt < 0:
+        return "left"
+    elif signed_tilt > 0:
+        return "right"
+    return "none"
 
 
 def _extract_frames(video_path: Path):
@@ -275,6 +279,10 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                     if movements:
                         movement_max = max(movements)
+
+                        # TODO:
+                        # 2초 간격의 손목 위치 차이만으로는 연속 제스처를 놓칠 수 있음.
+                        # 샘플링 간격 또는 구간 내 이동량을 활용하는 방식 검토 필요.
                         active = movement_max >= 0.10
 
                         video_timeline[i]["gesture"]["active"] = active
@@ -662,15 +670,45 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     metrics = analyze_video(video_path, on_step)
 
     # TODO:
-    # 아래 습관 탐지 임계값은 기능 연동 테스트를 위한 임시값이다.
-    # 최종값은 문헌 검토 및 실험 결과를 바탕으로 재설정한다.
+    # 아래 습관 탐지 임계값 중 지속시간·반복 횟수 기준은
+    # 기능 연동 및 실험을 위한 임시값이다.
+    #
+    # [자세]
+    # - 롤모델 발표 영상 3편 분석 결과를 바탕으로
+    #   어깨 기울기 15도를 프로젝트의 경험적 기준으로 설정
+    # - 발표 자세에 대한 보편적 기준이 아닌 프로젝트 내부 기준
+    # - 절대 어깨 기울기는 카메라 기울기와 개인의 기본 자세에 영향을 받을 수 있음
+    # - 추후 기준 자세 대비 상대 각도 방식 적용 검토
+    # - 상대 각도 방식 적용 시 각도·지속시간·반복 횟수 기준 재검증
+    #
+    # [제스처]
+    # - 현재 2초 간격의 손목 위치 차이만으로 active 여부를 판단함
+    # - 연속 제스처를 놓치는 경우가 있어 이동량 계산 방식 개선 필요
+    # - active 판정 개선 후 비활성 지속시간 기준 재검증
+    #
+    # [음성]
+    # - 군말 반복 횟수 기준은 현재 임시값
+    # - 단순 누적 횟수는 발표 길이와 발생 간격을 반영하지 못하므로
+    #   filler_per_min 또는 일정 시간 내 동일 군말 반복 여부 활용 검토
+    # - 단조로움 2초 지속 기준은 짧은 구간도 습관으로 판정할 수 있어 재검토 필요
+    # - 군말·단조로움 기준은 추가 실제 발표 영상으로 검증 후 확정
+
+    # 자세 기울기 기준
+    posture_tilt_threshold_deg = 15.0
+
+    # 영상 습관 탐지 임시 기준
     temp_persistent_threshold_sec = 6.0
     temp_repeated_threshold_count = 2
     temp_gesture_inactive_threshold_sec = 4.0
 
+    # 음성 습관 탐지 임시 기준
+    temp_filler_repeated_threshold_count = 3
+    temp_monotone_persistent_threshold_sec = 2.0
+
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
+        tilt_threshold_deg=posture_tilt_threshold_deg,
         persistent_threshold_sec=temp_persistent_threshold_sec,
         repeated_threshold_count=temp_repeated_threshold_count,
     )
@@ -681,11 +719,32 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         persistent_threshold_sec=temp_gesture_inactive_threshold_sec,
     )
 
-    # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
+    # 음성 분석. 실패해도 예외를 올리지 않으므로
+    # 영상 분석 결과는 그대로 살아남는다.
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
+
+        audio_metrics = metrics["audio_metrics"]
+
+        if audio_metrics.get("speech_available"):
+            metrics["filler_habits"] = analyze_filler_habits(
+                filler_words=audio_metrics.get("filler_words", []),
+                repeated_threshold_count=temp_filler_repeated_threshold_count,
+            )
+
+            metrics["monotone_habits"] = analyze_monotone_habits(
+                audio_timeline=audio_metrics.get("timeline", []),
+                monotone_threshold=MONOTONE_THRESHOLD,
+                persistent_threshold_sec=temp_monotone_persistent_threshold_sec,
+            )
+        else:
+            metrics["filler_habits"] = None
+            metrics["monotone_habits"] = None
+
     else:
         metrics["audio_metrics"] = None
+        metrics["filler_habits"] = None
+        metrics["monotone_habits"] = None
 
     metrics["duration_sec"] = _video_duration_sec(video_path)
 
@@ -705,9 +764,10 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     else:
         metrics["gesture_per_min"] = None
 
-
     if on_step:
         on_step(5)
+
     coaching = _gemini_coaching(metrics, api_key)
     metrics["coaching"] = coaching
+
     return metrics

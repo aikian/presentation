@@ -1,12 +1,11 @@
 # 자세
 
-def extract_problem_posture_points(video_timeline: list[dict]) -> list[dict]:
+def extract_problem_posture_points(video_timeline: list[dict], tilt_threshold_deg: float) -> list[dict]:
     """
     video_timeline에서 문제 자세 시점을 추출한다.
 
-    기존 프로토타입의 problem_pose_frame 추출 기준(shoulder_tilt_deg > 10)을
-    재사용한다. 해당 10도 기준의 근거는 현재 확인되지 않았으므로,
-    추후 재확인한다.
+    shoulder_tilt_deg가 전달받은 임계값을 초과하는 경우
+    문제 자세 시점으로 추출한다.
     """
 
     problem_points = []
@@ -19,7 +18,7 @@ def extract_problem_posture_points(video_timeline: list[dict]) -> list[dict]:
 
         tilt = posture.get("shoulder_tilt_deg")
 
-        if tilt is not None and tilt > 10:
+        if tilt is not None and tilt > tilt_threshold_deg:
             problem_points.append({
                 "sec": item["sec"],
                 "tilt": tilt,
@@ -129,12 +128,15 @@ def detect_posture_habits(segments: list[dict], persistent_threshold_sec: float,
     }
 
 
-def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float, tilt_threshold_deg: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
     """
     video_timeline을 기반으로 자세 습관 탐지 전체 과정을 수행한다.
     """
 
-    problem_points = extract_problem_posture_points(video_timeline)
+    problem_points = extract_problem_posture_points(
+        video_timeline,
+        tilt_threshold_deg,
+    )
 
     segments = group_posture_segments(
         problem_points,
@@ -282,7 +284,7 @@ def extract_filler_points(filler_words: list[dict]) -> list[dict]:
             continue
 
         filler_points.append({
-            "sec": sec,
+            "sec": float(sec),
             "word": word,
         })
 
@@ -341,3 +343,119 @@ def analyze_filler_habits(filler_words: list[dict], repeated_threshold_count: in
     )
 
     return {"filler_points": filler_points, "filler_counts": filler_counts, "repeated": repeated}
+
+
+# 음성 - 단조로움
+
+def extract_monotone_points(audio_timeline: list[dict], monotone_threshold: float) -> list[dict]:
+    """
+    audio_timeline에서 이웃한 두 초의 피치 변화가
+    monotone_threshold 미만인 시점을 추출한다.
+    """
+    monotone_points = []
+
+    for prev, cur in zip(audio_timeline, audio_timeline[1:]):
+        if cur["sec"] - prev["sec"] != 1.0:
+            continue
+
+        prev_pitch = prev.get("pitch_hz")
+        cur_pitch = cur.get("pitch_hz")
+
+        if not prev_pitch or not cur_pitch:
+            continue
+
+        change_ratio = abs(cur_pitch - prev_pitch) / prev_pitch
+
+        if change_ratio < monotone_threshold:
+            monotone_points.append({
+                "sec": cur["sec"],
+                "pitch_hz": cur_pitch,
+                "change_ratio": round(change_ratio, 3),
+            })
+
+    return monotone_points
+
+
+def group_monotone_segments(monotone_points: list[dict], frame_interval_sec: float) -> list[dict]:
+    """
+    연속해서 나타난 단조로운 피치 변화 시점을 하나의 구간으로 묶는다.
+
+    각 monotone point는 이전 시점과 현재 시점 사이의 피치 변화가
+    기준 미만임을 의미하므로, 구간 시작 시점에는 이전 간격을 포함한다.
+    """
+    if not monotone_points:
+        return []
+
+    segments = []
+
+    current_segment = {
+        "start_sec": monotone_points[0]["sec"] - frame_interval_sec,
+        "end_sec": monotone_points[0]["sec"],
+    }
+
+    for point in monotone_points[1:]:
+        time_gap = point["sec"] - current_segment["end_sec"]
+
+        if time_gap <= frame_interval_sec:
+            current_segment["end_sec"] = point["sec"]
+        else:
+            current_segment["duration_sec"] = round(
+                current_segment["end_sec"]
+                - current_segment["start_sec"],
+                1,
+            )
+            segments.append(current_segment)
+
+            current_segment = {
+                "start_sec": point["sec"] - frame_interval_sec,
+                "end_sec": point["sec"],
+            }
+
+    current_segment["duration_sec"] = round(
+        current_segment["end_sec"]
+        - current_segment["start_sec"],
+        1,
+    )
+    segments.append(current_segment)
+
+    return segments
+
+
+def detect_monotone_habits(segments: list[dict], persistent_threshold_sec: float) -> list[dict]:
+    """
+    단조로운 피치 변화 구간 중 일정 시간 이상 지속된 구간을 추출한다.
+    """
+    persistent = []
+
+    for segment in segments:
+        if segment["duration_sec"] >= persistent_threshold_sec:
+            persistent.append(segment)
+
+    return persistent
+
+
+def analyze_monotone_habits(audio_timeline: list[dict], monotone_threshold: float, persistent_threshold_sec: float, frame_interval_sec: float = 1.0) -> dict:
+    """
+    audio_timeline을 기반으로 단조로움 습관 탐지 전체 과정을 수행한다.
+    """
+    monotone_points = extract_monotone_points(
+        audio_timeline,
+        monotone_threshold,
+    )
+
+    segments = group_monotone_segments(
+        monotone_points,
+        frame_interval_sec,
+    )
+
+    persistent = detect_monotone_habits(
+        segments,
+        persistent_threshold_sec,
+    )
+
+    return {
+        "monotone_points": monotone_points,
+        "segments": segments,
+        "persistent": persistent,
+    }
+
