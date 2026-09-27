@@ -154,6 +154,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         return {
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
             "shoulder_tilt_avg": None, "gesture_count": 0,
+            "gesture_active_ratio": None, "gesture_event_count": None,
             "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
@@ -283,6 +284,32 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             else:
                 prev_wrist_positions = []
 
+    # 제스처 판정이 가능한 샘플만 사용하여 활성 비율 계산
+    gesture_states = [
+        item["gesture"]["active"]
+        for item in video_timeline
+        if item.get("gesture") is not None
+        and item["gesture"].get("active") is not None
+    ]
+
+
+    gesture_active_ratio = (
+        sum(state is True for state in gesture_states) / len(gesture_states)
+        if gesture_states
+        else None
+    )
+
+    # 연속된 active=True 구간을 하나의 제스처 이벤트로 계산
+    gesture_event_count = 0
+    in_gesture = False
+
+    for state in gesture_states:
+        if state is True and not in_gesture:
+            gesture_event_count += 1
+            in_gesture = True
+        elif state is False:
+            in_gesture = False
+
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
     face_detected_ratio = (len(gaze_scores) / len(frames)) if frames else 0.0
@@ -300,6 +327,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "face_detected_ratio": round(face_detected_ratio, 3),
         "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
+        "gesture_active_ratio": round(gesture_active_ratio, 3) if gesture_active_ratio is not None else None,
+        "gesture_event_count": gesture_event_count,
         "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
         "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
@@ -659,6 +688,23 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         metrics["audio_metrics"] = None
 
     metrics["duration_sec"] = _video_duration_sec(video_path)
+
+    # 연속된 제스처 활성 구간 수를 영상 길이로 정규화하여 분당 횟수 계산
+    duration_sec = metrics["duration_sec"]
+    gesture_event_count = metrics.get("gesture_event_count")
+
+    if (
+        duration_sec is not None
+        and duration_sec > 0
+        and gesture_event_count is not None
+    ):
+        metrics["gesture_per_min"] = round(
+            gesture_event_count / (duration_sec / 60.0),
+            2,
+        )
+    else:
+        metrics["gesture_per_min"] = None
+
 
     if on_step:
         on_step(5)

@@ -89,9 +89,14 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
 
 
     # TODO: D3
-    # 현재 gesture_count는 프레임별 검출 손 개수의 누적값으로,
-    # 영상 길이에 따라 증가하므로 점수 계산에 사용하지 않는다.
-    # gesture_active_ratio와 비율 기반 점수 기준을 구현한 뒤 교체한다.
+    # 기존 gesture_count는 프레임별 검출 손 개수의 누적값으로,
+    # 실제 제스처 횟수가 아니며 영상 길이에 따라 증가하므로
+    # 점수 계산에는 사용하지 않는다.
+    #
+    # video_timeline의 gesture.active를 이용해
+    # 영상 길이에 독립적인 gesture_active_ratio를 생성한다.
+    # 제스처 활성 판정 방식과 비율 기반 점수 기준을 검증한 뒤
+    # score_gesture 계산에 사용한다.
     gesture = None
 
     voice = _calculate_voice_score(metrics.get("audio_metrics"))
