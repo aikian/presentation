@@ -158,7 +158,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         return {
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
             "shoulder_tilt_avg": None, "gesture_count": 0,
-            "gesture_active_ratio": None, "gesture_event_count": None,
+            "gesture_active_ratio": None, "gesture_valid_ratio": None, "gesture_event_count": None,
             "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
@@ -300,10 +300,17 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         and item["gesture"].get("active") is not None
     ]
 
-
+    # 판정된 것 중 몇 %가 active인가?
     gesture_active_ratio = (
         sum(state is True for state in gesture_states) / len(gesture_states)
         if gesture_states
+        else None
+    )
+
+    # 전체 분석 시점 중 몇 %에서 제스처 판정이 가능했나?
+    gesture_valid_ratio = (
+        len(gesture_states) / len(video_timeline)
+        if video_timeline
         else None
     )
 
@@ -336,6 +343,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
         "gesture_active_ratio": round(gesture_active_ratio, 3) if gesture_active_ratio is not None else None,
+        "gesture_valid_ratio": (round(gesture_valid_ratio, 3) if gesture_valid_ratio is not None else None),
         "gesture_event_count": gesture_event_count,
         "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
         "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
@@ -763,6 +771,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         )
     else:
         metrics["gesture_per_min"] = None
+
 
     if on_step:
         on_step(5)

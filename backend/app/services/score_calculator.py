@@ -13,6 +13,49 @@ def _score(raw: float, good: float, bad: float) -> int:
     return int(max(0, min(100, (1 - (raw - good) / (bad - good)) * 100)))
 
 
+def _calculate_gesture_score(gesture_per_min: float | None, gesture_valid_ratio: float | None) -> int | None:
+    """분당 제스처 이벤트 횟수를 0~100점으로 변환한다.
+
+    gesture_valid_ratio가 너무 낮아 제스처 판정 데이터가 부족한 경우에는
+    낮은 점수를 부여하지 않고 None을 반환한다.
+
+    현재 점수 기준은 롤모델 발표 영상의 실측 결과를 바탕으로 설정한
+    임시 경험적 기준이며, 추가 영상 검증 후 재조정한다.
+    """
+    if gesture_per_min is None or gesture_valid_ratio is None:
+        return None
+
+    # TODO:
+    # 판정 가능 비율 기준은 현재 실험을 위한 임시값이다.
+    # 추가 영상 검증 후 재조정한다.
+    if gesture_valid_ratio < 0.2:
+        return None
+
+    # TODO:
+    # 현재 분석한 롤모델 영상 중 판정 가능 비율이 충분했던 영상에서
+    # gesture_per_min이 2.32~3.87회/분으로 관찰되어,
+    # 2~4회/분을 임시 적정 범위로 설정한다.
+    #
+    # 이 기준은 현재 gesture.active 판정 방식에 종속된 경험적 기준이며,
+    # 일반적인 발표의 보편적 기준을 의미하지 않는다.
+
+    if 2.0 <= gesture_per_min <= 4.0:
+        return 100
+
+    if gesture_per_min < 2.0:
+        return _score(
+            gesture_per_min,
+            good=2.0,
+            bad=0.0,
+        )
+
+    return _score(
+        gesture_per_min,
+        good=4.0,
+        bad=8.0,
+    )
+
+
 def _calculate_voice_score(audio_metrics: dict | None) -> int | None:
     """음성 분석 결과를 0~100점으로 변환한다.
 
@@ -88,16 +131,16 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
     pose = _score(pose_raw, 0.0, 20.0) if pose_raw is not None else None
 
 
-    # TODO: D3
-    # 기존 gesture_count는 프레임별 검출 손 개수의 누적값으로,
-    # 실제 제스처 횟수가 아니며 영상 길이에 따라 증가하므로
-    # 점수 계산에는 사용하지 않는다.
-    #
-    # video_timeline의 gesture.active를 이용해
-    # 영상 길이에 독립적인 gesture_active_ratio를 생성한다.
-    # 제스처 활성 판정 방식과 비율 기반 점수 기준을 검증한 뒤
-    # score_gesture 계산에 사용한다.
-    gesture = None
+    # D3 수정:
+    # 기존 gesture_count 대신 연속된 gesture.active=True 구간을
+    # 하나의 제스처 이벤트로 계산하고, 영상 길이로 정규화한
+    # gesture_per_min을 제스처 점수 입력값으로 사용한다.
+    # gesture_valid_ratio를 함께 확인하여 판정 데이터가 부족한 경우
+ # 점수 계산에서 제외한다. 관련 기준은 현재 임시값이다.
+    gesture = _calculate_gesture_score(
+        gesture_per_min=metrics.get("gesture_per_min"),
+        gesture_valid_ratio=metrics.get("gesture_valid_ratio"),
+    )
 
     voice = _calculate_voice_score(metrics.get("audio_metrics"))
 
