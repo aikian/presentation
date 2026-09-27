@@ -6,7 +6,7 @@ analysis_results.details 컬럼에 이 JSON을 통째로 저장한다.
 스키마 v0.1 규약 중 이 파일이 지키는 것:
 - 없는 값은 None(null). 0은 "측정된 0"이라는 뜻이라 절대 혼용하지 않는다.
 - 시간은 영상 시작 = 0초 기준 float 초(소수 1자리), 리스트는 시간 오름차순.
-- 블록마다 주인이 1명이다. 지금은 meta·audio만 채우고 나머지는 None으로 둔다.
+- 블록마다 주인이 1명이다. 지금은 meta·audio·habits만 채우고 나머지는 None으로 둔다.
   담당자가 자기 블록을 구현하면 이 파일에 채우는 함수를 추가한다.
 """
 from typing import Any
@@ -87,7 +87,12 @@ def build_details(
         "audio": build_audio_block(audio_metrics, duration_sec or audio_duration),
         "summary": None,          # 영상 지표 집계 담당
         "scores": None,           # AHP 담당 (지금은 평면 컬럼 score_* 사용)
-        "habits": None,           # 습관 탐지 담당
+        "habits": {
+            "posture": metrics.get("posture_habits"),
+            "gesture": metrics.get("gesture_habits"),
+            "filler": metrics.get("filler_habits"),
+            "monotone": metrics.get("monotone_habits"),
+        },  # 습관 탐지 담당
         "artifacts": {},          # 생성 파일이 있는 사람이 각자 경로를 넣는다
         # 롤모델 비교. 스키마 v0.1에 없는 실험 필드라 x_ 접두사를 쓴다.
         # 회의에서 정식 필드로 승격할지 정한다.
