@@ -1,12 +1,11 @@
 # 자세
 
-def extract_problem_posture_points(video_timeline: list[dict]) -> list[dict]:
+def extract_problem_posture_points(video_timeline: list[dict], tilt_threshold_deg: float) -> list[dict]:
     """
     video_timeline에서 문제 자세 시점을 추출한다.
 
-    기존 프로토타입의 problem_pose_frame 추출 기준(shoulder_tilt_deg > 10)을
-    재사용한다. 해당 10도 기준의 근거는 현재 확인되지 않았으므로,
-    추후 재확인한다.
+    shoulder_tilt_deg가 전달받은 임계값을 초과하는 경우
+    문제 자세 시점으로 추출한다.
     """
 
     problem_points = []
@@ -19,7 +18,7 @@ def extract_problem_posture_points(video_timeline: list[dict]) -> list[dict]:
 
         tilt = posture.get("shoulder_tilt_deg")
 
-        if tilt is not None and tilt > 10:
+        if tilt is not None and tilt > tilt_threshold_deg:
             problem_points.append({
                 "sec": item["sec"],
                 "tilt": tilt,
@@ -129,12 +128,15 @@ def detect_posture_habits(segments: list[dict], persistent_threshold_sec: float,
     }
 
 
-def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float, tilt_threshold_deg: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
     """
     video_timeline을 기반으로 자세 습관 탐지 전체 과정을 수행한다.
     """
 
-    problem_points = extract_problem_posture_points(video_timeline)
+    problem_points = extract_problem_posture_points(
+        video_timeline,
+        tilt_threshold_deg,
+    )
 
     segments = group_posture_segments(
         problem_points,

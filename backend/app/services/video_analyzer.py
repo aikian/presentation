@@ -106,13 +106,14 @@ def _shoulder_tilt_signed(pose_landmarks) -> float:
     return angle
 
 
-def _lean_direction(pose_landmarks, threshold_deg: float = 5.0) -> str:
+def _lean_direction(pose_landmarks) -> str:
     signed_tilt = _shoulder_tilt_signed(pose_landmarks)
 
-    if abs(signed_tilt) < threshold_deg:
-        return "none"
-
-    return "left" if signed_tilt < 0 else "right"
+    if signed_tilt < 0:
+        return "left"
+    elif signed_tilt > 0:
+        return "right"
+    return "none"
 
 
 def _extract_frames(video_path: Path):
@@ -277,6 +278,10 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                     if movements:
                         movement_max = max(movements)
+
+                        # TODO:
+                        # 2초 간격의 손목 위치 차이만으로는 연속 제스처를 놓칠 수 있음.
+                        # 샘플링 간격 또는 구간 내 이동량을 활용하는 방식 검토 필요.
                         active = movement_max >= 0.10
 
                         video_timeline[i]["gesture"]["active"] = active
@@ -636,10 +641,27 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     metrics = analyze_video(video_path, on_step)
 
     # TODO:
-    # 아래 습관 탐지 임계값은 기능 연동 테스트를 위한 임시값이다.
-    # 최종값은 문헌 검토 및 실험 결과를 바탕으로 재설정한다.
+    # 아래 습관 탐지 임계값은 기능 연동 및 실험을 위한 임시값이다.
+    #
+    # [자세]
+    # - 절대 어깨 기울기는 카메라 기울기와 개인의 기본 자세에 영향을 받을 수 있음
+    # - 추후 기준 자세 대비 상대 각도 방식 적용 검토
+    # - 상대 각도 방식 확정 후 각도·지속시간·반복 횟수 기준 재검증
+    #
+    # [제스처]
+    # - 현재 2초 간격의 손목 위치 차이만으로 active 여부를 판단함
+    # - 연속 제스처를 놓치는 경우가 있어 이동량 계산 방식 개선 필요
+    # - active 판정 개선 후 비활성 지속시간 기준 재검증
+    #
+    # [음성]
+    # - 군말 반복 횟수 기준은 현재 임시값
+    # - 단순 누적 횟수는 발표 길이와 발생 간격을 반영하지 못하므로
+    #   filler_per_min 또는 일정 시간 내 동일 군말 반복 여부 활용 검토
+    # - 단조로움 2초 지속 기준은 짧은 구간도 습관으로 판정할 수 있어 재검토 필요
+    # - 군말·단조로움 기준은 추가 실제 발표 영상으로 검증 후 확정
 
     # 영상 습관 탐지 임시 기준
+    temp_posture_tilt_threshold_deg = 8.0
     temp_persistent_threshold_sec = 6.0
     temp_repeated_threshold_count = 2
     temp_gesture_inactive_threshold_sec = 4.0
@@ -652,6 +674,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
+        tilt_threshold_deg=temp_posture_tilt_threshold_deg,
         persistent_threshold_sec=temp_persistent_threshold_sec,
         repeated_threshold_count=temp_repeated_threshold_count,
     )
