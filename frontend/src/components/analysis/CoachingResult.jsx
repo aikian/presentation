@@ -49,10 +49,6 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(next) ? next : fallback
 }
 
-function score(raw, good, bad) {
-  return Math.round(Math.max(0, Math.min(100, (1 - (raw - good) / (bad - good)) * 100)))
-}
-
 function MetricCard({ label, value, unit, status }) {
   return (
     <div className={`rounded-lg border p-4 ${STATUS_STYLE[status]}`}>
@@ -80,7 +76,7 @@ function ScoreBar({ label, score, weight }) {
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-semibold text-slate-700">{label}</span>
-        <span className="text-slate-500">{isUnavailable ? `분석 불가 · ${weight}` : `${value}점 · ${weight}`}</span>
+        <span className="text-slate-500">{isUnavailable ? `점수 산정 전 · ${weight}` : `${value}점 · ${weight}`}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${isUnavailable ? 0 : value}%` }} />
@@ -156,10 +152,10 @@ function AnalysisOverview({ metrics, scores }) {
         <div>
           <h2 className="mb-3 text-lg font-bold text-slate-950">항목별 점수</h2>
           <div className="space-y-3">
-            <ScoreBar label="시선" score={scores.gaze} weight="30%" />
-            <ScoreBar label="자세" score={scores.pose} weight="25%" />
-            <ScoreBar label="제스처" score={scores.gesture} weight="15%" />
-            <ScoreBar label="시간" score={scores.time} weight="30%" />
+            <ScoreBar label="시선" score={scores.gaze} weight="35.12%" />
+            <ScoreBar label="자세" score={scores.pose} weight="18.87%" />
+            <ScoreBar label="제스처" score={scores.gesture} weight="10.89%" />
+            <ScoreBar label="음성" score={scores.voice} weight="35.12%" />
           </div>
         </div>
       </div>
@@ -352,15 +348,16 @@ function CoachingSection({ meta, text, frames }) {
 export default function CoachingResult({ result }) {
   const navigate = useNavigate()
   const {
-    gaze_away_ratio, shoulder_tilt_avg, gesture_count,
+    gaze_away_ratio, shoulder_tilt_avg, gesture_count, gesture_per_min,
     ear_blink_ratio, silence_ratio, face_detected_ratio, gaze_timeline, problem_frames, coaching,
-    score_total, score_gaze, score_pose, score_gesture, score_time,
+    score_total, score_gaze, score_pose, score_gesture, score_voice, score_time,
   } = result
 
   const metrics = {
     gazeRatio: gaze_away_ratio == null ? null : toNumber(gaze_away_ratio),
     tilt: shoulder_tilt_avg == null ? null : toNumber(shoulder_tilt_avg),
     gestures: toNumber(gesture_count),
+    gesturePerMin: gesture_per_min == null ? null : toNumber(gesture_per_min),
     blinkRatio: ear_blink_ratio == null ? null : toNumber(ear_blink_ratio),
     silenceRatio: silence_ratio == null ? null : toNumber(silence_ratio),
     faceDetectedRatio: face_detected_ratio == null ? null : toNumber(face_detected_ratio),
@@ -370,25 +367,27 @@ export default function CoachingResult({ result }) {
 
   const gazeStatus = metrics.gazeRatio == null ? 'warn' : metrics.gazeRatio > 0.3 ? 'bad' : metrics.gazeRatio > 0.15 ? 'warn' : 'good'
   const tiltStatus = metrics.tilt == null ? 'warn' : metrics.tilt > 15 ? 'bad' : metrics.tilt > 8 ? 'warn' : 'good'
-  const gestureStatus = metrics.gestures < 5 || metrics.gestures > 50 ? 'warn' : 'good'
+  // TODO: gesture_per_min 기준 확정 후 상태 판정 추가
+  const gestureStatus = 'warn'
+
+const scores = {
+    total: score_total == null ? null : toNumber(score_total),
+    gaze: score_gaze == null ? null : toNumber(score_gaze),
+    pose: score_pose == null ? null : toNumber(score_pose),
+    gesture: score_gesture == null ? null : toNumber(score_gesture),
+    voice: score_voice == null ? null : toNumber(score_voice),
+    time: score_time == null ? null : toNumber(score_time),
+  }
 
   const radarData = [
-    metrics.gazeRatio == null ? null : { subject: '시선', score: score(metrics.gazeRatio, 0, 0.4) },
-    metrics.tilt == null ? null : { subject: '자세', score: score(metrics.tilt, 0, 20) },
-    { subject: '제스처', score: metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90 },
-    metrics.blinkRatio == null ? null : { subject: '집중도', score: score(metrics.blinkRatio, 0, 0.5) },
-    metrics.silenceRatio == null ? null : { subject: '발화', score: score(metrics.silenceRatio, 0, 0.7) },
+    scores.gaze == null ? null : { subject: '시선', score: scores.gaze },
+    scores.pose == null ? null : { subject: '자세', score: scores.pose },
+    scores.gesture == null ? null : { subject: '제스처', score: scores.gesture },
+    scores.voice == null ? null : { subject: '음성', score: scores.voice },
   ].filter(Boolean)
 
   const parsedSections = useMemo(() => parseCoachingSections(coaching), [coaching])
   const frames = useMemo(() => normalizeFrames(problem_frames), [problem_frames])
-  const scores = {
-    total: score_total == null ? null : toNumber(score_total),
-    gaze: score_gaze == null ? null : toNumber(score_gaze),
-    pose: score_pose == null ? null : toNumber(score_pose),
-    gesture: score_gesture == null ? (metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90) : toNumber(score_gesture),
-    time: score_time == null ? score(metrics.silenceRatio, 0, 0.7) : toNumber(score_time),
-  }
 
   function handlePrint() {
     window.print()
@@ -428,7 +427,7 @@ export default function CoachingResult({ result }) {
         <div className="grid gap-3 sm:grid-cols-3">
           <MetricCard label="시선 이탈률" value={metrics.gazeRatio == null ? '분석 불가' : `${(metrics.gazeRatio * 100).toFixed(0)}%`} unit="" status={gazeStatus} />
           <MetricCard label="어깨 기울기" value={metrics.tilt == null ? '분석 불가' : metrics.tilt.toFixed(1)} unit={metrics.tilt == null ? '' : '도'} status={tiltStatus} />
-          <MetricCard label="제스처 횟수" value={metrics.gestures} unit="회" status={gestureStatus} />
+          <MetricCard label="분당 제스처 횟수" value={metrics.gesturePerMin == null ? '분석 불가' : metrics.gesturePerMin.toFixed(1)} unit={metrics.gesturePerMin == null ? '' : '회/분'} status={gestureStatus} />
         </div>
 
         <AnalysisOverview metrics={metrics} scores={scores} />
