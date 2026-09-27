@@ -123,9 +123,18 @@ def build_details(
             "frame_interval_sec": frame_interval_sec,
             "target_time_sec": target_time_sec,
         },
-        "video_timeline": None,   # 시선·표정 / 자세·제스처 담당
+        "video_timeline": metrics.get("video_timeline") or None,   # 시선·표정 / 자세·제스처 담당
         "audio": build_audio_block(audio_metrics, duration_sec or audio_duration),
-        "summary": None,          # 영상 지표 집계 담당
+        "summary": {
+            "gaze_away_ratio": metrics.get("gaze_away_ratio"),
+            "smile_ratio": None,
+            "tension_ratio": None,
+            "expression_change_std": None,
+            "gesture_active_ratio": metrics.get("gesture_active_ratio"),
+            "gesture_per_min": metrics.get("gesture_per_min"),
+            "gesture_valid_ratio": metrics.get("gesture_valid_ratio"),
+            "posture_tilt_avg_deg": metrics.get("shoulder_tilt_avg"),
+        },          # 영상 지표 집계 담당
         "scores": build_scores_block(metrics, target_time_sec),
         "habits": {
             "posture": metrics.get("posture_habits"),
