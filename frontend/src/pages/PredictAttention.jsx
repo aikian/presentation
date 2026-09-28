@@ -4,6 +4,13 @@ import AttentionResult from "../components/attention/AttentionResult"
 import CsvUpload from "../components/attention/CsvUpload"
 import { fetchAttentionResult, fetchSurveyResult } from "../api/client"
 
+const FEATURE_LABELS = {
+    spm: "말속도 적절성",
+    pitch_variation: "어조 변화",
+    db: "음량 강조",
+    silence: "정적/멈춤 적절성"
+}
+
 export default function PredictAttention() {
 
     const { id } = useParams()
@@ -56,36 +63,6 @@ export default function PredictAttention() {
     }
 
     const actualScore = getActualAttentionScore()
-
-    // 신뢰도 계산
-    const getPredictConfidence = () => {
-        if(!predictResult || !surveyResult) {
-            return null
-        }
-
-        // 예측에 실패한 경우(점수 없음)에는 계산하지 않음
-        if (predictResult.attention_score == null) {
-            return null
-        }
-
-        const predictedScore = Number(predictResult.attention_score)
-
-        if(!Number.isFinite(predictedScore) || actualScore===null){
-            return null
-        }
-
-        const error = Math.abs(predictedScore - actualScore)
-        const confidence = Math.max(0, 100 - error)
-
-        return {
-            predictedScore,
-            actualScore,
-            error,
-            confidence
-        }
-    }
-
-    const predictConfidence = getPredictConfidence()
 
     if (loading) {
         return (
@@ -164,7 +141,7 @@ export default function PredictAttention() {
 
                             <div className="border-t border-gray-100 px-5 py-4">
                                 <p className="mt-2 text-xs leading-5 text-indigo-800">
-                                    CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 7열)
+                                    업로드 CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 7열)
                                 </p>
                                 
                                 <ol className="list-decimal list-inside space-y-3 text-left text-sm leading-6 text-gray-700">
@@ -257,53 +234,42 @@ export default function PredictAttention() {
                                     </span>
                                 </p>
                             </div>
-
-                            {/* 예측 신뢰도 */}
-                            <div className="rounded-lg bg-white p-5">
-                                <p className="text-sm text-gray-500">
-                                    예측 신뢰도
-                                </p>
-
-                                {predictConfidence ? (
-                                    <div>
-                                        <p className="mt-1 text-3xl font-bold text-indigo-600">
-                                            {predictConfidence.confidence.toFixed(1)} %
-                                        </p>
-
-                                        <p className="mt-1 text-xs text-gray-400">
-                                            예측{" "}
-                                            {predictConfidence.predictedScore.toFixed(1)}
-
-                                            {" / "}
-
-                                            실제{" "}
-                                            {predictConfidence.actualScore.toFixed(1)}
-                                            점
-                                        </p>
-                                    </div>
-                                        
-                                ): (
-                                    <p className="mt-1 text-3xl font-bold text-gray-400">
-                                        -
-                                    </p>
-                                )}
-                            </div>
                         </div>
 
-                        {/* 설문 결과는 가장 많이 나온 유형의 피드백 3가지만 보여주도록 수정 필요 */}
-                        {surveyResult.feedbacks && surveyResult.feedbacks.length > 0 && (
+                        {/* 설문 문항별 평균 점수 */}
+                        {surveyResult.feature_means && (
+                            <div className="mt-6">
+                                <h3 className="mb-3 text-base font-semibold text-gray-800">
+                                    설문 문항별 평균 (1~5점)
+                                </h3>
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                    {Object.entries(FEATURE_LABELS).map(([key, label]) => {
+                                        const value = surveyResult.feature_means[key]
+                                        return (
+                                            <div key={key} className="rounded-lg bg-white p-4 text-center">
+                                                <p className="text-xs text-gray-500">{label}</p>
+                                                <p className="mt-1 text-xl font-bold text-gray-700">
+                                                    {value != null ? Number(value).toFixed(1) : "-"}
+                                                </p>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 가장 많이 나온 유형의 피드백 3가지만 보여줌 */}
+                        {surveyResult.top_feedbacks && surveyResult.top_feedbacks.length > 0 && (
                             <div className="mt-6">
                                 <h3 className="mb-3 text-base font-semibold text-gray-800">청중 피드백</h3>
                                 <div className="space-y-2">
-                                    {surveyResult.feedbacks.map((item, index) => {
-                                        
-                                        const text = typeof item === 'string' ? item : item?.text
-
-                                        if (!text) return null
-
+                                    {surveyResult.top_feedbacks.map((item, index) => {
                                         return (
-                                            <div key={item?.id ?? index} className="rounded-lg bg-white p-4">
-                                                <p className="text-sm text-gray-700">{text}</p>
+                                            <div key={index} className="rounded-lg bg-white p-4">
+                                                <p className="text-sm text-gray-700">{item.summary}</p>
+                                                <span className="ml-3 shrink-0 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-600">
+                                                    {item.count}건
+                                                </span>
                                             </div>
                                         )
                                     })}

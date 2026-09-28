@@ -9,10 +9,8 @@ from app.services.speech_feature import merge_speech_result
 logger = logging.getLogger(__name__)
 
 # 기본 가중치 설정 (청중 설문 피드백에 따라 동적으로 갱신 가능)
-# 가중치는 연구 또는 논문을 통해 수정 예정
 DEFAULT_WEIGHT: dict[str, Any] = {
     "base_score": 85.0,
-    "recovery_per_sec": 0.01,
     
     # 말속도 관련 가중치
     "spm_penalty_weight": 0.5,
@@ -35,12 +33,13 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     "pitch_weight": 0.5,
     
     # 음량 강조
-    "db_boost_weight": 0.5
+    "db_boost_weight": 0.5,
+    "db_reengagement_window_sec": 15
 }
 
 DEFAULT_THRESHOLD: dict[str, Any] = {
-    # 말속도(동시통역에 적합한 한국어 발화 속도 연구)
-    "fast_spm_threshold": 340.0,
+    # 말속도(TV뉴스 아나운서의 음도, 음도 범위, 말속도에 관한 연구, 동시통역에 적합한 한국어 발화 속도 연구)
+    "fast_spm_threshold": 360.0,
     "slow_spm_threshold": 200.0,
     
     # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting the flow: How brief silences in group conversations affect social needs
@@ -56,7 +55,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "excessive_pitch_threshold": 0.25,
     
     # 음량 강조
-    "db_zscore_threshold": 1.0,
+    "db_zscore_threshold": 0.8,
     "db_zscore_change_threshold": 1.2,
     
     "max_penalty_per_sec": 5.0
@@ -211,6 +210,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     reengagement_duration = 0
     excessive_duration = 0
     monotone_detected = False
+    last_dip_sec = float("-inf") # 정적/단조로움 감점이 마지막으로 발생한 초
     
     # 말속도: 최근 구간 내 분류 이력 + 감점 쿨다운
     spm_history: deque = deque()  # (sec, "fast" | "slow" | "normal")
@@ -234,7 +234,6 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     excessive_limit = weight["excessive_count"]
     
     base_score = weight["base_score"]
-    recovery = weight["recovery_per_sec"]
     running_score = base_score
     
     # 초 단위 평가
@@ -297,7 +296,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             penalties_applied.append(f"{silent['duration']:.1f}초 정적 감지 (-{silent['penalty']:.1f})")
             events_applied.append("silence")
             total_stats["total_silence_counts"] += 1
-         
+            last_dip_sec = sec
+            
         # 단조로움 평가
         pitch_v = get_pitch_variation(pitch_data, sec)
         
@@ -315,7 +315,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 penalties_applied.append(f"{monotone_duration}초 연속 단조로운 어조 (-{penalty:.1f})")
                 total_stats["total_monotone_counts"] += 1
                 events_applied.append("monotone")
-                    
+                last_dip_sec = sec
+                
                 monotone_detected = True
                 monotone_duration = 0
                     
@@ -359,26 +360,23 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             excessive_duration = 0
             reengagement_duration = 0
             
-        # 음량 강조 평가
-        current_db = norm_db_data.get(sec, 0.0)
-        prev_db = [norm_db_data[i] for i in range(max(0, sec-3), sec) if i in norm_db_data]
-            
-        if len(prev_db) >= 2:
-            prev_avg_db = statistics.mean(prev_db)
-            db_change = current_db - prev_avg_db
-            
-            if current_db >= threshold["db_zscore_threshold"] and db_change >= threshold["db_zscore_change_threshold"]:
-                boost = weight["db_boost_weight"]
-                sec_delta += boost
-                boosts_applied.append(f"음량 강조 가점 (+{boost:.1f})")
-                total_stats["total_db_boost_counts"] += 1
-                events_applied.append("db_boost")
+        # 단조로움 및 정적 이후 음량 강조 평가
+        sustain = 3
+        recent_db = [norm_db_data.get(i) for i in range(sec - sustain + 1, sec + 1)]
+        
+        if(
+            all(v is not None and v >= threshold["db_zscore_threshold"] for v in recent_db)
+            and sec - sustain + 1 > last_dip_sec
+            and sec - last_dip_sec <= weight["db_reengagement_window_sec"]
+        ):
+            boost = weight["db_boost_weight"]
+            sec_delta += boost
+            boosts_applied.append(f"정적/단조로움 이후 음량 강조 (+{boost:.1f})")
+            total_stats["total_db_boost_counts"] += 1
+            events_applied.append("db_boost")
+            last_dip_sec = float("-inf")
             
         running_score += max(sec_delta, -threshold["max_penalty_per_sec"])
-        if running_score < base_score:
-            running_score = min(base_score, running_score + recovery)
-        elif running_score > base_score:
-            running_score = max(base_score, running_score - recovery)
         running_score = max(0.0, min(100.0, running_score))
  
         sec_scores.append({
@@ -416,5 +414,5 @@ def analyze_audience(audio_metrics: dict[str, Any], audio_features: dict[str, An
         logger.exception("가중치 조회 실패, 기본 가중치를 사용합니다")
         
     speech_result = merge_speech_result(audio_metrics, audio_features)
-
+    print(speech_result)
     return predict_attention(speech_result, audience_weight)

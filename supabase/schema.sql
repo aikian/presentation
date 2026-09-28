@@ -119,6 +119,7 @@ create table if not exists public.attention_predictions (
   error_code text,
   message text,
   attention_score double precision,
+  base_score double precision,
   timeline_second jsonb not null default '[]'::jsonb,
   timeline_minute jsonb not null default '[]'::jsonb,
   total_stats jsonb not null default '{}'::jsonb,
@@ -128,6 +129,9 @@ create table if not exists public.attention_predictions (
 create index if not exists attention_predictions_result_id_idx
   on public.attention_predictions (result_id);
 
+alter table public.attention_predictions
+  add column if not exists base_score double precision;
+  
 -- 청중 설문 분석 결과 
 create table if not exists public.survey_results (
   id uuid primary key default gen_random_uuid(),
@@ -136,9 +140,13 @@ create table if not exists public.survey_results (
   average_attention_score double precision not null,
   feature_means jsonb not null default '{}'::jsonb,
   feedbacks jsonb not null default '[]'::jsonb,
+  top_feedbacks jsonb not null default '[]'::jsonb,
   learning_data_available boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.survey_results
+  add column if not exists top_feedbacks jsonb not null default '[]'::jsonb;
 
 -- 집중도 계산 가중치
 create table if not exists public.attention_weights (
