@@ -1,10 +1,14 @@
 from typing import Any, List, Optional, Tuple
 import statistics
 import logging
+import numpy as np
+import math
+
 from collections import deque
 
 from app.core.weights_db import get_weights
 from app.services.speech_feature import merge_speech_result
+from app.services.audio_features import PITCH_MIN_HZ
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +21,8 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     # 최근 20초 중 60% 이상이 빠르거나 느리면 감점
     "spm_window_sec": 20,
     "spm_ratio_threshold": 0.6,
-    "spm_penalty_cooldown_sec": 20, 
+    "spm_penalty_cooldown_sec": 20,
+    "spm_silence_count_threshold": 2, 
     
     # 정적 관련 가중치
     "silence_penalty_weight": 0.5,
@@ -28,7 +33,7 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     # 단조로움 이후 환기
     "reengagement_count": 3, # 3초 이상 지속 시 가점
     # 과도한 어조 변화
-    "excessive_count": 3,
+    "excessive_count": 5,
     # pitch 가중치
     "pitch_weight": 0.5,
     
@@ -38,25 +43,24 @@ DEFAULT_WEIGHT: dict[str, Any] = {
 }
 
 DEFAULT_THRESHOLD: dict[str, Any] = {
-    # 말속도(TV뉴스 아나운서의 음도, 음도 범위, 말속도에 관한 연구, 동시통역에 적합한 한국어 발화 속도 연구)
+    # 말속도(TV뉴스 아나운서의 음도, 음도 범위, 말속도에 관한 연구 / 동시통역에 적합한 한국어 발화 속도 연구)
     "fast_spm_threshold": 360.0,
     "slow_spm_threshold": 200.0,
     
     # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting the flow: How brief silences in group conversations affect social needs
     "silence_penalty_threshold": 4.0,
     
-    # pitch 변동률이 0.15 이하면 단조로움 감점
-    "monotone_penalty_threshold": 0.15,
+    # pitch 변동률이 0.08 이하면 단조로움 감점
+    "monotone_penalty_threshold": 1.4,
     
     # pitch 변동률이 0.15 이상이면 환기 가점
-    "reengagement_pitch_threshold": 0.15,
+    "reengagement_pitch_threshold": 2.6,
     
-    # pitch 변동률이 0.25 이상이면 과도한 어조 변화로 감점
-    "excessive_pitch_threshold": 0.25,
+    # pitch 변동률이 0.35 이상이면 과도한 어조 변화로 감점
+    "excessive_pitch_threshold": 4.3,
     
     # 음량 강조
-    "db_zscore_threshold": 0.8,
-    "db_zscore_change_threshold": 1.2,
+    "db_zscore_threshold": 1.3,
     
     "max_penalty_per_sec": 5.0
 }
@@ -98,17 +102,29 @@ def build_silence_penalty_secs(
     return penalty_secs
 
 # pitch 변동률 계산
+# pitch 변동 계산: 창 안의 pitch를 반음(semitone) 단위로 바꾼 뒤 표준편차를 구함
 def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
-    valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch > 0]
+    valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch > PITCH_MIN_HZ + 1]
     
     if len(valid_pitches) < 3:
         return None
     
-    mean_pitch = statistics.mean(valid_pitches)
-    std_pitch = statistics.stdev(valid_pitches)
+    filtered_pitches = valid_pitches
     
-    return (std_pitch / mean_pitch) if mean_pitch > 0 else None
+    # 이상치 제거 (값이 5개 이상일 때만)
+    if len(valid_pitches) >= 5:
+        low_cutoff, high_cutoff = np.percentile(valid_pitches, [10, 90])
+        filtered_pitches = [p for p in valid_pitches if low_cutoff <= p <= high_cutoff]
+    
+    if len(filtered_pitches) < 3:
+        return None
+    
+    # 중앙값 기준 반음 차이로 변환: 12 * log2(f / 기준)
+    reference = statistics.median(filtered_pitches)
+    semitones = [12 * math.log2(p / reference) for p in filtered_pitches]
+    
+    return statistics.stdev(semitones)
 
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Optional[float]:
@@ -216,6 +232,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     spm_history: deque = deque()  # (sec, "fast" | "slow" | "normal")
     last_spm_penalty_sec = {"fast": float("-inf"), "slow": float("-inf")}
     
+    silence_ends = [int(s["end"]) for s in silence_data]
+    monotone_history: deque = deque()
+    
     total_stats = {
         "total_spm_penalty_counts": 0,
         "total_monotone_counts": 0,
@@ -243,7 +262,14 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         penalties_applied = []
         boosts_applied = []
         events_applied: List[str] = [] 
-    
+        
+        pitch_v = get_pitch_variation(pitch_data, sec)
+        if pitch_v is not None:
+            monotone_history.append((sec, pitch_v <= monotone_threshold))
+            
+        while monotone_history and monotone_history[0][0] < sec - weight["spm_window_sec"] + 1:
+            monotone_history.popleft()
+            
         # 말속도
         average_spm = get_average_spm(spm_data, sec)
         
@@ -267,8 +293,17 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 fast_ratio = sum(1 for _, state in spm_history if state == "fast") / valid_count
                 slow_ratio = sum(1 for _, state in spm_history if state == "slow") / valid_count
                 
+                is_monotone_context = (
+                    len(monotone_history) >= 3
+                    and sum(1 for _, m in monotone_history if m) / len(monotone_history) >= weight["spm_ratio_threshold"]
+                )
+                recent_silence_count = sum(1 for e in silence_ends if sec - weight["spm_window_sec"] < e <= sec)
+                has_silence = recent_silence_count >= weight["spm_silence_count_threshold"]
+                
                 if (
                     fast_ratio >= weight["spm_ratio_threshold"] 
+                    and is_monotone_context
+                    and not has_silence
                     and sec - last_spm_penalty_sec["fast"] >= weight["spm_penalty_cooldown_sec"]
                 ):
                     spm_penalty = weight["spm_penalty_weight"]
@@ -279,7 +314,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                     last_spm_penalty_sec["fast"] = sec
                     
                 elif (
-                    slow_ratio >= weight["spm_ratio_threshold"] 
+                    slow_ratio >= weight["spm_ratio_threshold"]
+                    and is_monotone_context
+                    and has_silence
                     and sec - last_spm_penalty_sec["slow"] >= weight["spm_penalty_cooldown_sec"]
                 ):
                     spm_penalty = weight["spm_penalty_weight"]
@@ -299,8 +336,6 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             last_dip_sec = sec
             
         # 단조로움 평가
-        pitch_v = get_pitch_variation(pitch_data, sec)
-        
         if pitch_v is None:
             pass
         
@@ -363,9 +398,19 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         # 단조로움 및 정적 이후 음량 강조 평가
         sustain = 3
         recent_db = [norm_db_data.get(i) for i in range(sec - sustain + 1, sec + 1)]
+        recent_pitch_valid = all(
+            get_pitch_variation(pitch_data, i) is not None
+            for i in range(sec - sustain + 1, sec + 1)
+        )
+        recent_spm_valid = all(
+            get_average_spm(spm_data, i) is not None
+            for i in range(sec - sustain + 1, sec + 1)
+        )
         
         if(
-            all(v is not None and v >= threshold["db_zscore_threshold"] for v in recent_db)
+            recent_pitch_valid
+            and recent_spm_valid
+            and all(v is not None and v >= threshold["db_zscore_threshold"] for v in recent_db)
             and sec - sustain + 1 > last_dip_sec
             and sec - last_dip_sec <= weight["db_reengagement_window_sec"]
         ):
@@ -414,5 +459,5 @@ def analyze_audience(audio_metrics: dict[str, Any], audio_features: dict[str, An
         logger.exception("가중치 조회 실패, 기본 가중치를 사용합니다")
         
     speech_result = merge_speech_result(audio_metrics, audio_features)
-    print(speech_result)
+    
     return predict_attention(speech_result, audience_weight)
