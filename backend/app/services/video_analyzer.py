@@ -130,21 +130,34 @@ def _extract_frames(video_path: Path):
         devnull.close()
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps < 1 or fps > 120:
-        fps = 30  # 브라우저 webm 녹화본의 FPS 파싱 실패 시 기본값
 
-    interval = max(1, int(fps * settings.frame_interval_sec))
+    if not fps or fps < 1 or fps > 120:
+        fps = None
+
     frames = []
+    frame_times = []
     idx = 0
+    next_sample_sec = 0.0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        if idx % interval == 0:
+
+        if fps is not None:
+            current_sec = idx / fps
+        else:
+            current_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+
+        if current_sec + 1e-6 >= next_sample_sec:
             frames.append(frame)
+            frame_times.append(round(current_sec, 3))
+            next_sample_sec += settings.frame_interval_sec
+
         idx += 1
+
     cap.release()
-    return frames
+    return frames, frame_times
 
 
 def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
@@ -153,7 +166,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             on_step(n)
 
     _step(1)
-    frames = _extract_frames(video_path)
+    frames, frame_times = _extract_frames(video_path)
+
     if not frames:
         return {
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
@@ -177,7 +191,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     gesture_count = 0
     prev_wrist_positions = []
 
-    video_timeline = [{"sec": round(i * settings.frame_interval_sec, 1), "posture": None, "gesture": None} for i in range(len(frames))]
+    video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None} for i in range(len(frames))]
 
     # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
     _step(2)
@@ -196,14 +210,14 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                 score = _gaze_score(result.multi_face_landmarks[0], w, h)
                 gaze_scores.append(score)
-                gaze_timeline.append({"sec": round(i * settings.frame_interval_sec, 1), "score": round(score, 3)})
+                gaze_timeline.append({"sec": round(frame_times[i], 1), "score": round(score, 3)})
 
                 if score > 0.35 and score > max_gaze_score:
                     max_gaze_score = score
                     problem_gaze_frame = {
                         "type": "gaze",
                         "label": "시선 이탈",
-                        "sec": round(i * settings.frame_interval_sec, 1),
+                        "sec": round(frame_times[i], 1),
                         "score": round(score, 3),
                         "value": f"{score * 100:.0f}%",
                         "image": _frame_to_b64(frame),
@@ -237,7 +251,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                     problem_pose_frame = {
                         "type": "pose",
                         "label": "자세 기울어짐",
-                        "sec": round(i * settings.frame_interval_sec, 1),
+                        "sec": round(frame_times[i], 1),
                         "score": round(tilt, 2),
                         "value": f"{tilt:.1f}도",
                         "image": _frame_to_b64(frame),
@@ -689,15 +703,29 @@ def _fallback_coaching(metrics: dict) -> str:
 def _video_duration_sec(video_path: Path) -> float | None:
     """영상 길이(초). 스키마의 meta.duration_sec으로 나간다."""
     cap = cv2.VideoCapture(str(video_path))
+
     try:
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        if fps and 1 <= fps <= 120 and frame_count and frame_count >= 1:
+            return round(frame_count / fps, 1)
+
+        last_sec = None
+
+        while True:
+            ret, _ = cap.read()
+            if not ret:
+                break
+
+            pos_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
+            if pos_msec >= 0:
+                last_sec = pos_msec / 1000.0
+
+        return round(last_sec, 1) if last_sec is not None else None
+
     finally:
         cap.release()
-
-    if not fps or fps < 1 or fps > 120 or not frame_count or frame_count < 1:
-        return None
-    return round(frame_count / fps, 1)
 
 
 def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str, Any]:
