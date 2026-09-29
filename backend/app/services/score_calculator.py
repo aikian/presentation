@@ -32,9 +32,9 @@ def _calculate_gesture_score(gesture_per_min: float | None, gesture_valid_ratio:
         return None
 
     # TODO:
-    # 현재 분석한 롤모델 영상 중 판정 가능 비율이 충분했던 영상에서
-    # gesture_per_min이 2.32~3.87회/분으로 관찰되어,
-    # 2~4회/분을 임시 적정 범위로 설정한다.
+    # 2~4회/분은 기존 롤모델 영상 실측값을 바탕으로 설정한 임시 기준이다.
+    # gesture.active 분석 방식을 0.5초 간격으로 개선했으므로,
+    # 동일 롤모델 영상을 재분석한 뒤 gesture_per_min 분포와 점수 기준을 재검증한다.
     #
     # 이 기준은 현재 gesture.active 판정 방식에 종속된 경험적 기준이며,
     # 일반적인 발표의 보편적 기준을 의미하지 않는다.
@@ -132,11 +132,14 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
 
 
     # D3 수정:
-    # 기존 gesture_count 대신 연속된 gesture.active=True 구간을
-    # 하나의 제스처 이벤트로 계산하고, 영상 길이로 정규화한
-    # gesture_per_min을 제스처 점수 입력값으로 사용한다.
+    # 제스처는 0.5초 간격으로 손목 움직임을 분석한 뒤
+    # 기존 video_timeline 구간별로 active 상태를 집계한다.
+    # 연속된 gesture.active=True 구간을 하나의 제스처 이벤트로 계산하고,
+    # 영상 길이로 정규화한 gesture_per_min을 제스처 점수 입력값으로 사용한다.
+    #
     # gesture_valid_ratio를 함께 확인하여 판정 데이터가 부족한 경우
- # 점수 계산에서 제외한다. 관련 기준은 현재 임시값이다.
+    # 점수 계산에서 제외한다.
+    # active 판정 및 점수화 기준은 현재 임시값이며 추가 검증이 필요하다.
     gesture = _calculate_gesture_score(
         gesture_per_min=metrics.get("gesture_per_min"),
         gesture_valid_ratio=metrics.get("gesture_valid_ratio"),
