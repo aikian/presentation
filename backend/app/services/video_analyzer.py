@@ -116,7 +116,10 @@ def _lean_direction(pose_landmarks) -> str:
     return "none"
 
 
-def _extract_frames(video_path: Path):
+def _extract_frames(video_path: Path, interval_sec: float | None = None):
+    if interval_sec is None:
+        interval_sec = settings.frame_interval_sec
+
     # OpenCV stderr 억제 (EBML/webm 파싱 경고)
     import os, sys
     devnull = open(os.devnull, 'w')
@@ -152,7 +155,7 @@ def _extract_frames(video_path: Path):
         if current_sec + 1e-6 >= next_sample_sec:
             frames.append(frame)
             frame_times.append(round(current_sec, 3))
-            next_sample_sec += settings.frame_interval_sec
+            next_sample_sec += interval_sec
 
         idx += 1
 
@@ -167,6 +170,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
     _step(1)
     frames, frame_times = _extract_frames(video_path)
+    gesture_frames, gesture_frame_times = _extract_frames(video_path, interval_sec=0.5)
 
     if not frames:
         return {
@@ -190,6 +194,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     max_pose_tilt = 0.0
     gesture_count = 0
     prev_wrist_positions = []
+    gesture_timeline = []
 
     video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None} for i in range(len(frames))]
 
@@ -260,14 +265,17 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     # Step 4: 제스처 분석 (Hands)
     _step(4)
     with mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
-        for i, frame in enumerate(frames):
+        for i, frame in enumerate(gesture_frames):
+            current_sec = gesture_frame_times[i]
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = hands.process(rgb)
             hands_visible = bool(result.multi_hand_landmarks)
-            video_timeline[i]["gesture"] = {
+            
+            gesture_timeline.append({
+                "sec": round(current_sec, 1),
                 "active": None,
                 "hands_visible": hands_visible,
-            }
+            })
 
             current_wrist_positions = []
 
@@ -294,17 +302,47 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                     if movements:
                         movement_max = max(movements)
 
+
                         # TODO:
-                        # 2초 간격의 손목 위치 차이만으로는 연속 제스처를 놓칠 수 있음.
-                        # 샘플링 간격 또는 구간 내 이동량을 활용하는 방식 검토 필요.
+                        # movement_max >= 0.10은 임시 임계값.
+                        # 추가 영상 실험 후 근거 있는 active 판정 기준으로 재설정 필요.
                         active = movement_max >= 0.10
 
-                        video_timeline[i]["gesture"]["active"] = active
+                        gesture_timeline[-1]["active"] = active
 
 
                 prev_wrist_positions = current_wrist_positions
+
             else:
                 prev_wrist_positions = []
+
+
+    # 0.5초 간격 제스처 분석 결과를 기존 video_timeline 구간에 집계
+    for item in video_timeline:
+        start_sec = item["sec"]
+        end_sec = start_sec + settings.frame_interval_sec
+
+        samples = [
+            g for g in gesture_timeline
+            if start_sec <= g["sec"] < end_sec
+        ]
+
+        if not samples:
+            item["gesture"] = None
+            continue
+
+        hands_visible = any(g["hands_visible"] for g in samples)
+        measured_active = [g["active"] for g in samples if g["active"] is not None]
+
+        item["gesture"] = {
+            "active": (
+                any(measured_active)
+                if measured_active
+                else None
+            ),
+            "hands_visible": hands_visible,
+        }
+
 
     # 제스처 판정이 가능한 샘플만 사용하여 활성 비율 계산
     gesture_states = [
@@ -744,9 +782,9 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # - 상대 각도 방식 적용 시 각도·지속시간·반복 횟수 기준 재검증
     #
     # [제스처]
-    # - 현재 2초 간격의 손목 위치 차이만으로 active 여부를 판단함
-    # - 연속 제스처를 놓치는 경우가 있어 이동량 계산 방식 개선 필요
-    # - active 판정 개선 후 비활성 지속시간 기준 재검증
+    # - 제스처는 0.5초 간격으로 별도 분석 후 기존 video_timeline 구간에 집계
+    # - active 판정 기준 movement_max >= 0.10은 현재 임시값
+    # - 추가 발표 영상 테스트 후 active 임계값과 비활성 지속시간 기준 재검증 필요
     #
     # [음성]
     # - 군말 반복 횟수 기준은 현재 임시값
