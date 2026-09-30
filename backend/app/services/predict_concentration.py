@@ -29,11 +29,11 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     "silence_penalty_max_multiplier": 3.0,
     
     # 단조로움 가중치
-    "monotone_consecutive_count_limit": 15, # 15초 이상 단조로울 시 감점 
+    "monotone_consecutive_count_limit": 10, # 10(+7)초 이상 단조로울 시 감점 
     # 단조로움 이후 환기
-    "reengagement_count": 3, # 3초 이상 지속 시 가점
+    "reengagement_count": 2, # 2(+7)초 이상 지속 시 가점
     # 과도한 어조 변화
-    "excessive_count": 10,
+    "excessive_count": 8, # 8(+7)초 이상 지속 시 감점
     # pitch 가중치
     "pitch_weight": 0.5,
     
@@ -42,12 +42,13 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     "db_reengagement_window_sec": 15
 }
 
+# 테스트를 통해 수정 필요
 DEFAULT_THRESHOLD: dict[str, Any] = {
-    # 말속도(TV뉴스 아나운서의 음도, 음도 범위, 말속도에 관한 연구 / 동시통역에 적합한 한국어 발화 속도 연구)
-    "fast_spm_threshold": 360.0,
+    # 말속도
+    "fast_spm_threshold": 380.0,
     "slow_spm_threshold": 200.0,
     
-    # 정적(4초 이상 지속 시 감점) -> 논문: Disrupting the flow: How brief silences in group conversations affect social needs
+    # 정적(4초 이상 지속 시 감점)
     "silence_penalty_threshold": 4.0,
     
     # 최근 pitch의 반음(semitone) 변동 표준편차가 1.5 이하이면 단조로운 어조로 판단
@@ -104,9 +105,9 @@ def build_silence_penalty_secs(
 # pitch 변동 계산: 창 안의 pitch를 반음(semitone) 단위로 바꾼 뒤 표준편차를 구함
 def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
-    valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch >= PITCH_MIN_HZ + 1]
+    valid_pitches = [pitch for pitch in pitches if pitch is not None and pitch >= PITCH_MIN_HZ + 3]
     
-    if len(valid_pitches) < 4:
+    if len(valid_pitches) < 5:
         return None
     
     filtered_pitches = valid_pitches
@@ -116,7 +117,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
         low_cutoff, high_cutoff = np.percentile(valid_pitches, [10, 90])
         filtered_pitches = [p for p in valid_pitches if low_cutoff <= p <= high_cutoff]
     
-    if len(filtered_pitches) < 4:
+    if len(filtered_pitches) < 5:
         return None
     
     # 중앙값 기준 반음 차이로 변환: 12 * log2(f / 기준)
@@ -125,12 +126,6 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
         return None
     
     semitones = [12 * math.log2(p / reference) for p in filtered_pitches]
-    
-    # 중앙값에서 8반음(옥타브의 2/3) 넘게 벗어난 값은 옥타브 오류/문장 끝 튐으로 보고 제외
-    semitones = [s for s in semitones if abs(s) <= 8]
-    
-    if len(semitones) < 3:
-        return None
     
     return statistics.stdev(semitones)
 
@@ -213,12 +208,14 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     if duration <= 0:
         return make_error_result("INVALID_DURATION", "발표 시간을 측정할 수 없습니다")
     
-    seconds = speech_result.get("seconds", [])
-    spm_data = speech_result.get("spm_data", [])
-    silence_data = speech_result.get("silence_data", [])
+    seconds = speech_result.get("seconds")
+    spm_data = speech_result.get("spm_data")
+    silence_data = speech_result.get("silence_data") or []
+    
+    # 청중에게 부정적인 영향을 주는 긴 정적(정적의 길이: 4초 ~)
     silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"], weight["silence_penalty_weight"], weight["silence_penalty_max_multiplier"])
-    pitch_data = speech_result.get("pitch_data", [])
-    norm_db_data = speech_result.get("norm_db_data", [])
+    pitch_data = speech_result.get("pitch_data") or {}
+    norm_db_data = speech_result.get("norm_db_data")
     
     if not seconds or not spm_data or not norm_db_data:
         return make_error_result("NO_DATA", "필수 데이터(seconds)가 존재하지 않습니다")
@@ -240,6 +237,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     spm_history: deque = deque()  # (sec, "fast" | "slow" | "normal")
     last_spm_penalty_sec = {"fast": float("-inf"), "slow": float("-inf")}
     
+    # 말속도 판정 범위 내에 호흡(pause)가 충분한지 보는 지표(정적의 길이: 1.5~)
     silence_ends = [int(s["end"]) for s in silence_data]
     monotone_history: deque = deque()
     
@@ -410,6 +408,8 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         # 단조로움 및 정적 이후 음량 강조 평가
         sustain = 2
         recent_db = [norm_db_data.get(i) for i in range(sec - sustain + 1, sec + 1)]
+        
+        # 박수나 소음이 음량 강조로 잡히는 것을 완화하기 위해 pitch와 spm으로 실제 발화일 떄만 가점
         recent_pitch_valid = all(
             get_pitch_variation(pitch_data, i) is not None
             for i in range(sec - sustain + 1, sec + 1)
@@ -444,8 +444,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             "events": events_applied
         })
         
-   
-    final_score = round(statistics.mean(item["score"] for item in sec_scores), 1)
+    final_score = sec_scores[-1]["score"]
     
     # 분 단위 결과
     min_score = make_min_timeline(sec_scores)
