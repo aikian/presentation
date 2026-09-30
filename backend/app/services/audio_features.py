@@ -15,7 +15,7 @@ SAMPLE_RATE = 16000
 TIMELINE_INTERVAL_SEC = 1.0
 
 # Pitch 분석 범위
-PITCH_MIN_HZ = 65.0
+PITCH_MIN_HZ = 60.0
 PITCH_MAX_HZ = 400.0
 
 # Silence 판정
@@ -57,7 +57,7 @@ def extract_audio_feature(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarra
     rms_times = librosa.times_like(rms, sr=sr, hop_length=HOP_LENGTH)
     
     # Pitch
-    f0, voiced_flag, voiced_prob = librosa.pyin(
+    f0, voiced_flag, _ = librosa.pyin(
         y,
         fmin=PITCH_MIN_HZ,
         fmax=PITCH_MAX_HZ,
@@ -68,8 +68,6 @@ def extract_audio_feature(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarra
     
     valid_pitch = (
         voiced_flag
-        & np.isfinite(voiced_prob) 
-        & (voiced_prob >= 0.7)
         & np.isfinite(f0)
         & (f0 >= PITCH_MIN_HZ)
         & (f0 <= PITCH_MAX_HZ)
@@ -206,17 +204,14 @@ def calculate_silence_threshold(rms_db: np.ndarray) -> float:
         # 전체가 정적
         if median_db <= SILENCE_ONLY_DB:
             threshold = float(np.max(valid_db)) + 2.0
-            print(f"[전체무음] threshold={threshold:.1f} dB")
             return threshold
         
         # 정적이 없음
         threshold = float(np.min(valid_db)) - 1.0
-        print(f"[전체발화] threshold={threshold:.1f} dB")
         return threshold
 
     adaptive_threshold = float(np.clip(best_threshold, -60.0, -28.0))
-    print(f"separation={best_separation:.1f} dB, threshold={adaptive_threshold:.1f} dB")
-    
+
     return adaptive_threshold
 
 def find_max_consecutive_voice_frames(voice_mask: np.ndarray) -> int:
@@ -344,10 +339,6 @@ def extract_silences(
             
     voice_threshold = adaptive_threshold - SILENCE_END_DB
 
-    print(f"adaptive silence threshold: {adaptive_threshold:.1f} dB")
-    print(f"silence end threshold: {silence_end_threshold:.1f} dB")
-    print(f"voice threshold: {voice_threshold:.1f} dB")
-    
     result: list[dict[str, Any]] = []
     
     for idx, item in enumerate(silence_candidates, start=1):
@@ -373,38 +364,15 @@ def extract_silences(
         has_voice_ratio = voice_ratio > MAX_VOICE_RATIO
         has_continuous_voice = max_consecutive_sec >= MIN_CONSECUTIVE_VOICE_SEC
         has_sound = has_voice_ratio and has_continuous_voice
-        
-        print(
-            f"{idx}. " 
-            f"{item['start']:.1f} ~ {item['end']:.1f} "
-            f"({item['duration']:.2f}s) "
-            f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
-            f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
-        )
-        print(f"   voice_ratio = {voice_ratio:.2f}, max_consecutive = {max_consecutive_sec:.2f}s")
-           
-        if has_sound:
-            print("   -> 작은 음성 포함, silence 제외")
-            continue
 
-        print("   -> 최종 silence")
+        if has_sound:
+            continue
         
-        if item["duration"] >= 2.0:
-            result.append({
-                "start": round(item["start"], 1),
-                "end": round(item["end"], 1),
-                "duration": round(item["duration"], 1)
-            })
-        
-    print(f"silence count: {len(result)}")
-    for idx, item in enumerate(result, start=1):
-        print(
-            f"{idx}. " 
-            f"{item['start']:.1f} ~ {item['end']:.1f} "
-            f"({item['duration']:.1f}s) "
-            f"[{int(item['start'] // 60):02d}:{item['start'] % 60:04.1f} ~ "
-            f"{int(item['end'] // 60):02d}:{item['end'] % 60:04.1f}]"
-        )
+        result.append({
+            "start": round(item["start"], 1),
+            "end": round(item["end"], 1),
+            "duration": round(item["duration"], 1)
+        })
         
     return result
  
@@ -450,7 +418,6 @@ def analyze_audio_features(video_path: Path) -> dict[str, Any]:
         
         # Pitch
         pitch = extract_pitch(f0, pitch_times, duration)
-        
         # dB
         db = extract_db(rms_db, rms_times, duration)
         

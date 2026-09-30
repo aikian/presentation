@@ -130,6 +130,69 @@ alter table public.reference_speakers enable row level security;
 alter table public.sessions enable row level security;
 alter table public.reports enable row level security;
 
+-- 음성 기반 집중도 예측 결과
+create table if not exists public.attention_predictions (
+  id uuid primary key default gen_random_uuid(),
+  result_id uuid not null references public.analysis_results(id) on delete cascade,
+  status text not null,
+  error_code text,
+  message text,
+  attention_score double precision,
+  base_score double precision,
+  timeline_second jsonb not null default '[]'::jsonb,
+  timeline_minute jsonb not null default '[]'::jsonb,
+  total_stats jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists attention_predictions_result_id_idx
+  on public.attention_predictions (result_id);
+
+alter table public.attention_predictions
+  add column if not exists base_score double precision;
+  
+-- 청중 설문 분석 결과 
+create table if not exists public.survey_results (
+  id uuid primary key default gen_random_uuid(),
+  result_id uuid not null unique references public.analysis_results(id) on delete cascade,
+  participant_count integer not null,
+  average_attention_score double precision not null,
+  feature_means jsonb not null default '{}'::jsonb,
+  feedbacks jsonb not null default '[]'::jsonb,
+  top_feedbacks jsonb not null default '[]'::jsonb,
+  learning_data_available boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table public.survey_results
+  add column if not exists top_feedbacks jsonb not null default '[]'::jsonb;
+
+-- 집중도 계산 가중치
+create table if not exists public.attention_weights (
+  id integer primary key default 1 check (id = 1),
+  weights jsonb not null default '{
+    "spm_penalty_weight": 0.5,
+    "pitch_weight": 0.5,
+    "db_boost_weight": 0.5,
+    "silence_penalty_weight": 0.5,
+    "filler_penalty_weight": 0.5
+  }'::jsonb,
+  last_trained_presentation_count integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.attention_weights
+  alter column weights set default '{
+    "spm_penalty_weight": 0.5,
+    "pitch_weight": 0.5,
+    "db_boost_weight": 0.5,
+    "silence_penalty_weight": 0.5
+  }'::jsonb;
+
+alter table public.attention_predictions enable row level security;
+alter table public.survey_results enable row level security;
+alter table public.attention_weights enable row level security;
+
 do $$
 begin
   if not exists (
@@ -250,6 +313,41 @@ begin
       using (
         session_id in (
           select session_id from public.sessions
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'attention_predictions' and policyname = 'attention_predictions_select_own'
+  ) then
+    create policy "attention_predictions_select_own"
+      on public.attention_predictions for select
+      using (
+        result_id in (
+          select id
+          from public.analysis_results
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'survey_results' and policyname = 'survey_results_select_own'
+  ) then
+    create policy "survey_results_select_own"
+      on public.survey_results for select
+      using (
+        result_id in (
+          select id from analysis_results
           where user_id = (select auth.uid()::text)
         )
       );

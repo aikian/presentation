@@ -655,6 +655,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
+        
     else:
         metrics["audio_metrics"] = None
 

@@ -9,12 +9,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.database import get_supabase
+from app.core.database import get_supabase, save_attention_prediction
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_audio_block, build_details
 from app.services.rolemodel import compare
 from app.services.score_calculator import calculate_scores
 from app.services.video_analyzer import run_full_analysis
+from app.services.audio_features import analyze_audio_features
+from app.services.predict_concentration import analyze_audience
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,6 +47,24 @@ def _run_job(
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
+        
+        # 음성기반 청중의 집중도 추정
+        attention_result = None
+        if settings.enable_audio_analysis:
+            try:
+                audio_metrics = result.get("audio_metrics")
+                audio_features = analyze_audio_features(video_path)
+                
+                if audio_metrics and audio_features:
+                    attention_result = analyze_audience(audio_metrics, audio_features)
+                else:
+                    print("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
+
+            except Exception:
+                print("음성 기반 집중도 예측 실패")
+        else:
+            print("enable_audio_analysis가 꺼져 있어 집중도 예측을 건너뜁니다")
+                    
 
         # 롤모델 비교. 연사 데이터를 못 읽어도 분석 결과는 그대로 살린다.
         try:
@@ -107,6 +127,15 @@ def _run_job(
                         }).execute()
                     except Exception:
                         pass
+                    
+                # 청중 집중도 결과 저장   
+                if attention_result:
+                    try:
+                        save_attention_prediction(saved_id, attention_result)
+                    except Exception:
+                        print("집중도 예측 결과 저장 실패")
+                else:
+                    print("집중도 예측 결과가 없어 저장하지 않습니다")
         except Exception:
             pass
     except Exception as e:

@@ -82,3 +82,24 @@ export async function pollAnalysis(jobId) {
   const { data } = await api.get(`/analysis/${jobId}`)
   return data // { status, result? }
 }
+
+// 청중 설문 결과 업로드
+export async function uploadSurveyCsv(file, resultId) {
+  const form = new FormData()
+
+  form.append("file", file)
+  form.append("result_id", resultId)
+
+  const { data } = await api.post('/audience/uploadCSV', form)
+  return data
+}
+
+export async function fetchAttentionResult(resultId) {
+  const res = await api.get(`/audience/${resultId}/attention`)
+  return res.data
+}
+
+export async function fetchSurveyResult(resultId) {
+  const { data } = await api.get(`audience/${resultId}/survey`)
+  return data
+}
