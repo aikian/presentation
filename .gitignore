@@ -6,5 +6,7 @@ frontend/node_modules/
 backend/uploads/
 backend/static/slides/
 
-# 롤모델 벤치마킹용 영상 원본 (281MB). GitHub는 100MB 넘는 파일을 거부한다.
-reference_data/
+# 롤모델 벤치마킹용 영상 원본과 추출 프레임. GitHub는 100MB 넘는 파일을 거부한다.
+# 영상은 각자 유튜브에서 받고(speakers.json에 URL 있음), 스크립트와 연사 정보는 공유한다.
+reference_data/videos/
+reference_data/frames/
