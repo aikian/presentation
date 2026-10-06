@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import VideoUpload from '../components/analysis/VideoUpload'
 import AnalysisProgress from '../components/analysis/AnalysisProgress'
-import CoachingResult from '../components/analysis/CoachingResult'
+import ResultTabs from '../components/result/ResultTabs'
 import { useToast } from '../components/common/Toast'
 import { uploadVideo, pollAnalysis } from '../api/client'
 
@@ -73,7 +73,7 @@ export default function VideoAnalysis() {
 
   if (stage === 'upload') return <VideoUpload onUpload={handleUpload} loading={false} />
   if (stage === 'progress') return <AnalysisProgress stepHint={stepHint} />
-  if (stage === 'result') return <CoachingResult result={result} resultId={resultId} />
+  if (stage === 'result') return <ResultTabs result={result} resultId={resultId} />
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

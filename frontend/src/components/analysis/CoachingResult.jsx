@@ -346,7 +346,8 @@ function CoachingSection({ meta, text, frames }) {
   )
 }
 
-export default function CoachingResult({ result }) {
+// embedded: 결과 탭 안에서 쓸 때는 바깥 헤더와 인쇄 버튼을 탭 컨테이너가 그리므로 생략한다.
+export default function CoachingResult({ result, embedded = false }) {
   const navigate = useNavigate()
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_per_min,
@@ -393,28 +394,30 @@ export default function CoachingResult({ result }) {
   }
 
   return (
-    <div className="print-report min-h-screen bg-slate-50 px-4 py-8 text-left">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
-            <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
+    <div className={embedded ? 'text-left' : 'print-report min-h-screen bg-slate-50 px-4 py-8 text-left'}>
+      <div className={embedded ? 'space-y-6' : 'mx-auto max-w-6xl space-y-6'}>
+        {!embedded && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
+              <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
+            </div>
+            <div className="no-print flex gap-2">
+              <button
+                onClick={handlePrint}
+                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
+              >
+                인쇄 / PDF 저장
+              </button>
+              <button
+                onClick={() => navigate('/')}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
+              >
+                처음으로
+              </button>
+            </div>
           </div>
-          <div className="no-print flex gap-2">
-            <button
-              onClick={handlePrint}
-              className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
-            >
-              인쇄 / PDF 저장
-            </button>
-            <button
-              onClick={() => navigate('/')}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
-            >
-              처음으로
-            </button>
-          </div>
-        </div>
+        )}
 
         {isLowConfidence && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
