@@ -6,12 +6,16 @@ analysis_results.details 컬럼에 이 JSON을 통째로 저장한다.
 스키마 v0.1 규약 중 이 파일이 지키는 것:
 - 없는 값은 None(null). 0은 "측정된 0"이라는 뜻이라 절대 혼용하지 않는다.
 - 시간은 영상 시작 = 0초 기준 float 초(소수 1자리), 리스트는 시간 오름차순.
-- 블록마다 주인이 1명이다. 지금은 meta·audio만 채우고 나머지는 None으로 둔다.
+- 블록마다 주인이 1명이다. 지금은 meta·audio·scores·habits를 채우고 나머지는 None으로 둔다.
   담당자가 자기 블록을 구현하면 이 파일에 채우는 함수를 추가한다.
 """
 from typing import Any
 
+from app.services.rolemodel import voice_score_detail
+
 SCHEMA_VERSION = "0.1"
+WEIGHTS_VERSION = "ahp-v2-partial"
+
 
 
 def _audio_summary(audio: dict[str, Any], duration_sec: float | None) -> dict[str, Any]:
@@ -31,8 +35,7 @@ def _audio_summary(audio: dict[str, Any], duration_sec: float | None) -> dict[st
         "silence_total_sec": silence_total,
         "silence_ratio": silence_ratio,
         "pitch_std": audio.get("pitch_std_hz"),
-        # 구간별 피치가 있어야 계산할 수 있어 3-4주차로 미룬다.
-        "monotone_ratio": None,
+        "monotone_ratio": audio.get("monotone_ratio"),
         # 실험 필드(x_): 회의에서 정식 승격하거나 삭제한다.
         "x_pitch_cv": audio.get("pitch_cv"),
         "x_pitch_median_hz": audio.get("pitch_median_hz"),
@@ -52,16 +55,112 @@ def build_audio_block(audio: dict[str, Any] | None, duration_sec: float | None) 
 
     return {
         "transcript": audio.get("segments") or [],
-        # 1초 구간별 spm·pitch·db. 3-4주차 작업.
-        "timeline": None,
-        # 필러워드별 타임스탬프. Whisper word timestamp를 써야 해서 3-4주차 작업.
-        "filler_words": None,
+        "timeline": audio.get("timeline") or None,
+        "filler_words": audio.get("filler_words") or [],
         # analyze_audio의 long_silences는 {start, sec} 형식이라 {start, end}로 바꾼다.
         "silences": [
             {"start": gap["start"], "end": round(gap["start"] + gap["sec"], 1)}
             for gap in audio.get("long_silences") or []
         ],
         "summary": _audio_summary(audio, duration_sec),
+    }
+
+
+def _build_time_score(metrics: dict[str, Any], target_time_sec: float | None) -> dict[str, Any] | None:
+    """목표 시간이 설정된 경우에만 별도의 시간 점수 블록을 만든다."""
+    if target_time_sec is None or target_time_sec <= 0:
+        return None
+
+    actual_sec = metrics.get("elapsed_sec")
+
+    return {
+        "target_sec": round(float(target_time_sec), 1),
+        "actual_sec": round(float(actual_sec), 1) if actual_sec is not None else None,
+        "score": metrics.get("score_time"),
+    }
+
+
+def build_scores_block(metrics: dict[str, Any], target_time_sec: float | None) -> dict[str, Any]:
+    """점수 계산 결과를 공유 스키마의 scores 블록으로 변환한다.
+
+    종합점수 가중치(AHP v2):
+    - 시선 35.12%
+    - 자세 18.87%
+    - 제스처 10.89%
+    - 음성 35.12%
+
+    시간 점수는 별도로 저장하며 종합점수에 포함하지 않는다.
+    측정 실패 또는 미구현 점수는 None으로 저장한다.
+    """
+    return {
+        "weights_version": WEIGHTS_VERSION,
+        "gaze": metrics.get("score_gaze"),
+        "posture": metrics.get("score_pose"),
+        "gesture": metrics.get("score_gesture"),
+        "voice": metrics.get("score_voice"),
+        "expression": None,
+        "total": metrics.get("score_total"),
+        "time": _build_time_score(metrics, target_time_sec),
+    }
+
+
+# 발표 영상으로 보고 점수를 매겨도 되는지 판단하는 기준.
+#
+# 얼굴이 이 비율 미만으로 잡히면 발표자가 화면에 거의 없다는 뜻이다.
+# 고정 카메라로 찍은 발표는 보통 90% 이상 잡힌다.
+# 명연사 강연 영상도 객석 컷이 섞인 전체 구간 기준으로 33~74%였다.
+FACE_DETECTED_MIN = 0.30
+
+
+def build_validity(metrics: dict[str, Any]) -> dict[str, Any]:
+    """이 영상을 발표로 보고 분석해도 되는지 판정한다.
+
+    지표마다 null을 넣는 것만으로는 부족하다.
+    얼굴이 하나도 안 잡힌 영상을 올려도 음성만 들리면 총점이 나오고,
+    사용자는 그 점수를 자기 발표 점수로 읽는다.
+    1학기 시연에서 카메라에 아무것도 안 잡혔는데 높은 점수가 나온 것과 같은 문제다.
+
+    그래서 "무엇을 못 쟀는가"가 아니라 "이 영상이 발표인가"를 따로 판정하고,
+    화면이 점수를 보여줘야 할지 말아야 할지 판단할 근거를 남긴다.
+    """
+    face_ratio = metrics.get("face_detected_ratio")
+    audio = metrics.get("audio_metrics") or {}
+    speech_available = bool(audio.get("speech_available"))
+
+    face_ok = face_ratio is not None and face_ratio >= FACE_DETECTED_MIN
+
+    problems = []
+    if not face_ok:
+        shown = "0%" if face_ratio is None else f"{face_ratio * 100:.0f}%"
+        problems.append({
+            "code": "face_not_detected",
+            "message": f"발표자 얼굴이 화면에서 거의 검출되지 않았습니다 (검출률 {shown}).",
+        })
+    if not speech_available:
+        problems.append({
+            "code": "no_speech",
+            "message": "영상에서 말소리를 찾지 못했습니다.",
+        })
+
+    # 얼굴도 말소리도 없으면 발표 영상이 아니라고 본다.
+    if not face_ok and not speech_available:
+        level = "invalid"
+        verdict = "발표 영상으로 보기 어렵습니다. 점수를 매기지 않습니다."
+    elif problems:
+        level = "partial"
+        verdict = "일부 항목만 분석했습니다. 측정하지 못한 항목은 점수에서 제외했습니다."
+    else:
+        level = "ok"
+        verdict = "정상적으로 분석했습니다."
+
+    return {
+        "level": level,
+        "verdict": verdict,
+        "problems": problems,
+        "face_detected_ratio": face_ratio,
+        "speech_available": speech_available,
+        # 점수를 보여줘도 되는지. 화면은 이 값만 보면 된다.
+        "scorable": level != "invalid",
     }
 
 
@@ -78,6 +177,7 @@ def build_details(
     """
     audio_metrics = metrics.get("audio_metrics")
     audio_duration = (audio_metrics or {}).get("duration_sec") or None
+    audio_block = build_audio_block(audio_metrics, duration_sec or audio_duration)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -86,10 +186,33 @@ def build_details(
             "frame_interval_sec": frame_interval_sec,
             "target_time_sec": target_time_sec,
         },
-        "video_timeline": None,   # 시선·표정 / 자세·제스처 담당
-        "audio": build_audio_block(audio_metrics, duration_sec or audio_duration),
-        "summary": None,          # 영상 지표 집계 담당
-        "scores": None,           # AHP 담당 (지금은 평면 컬럼 score_* 사용)
-        "habits": None,           # 습관 탐지 담당
+        "video_timeline": metrics.get("video_timeline") or None,   # 시선·표정 / 자세·제스처 담당
+        "audio": audio_block,
+        "summary": {
+            "gaze_away_ratio": metrics.get("gaze_away_ratio"),
+            "smile_ratio": None,
+            "tension_ratio": None,
+            "expression_change_std": None,
+            "gesture_active_ratio": metrics.get("gesture_active_ratio"),
+            "gesture_per_min": metrics.get("gesture_per_min"),
+            "gesture_valid_ratio": metrics.get("gesture_valid_ratio"),
+            "posture_tilt_avg_deg": metrics.get("shoulder_tilt_avg"),
+        },          # 영상 지표 집계 담당
+        "scores": build_scores_block(metrics, target_time_sec),
+        "habits": {
+            "posture": metrics.get("posture_habits"),
+            "gesture": metrics.get("gesture_habits"),
+            "filler": metrics.get("filler_habits"),
+            "monotone": metrics.get("monotone_habits"),
+            },
         "artifacts": {},          # 생성 파일이 있는 사람이 각자 경로를 넣는다
+        # 롤모델 비교. 스키마 v0.1에 없는 실험 필드라 x_ 접두사를 쓴다.
+        # 회의에서 정식 필드로 승격할지 정한다.
+        "x_rolemodel": metrics.get("rolemodel_comparison"),
+        # 음성 점수의 판정 근거. scores.voice는 총점 하나뿐이라
+        # "왜 이 점수인가"를 화면에서 보여줄 수 없다.
+        # 지표별 점수·기준 범위·개선 우선순위를 여기에 담는다.
+        "x_voice_score": voice_score_detail((audio_block or {}).get("summary")),
+        # 발표 영상인지에 대한 판정. 화면은 scorable이 false면 점수를 숨긴다.
+        "x_validity": build_validity(metrics),
     }

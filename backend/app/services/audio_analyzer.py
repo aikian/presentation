@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 
+# 피치·음량 분석 프레임. hop 512 = 프레임 하나가 32ms이므로 1초에 31.25개.
+FRAME_LENGTH = 2048
+HOP_LENGTH = 512
+
 # 한글 음절 블록. 말 속도(SPM) 계산 단위로 사용한다.
 HANGUL_SYLLABLE = re.compile(r"[가-힣]")
 
@@ -28,6 +32,9 @@ FILLER_PHRASES = {
 }
 
 MIN_SILENCE_SEC = 2.0  # 이 이상 이어지면 "긴 침묵"으로 집계
+
+# 이웃한 초 사이 피치 변화가 이 비율 미만이면 억양이 평평한 것으로 본다.
+MONOTONE_THRESHOLD = 0.05
 
 _model = None
 
@@ -70,23 +77,49 @@ def _count_syllables(text: str) -> int:
     return len(HANGUL_SYLLABLE.findall(text))
 
 
-def _count_fillers(segments: list[dict]) -> tuple[int, dict[str, int]]:
-    """단어 단위 토큰에서 필러워드를 센다."""
+TOKEN_STRIP = " .,?!~…\"'"
+
+# FILLER_PHRASES 중 가장 긴 표현이 몇 단어인지. 연속 토큰을 몇 개까지 이어붙여 볼지 정한다.
+_MAX_PHRASE_WORDS = max(len(p.split()) for p in FILLER_PHRASES)
+
+
+def _count_fillers(segments: list[dict]) -> tuple[int, dict[str, int], list[dict]]:
+    """단어 토큰을 훑어 필러워드를 센다. 발화 시각도 함께 남긴다.
+
+    Whisper 토큰은 " 그"처럼 앞에 공백이 붙어 오므로 양쪽을 다듬어 비교한다.
+    "어떻게 보면"처럼 토큰 두 개에 걸치는 표현이 있어 연속 토큰을 이어붙여 보고,
+    긴 표현을 먼저 맞춰야 "그"가 "그니까"를 가로채지 않는다.
+    """
     counts: dict[str, int] = {}
+    occurrences: list[dict] = []
 
-    full_text = " ".join(seg["text"] for seg in segments)
-    for phrase in FILLER_PHRASES:
-        n = full_text.count(phrase)
-        if n:
-            counts[phrase] = counts.get(phrase, 0) + n
+    tokens = [
+        (w["text"].strip(TOKEN_STRIP), w["start"])
+        for seg in segments
+        for w in seg.get("words", [])
+    ]
+    tokens = [(text, start) for text, start in tokens if text]
 
-    for seg in segments:
-        for word in seg.get("words", []):
-            token = word.strip().strip(".,?!~…\"'")
-            if token in FILLER_STANDALONE:
-                counts[token] = counts.get(token, 0) + 1
+    i = 0
+    while i < len(tokens):
+        matched_word = None
+        matched_span = 0
 
-    return sum(counts.values()), counts
+        for span in range(min(_MAX_PHRASE_WORDS, len(tokens) - i), 0, -1):
+            candidate = " ".join(text for text, _ in tokens[i:i + span])
+            if candidate in FILLER_PHRASES or (span == 1 and candidate in FILLER_STANDALONE):
+                matched_word, matched_span = candidate, span
+                break
+
+        if matched_word is None:
+            i += 1
+            continue
+
+        counts[matched_word] = counts.get(matched_word, 0) + 1
+        occurrences.append({"sec": round(tokens[i][1], 1), "word": matched_word})
+        i += matched_span
+
+    return sum(counts.values()), counts, occurrences
 
 
 def _silence_stats(segments: list[dict], duration: float) -> tuple[float, int, list[dict]]:
@@ -108,36 +141,110 @@ def _silence_stats(segments: list[dict], duration: float) -> tuple[float, int, l
     return silence_ratio, len(long_gaps), long_gaps[:10]
 
 
-def _pitch_variation(wav_path: Path) -> tuple[float, float, float]:
-    """유성 구간 F0의 변동계수(CV)·중앙값·표준편차(Hz)를 반환. CV가 낮으면 단조로운 억양."""
+def _pitch_frames(wav_path: Path) -> tuple[Any, Any] | None:
+    """F0와 음량을 프레임 단위로 계산한다.
+
+    yin이 무거워서(14분 영상 기준 수십 초) 한 번만 돌리고
+    피치 통계와 시간축이 그 결과를 나눠 쓴다.
+    """
     try:
         import librosa
 
         y, sr = librosa.load(str(wav_path), sr=SAMPLE_RATE, mono=True)
         if y.size < sr:
-            return 0.0, 0.0, 0.0
+            return None
 
-        f0 = librosa.yin(y, fmin=65, fmax=400, sr=sr, frame_length=2048)
-
-        # 무성/잡음 구간 제거: 에너지가 충분한 프레임만 남긴다.
-        rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
+        f0 = librosa.yin(y, fmin=65, fmax=400, sr=sr, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)
+        rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
         n = min(len(f0), len(rms))
-        f0, rms = f0[:n], rms[:n]
-        voiced = f0[(rms > np.percentile(rms, 40)) & np.isfinite(f0)]
-        if voiced.size < 10:
-            return 0.0, 0.0, 0.0
-
-        # 상하위 5%는 옥타브 오검출이라 자른다.
-        lo, hi = np.percentile(voiced, [5, 95])
-        voiced = voiced[(voiced >= lo) & (voiced <= hi)]
-        if voiced.size < 10 or float(np.mean(voiced)) <= 0:
-            return 0.0, 0.0, 0.0
-
-        std = float(np.std(voiced))
-        return std / float(np.mean(voiced)), float(np.median(voiced)), std
+        return f0[:n], rms[:n]
     except Exception as exc:
         logger.warning("피치 분석 실패: %s", exc)
+        return None
+
+
+def _pitch_variation(f0, rms) -> tuple[float, float, float]:
+    """유성 구간 F0의 변동계수(CV)·중앙값·표준편차(Hz)를 반환. CV가 낮으면 단조로운 억양."""
+    # 무성/잡음 구간 제거: 에너지가 충분한 프레임만 남긴다.
+    voiced = f0[(rms > np.percentile(rms, 40)) & np.isfinite(f0)]
+    if voiced.size < 10:
         return 0.0, 0.0, 0.0
+
+    # 상하위 5%는 옥타브 오검출이라 자른다.
+    lo, hi = np.percentile(voiced, [5, 95])
+    voiced = voiced[(voiced >= lo) & (voiced <= hi)]
+    if voiced.size < 10 or float(np.mean(voiced)) <= 0:
+        return 0.0, 0.0, 0.0
+
+    std = float(np.std(voiced))
+    return std / float(np.mean(voiced)), float(np.median(voiced)), std
+
+
+def _spm_by_sec(segments: list[dict]) -> dict[int, float]:
+    """초 → 그 초가 속한 발화의 말속도(SPM). 발화 밖의 초는 담지 않는다."""
+    table: dict[int, float] = {}
+    for seg in segments:
+        span = seg["end"] - seg["start"]
+        if span <= 0:
+            continue
+        spm = round(_count_syllables(seg["text"]) / span * 60, 1)
+        for sec in range(int(seg["start"]), int(np.ceil(seg["end"]))):
+            table[sec] = spm
+    return table
+
+
+def _monotone_ratio(timeline: list[dict]) -> float | None:
+    """이웃한 두 초 사이 피치가 거의 안 바뀐 비율. 높을수록 단조로운 억양이다."""
+    pairs = 0
+    flat = 0
+    for prev, cur in zip(timeline, timeline[1:]):
+        if cur["sec"] - prev["sec"] != 1.0:
+            continue
+        a, b = prev["pitch_hz"], cur["pitch_hz"]
+        if not a or not b:
+            continue
+        pairs += 1
+        if abs(b - a) / a < MONOTONE_THRESHOLD:
+            flat += 1
+
+    return round(flat / pairs, 3) if pairs else None
+
+
+def _build_timeline(f0, rms, segments: list[dict], duration: float) -> list[dict]:
+    """1초 구간마다 말속도·피치·음량을 담은 항목을 만든다.
+
+    스키마 규약: 무음 구간의 spm과 무성음 구간의 pitch_hz는 0이 아니라 null.
+    db는 항상 값이 있어야 한다(조용해도 배경 소음 수준이 측정된다).
+    """
+    frames_per_sec = SAMPLE_RATE / HOP_LENGTH
+    total = len(rms)
+    spm_table = _spm_by_sec(segments)
+    voiced_floor = np.percentile(rms, 40)
+
+    timeline = []
+    for sec in range(int(duration)):
+        lo = int(sec * frames_per_sec)
+        hi = min(int((sec + 1) * frames_per_sec), total)
+        if lo >= hi:
+            break
+
+        bin_rms, bin_f0 = rms[lo:hi], f0[lo:hi]
+
+        # dBFS: 진폭 1.0이 0dB. 완전 무음일 때 log가 발산하지 않게 바닥을 둔다.
+        mean_rms = max(float(np.mean(bin_rms)), 1e-6)
+        db = round(float(20 * np.log10(mean_rms)), 1)
+
+        voiced = bin_f0[(bin_rms > voiced_floor) & np.isfinite(bin_f0)]
+        pitch = round(float(np.mean(voiced)), 1) if voiced.size else None
+
+        timeline.append({
+            "sec": float(sec),
+            "spm": spm_table.get(sec),
+            "pitch_hz": pitch,
+            "db": db,
+        })
+
+    return timeline
 
 
 def analyze_audio(video_path: Path) -> dict[str, Any]:
@@ -148,12 +255,15 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
         "filler_count": 0,
         "filler_per_min": 0.0,
         "filler_detail": {},
+        "filler_words": [],
+        "timeline": [],
         "audio_silence_ratio": 0.0,
         "long_silence_count": 0,
         "long_silences": [],
         "pitch_cv": 0.0,
         "pitch_median_hz": 0.0,
         "pitch_std_hz": 0.0,
+        "monotone_ratio": None,
         "transcript": "",
         "segments": [],
         "speech_duration_sec": 0.0,
@@ -181,7 +291,8 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
                 "start": seg.start,
                 "end": seg.end,
                 "text": seg.text.strip(),
-                "words": [w.word for w in (seg.words or [])],
+                # 필러워드 타임스탬프를 만들려면 단어별 시각이 필요하다.
+                "words": [{"text": w.word, "start": w.start} for w in (seg.words or [])],
             })
 
         if not segments:
@@ -194,11 +305,20 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
         syllables = _count_syllables(transcript)
         speech_rate = (syllables / speech_sec * 60) if speech_sec > 0 else 0.0
 
-        filler_count, filler_detail = _count_fillers(segments)
+        filler_count, filler_detail, filler_words = _count_fillers(segments)
         filler_per_min = (filler_count / duration * 60) if duration > 0 else 0.0
 
         silence_ratio, long_count, long_gaps = _silence_stats(segments, duration)
-        pitch_cv, pitch_median, pitch_std = _pitch_variation(wav)
+
+        frames = _pitch_frames(wav)
+        if frames is None:
+            pitch_cv = pitch_median = pitch_std = 0.0
+            timeline = []
+        else:
+            f0, rms = frames
+            pitch_cv, pitch_median, pitch_std = _pitch_variation(f0, rms)
+            timeline = _build_timeline(f0, rms, segments, duration)
+        monotone = _monotone_ratio(timeline)
 
         return {
             "speech_available": True,
@@ -206,12 +326,15 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
             "filler_count": filler_count,
             "filler_per_min": round(filler_per_min, 2),
             "filler_detail": filler_detail,
+            "filler_words": filler_words,
+            "timeline": timeline,
             "audio_silence_ratio": round(silence_ratio, 3),
             "long_silence_count": long_count,
             "long_silences": long_gaps,
             "pitch_cv": round(pitch_cv, 3),
             "pitch_median_hz": round(pitch_median, 1),
             "pitch_std_hz": round(pitch_std, 1),
+            "monotone_ratio": monotone,
             "transcript": transcript[:5000],
             # 공유 스키마의 audio.transcript[]로 나가는 원본. 문장 병합 없이 Whisper 세그먼트 그대로 둔다.
             "segments": [

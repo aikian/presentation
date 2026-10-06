@@ -8,11 +8,12 @@ import Login from './pages/Login'
 import PresentationMode from './pages/PresentationMode'
 import VideoAnalysis from './pages/VideoAnalysis'
 import History from './pages/History'
-// [신규 추가] 성장 분석 / 발표 영상 공유 게시판
+// 성장 분석 / 발표 영상 공유 게시판
 import Growth from './pages/Growth'
 import BoardList from './pages/BoardList'
 import BoardWrite from './pages/BoardWrite'
 import BoardDetail from './pages/BoardDetail'
+import PredictAttention from './pages/PredictAttention'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -49,8 +50,10 @@ function AppRoutes() {
       <Route path="/" element={<PrivateRoute><Shell><Home /></Shell></PrivateRoute>} />
       <Route path="/analysis" element={<PrivateRoute><Shell><VideoAnalysis /></Shell></PrivateRoute>} />
       <Route path="/history" element={<PrivateRoute><Shell><History /></Shell></PrivateRoute>} />
+      {/* 청중 집중도 — 내비게이션(Shell)을 같이 쓴다 */}
+      <Route path="/attention/:id" element={<PrivateRoute><Shell><PredictAttention /></Shell></PrivateRoute>} />
 
-      {/* [신규 추가] 성장 분석 / 발표 영상 공유 게시판 */}
+      {/* 성장 분석 / 발표 영상 공유 게시판 */}
       <Route path="/growth" element={<PrivateRoute><Shell><Growth /></Shell></PrivateRoute>} />
       <Route path="/board" element={<PrivateRoute><Shell><BoardList /></Shell></PrivateRoute>} />
       <Route path="/board/new" element={<PrivateRoute><Shell><BoardWrite /></Shell></PrivateRoute>} />

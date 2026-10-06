@@ -74,12 +74,12 @@ function DetailPanel({ item, onClose }) {
 
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
-            { label: '시선 이탈률', value: `${(num(gaze_away_ratio) * 100).toFixed(0)}%`, thresholds: [0.15, 0.3], raw: num(gaze_away_ratio) },
-            { label: '어깨 기울기', value: `${num(shoulder_tilt_avg).toFixed(1)}도`, thresholds: [8, 15], raw: num(shoulder_tilt_avg) },
-            { label: '제스처', value: `${num(gesture_count)}회`, thresholds: [5, 50], raw: num(gesture_count) < 5 ? 0 : num(gesture_count) > 50 ? 100 : 10 },
+            { label: '시선 이탈률', value: gaze_away_ratio == null ? '분석 불가' : `${(gaze_away_ratio * 100).toFixed(0)}%`, thresholds: [0.15, 0.3], raw: gaze_away_ratio },
+            { label: '어깨 기울기', value: shoulder_tilt_avg == null ? '분석 불가' : `${shoulder_tilt_avg.toFixed(1)}도`, thresholds: [8, 15], raw: shoulder_tilt_avg },
+            { label: '제스처', value: `${gesture_count}회`, thresholds: [5, 50], raw: gesture_count < 5 ? 0 : gesture_count > 50 ? 100 : 10 },
           ].map(({ label, value, thresholds, raw }) => (
             <div key={label} className="border rounded-xl p-3 text-center">
-              <div className={`text-xl font-bold ${statusColor(raw, thresholds)}`}>{value}</div>
+              <div className={`text-xl font-bold ${raw == null ? 'text-gray-400' : statusColor(raw, thresholds)}`}>{value}</div>
               <div className="text-xs text-gray-500 mt-1">{label}</div>
             </div>
           ))}
@@ -244,8 +244,9 @@ export default function History() {
             <div className="space-y-3">
               {records.map((r) => {
                 const date = new Date(r.created_at).toLocaleString('ko-KR')
-                const gaze = (num(r.gaze_away_ratio) * 100).toFixed(0)
+                const gaze = r.gaze_away_ratio == null ? null : (r.gaze_away_ratio * 100).toFixed(0)
                 return (
+                  <div key={r.id}>
                   <button
                     key={r.id}
                     onClick={() => setSelected(r)}
@@ -259,11 +260,11 @@ export default function History() {
                       </div>
                     </div>
                     <div className="flex gap-4 mt-2">
-                      <span className={`text-sm font-semibold ${statusColor(r.gaze_away_ratio, [0.15, 0.3])}`}>
-                        시선 이탈 {gaze}%
+                      <span className={`text-sm font-semibold ${r.gaze_away_ratio == null ? 'text-gray-400' : statusColor(r.gaze_away_ratio, [0.15, 0.3])}`}>
+                        시선 이탈 {gaze == null ? '분석 불가' : `${gaze}%`}
                       </span>
-                      <span className={`text-sm font-semibold ${statusColor(r.shoulder_tilt_avg, [8, 15])}`}>
-                        어깨 {num(r.shoulder_tilt_avg).toFixed(1)}도
+                      <span className={`text-sm font-semibold ${r.shoulder_tilt_avg == null ? 'text-gray-400' : statusColor(r.shoulder_tilt_avg, [8, 15])}`}>
+                        어깨 {r.shoulder_tilt_avg == null ? '분석 불가' : `${r.shoulder_tilt_avg.toFixed(1)}도`}
                       </span>
                       <span className="text-sm font-semibold text-gray-600">
                         제스처 {num(r.gesture_count)}회
@@ -273,6 +274,18 @@ export default function History() {
                       <p className="text-xs text-gray-400 mt-1 truncate">{r.coaching.split('\n')[0]}</p>
                     )}
                   </button>
+
+                  {/* 청중의 집중도 페이지 이동 버튼 */}
+                  <button
+                    onClick={() => {
+                      navigate(`/attention/${r.id}`)
+                    }}
+                    className="shrink-0 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded-lg px-3 py-2 transition-colors bg-white"
+                  >
+                    청중 집중도 예측
+                  </button>
+                  </div>
+
                 )
               })}
             </div>

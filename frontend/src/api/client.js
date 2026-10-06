@@ -74,6 +74,8 @@ export async function uploadVideo(file, metadata = {}) {
   if (metadata.goal_sec != null) form.append('goal_sec', metadata.goal_sec)
   if (metadata.elapsed_sec != null) form.append('elapsed_sec', metadata.elapsed_sec)
   if (metadata.slide_log?.length) form.append('slide_log', JSON.stringify(metadata.slide_log))
+  // 따라 하고 싶은 연사를 고른 경우. 안 고르면 연사 전체 범위를 기준으로 쓴다.
+  if (metadata.rolemodel_id) form.append('rolemodel_id', metadata.rolemodel_id)
   const { data } = await api.post('/analysis/upload', form)
   return data // { job_id }
 }
@@ -162,4 +164,38 @@ export async function deleteBoardComment(postId, commentId) {
 export async function fetchBoardRecommendations(postId, limit = 5) {
   const { data } = await api.get(`/board/${postId}/recommendations`, { params: { limit } })
   return data // { items: [...] }
+}
+
+// 청중 설문 결과 업로드
+export async function uploadSurveyCsv(file, resultId) {
+  const form = new FormData()
+
+  form.append("file", file)
+  form.append("result_id", resultId)
+
+  const { data } = await api.post('/audience/uploadCSV', form)
+  return data
+}
+
+export async function fetchAttentionResult(resultId) {
+  const res = await api.get(`/audience/${resultId}/attention`)
+  return res.data
+}
+
+export async function fetchSurveyResult(resultId) {
+  const { data } = await api.get(`audience/${resultId}/survey`)
+  return data
+}
+
+// 분석 결과 하나를 details까지 받아온다.
+// 업로드 job 응답은 서버 메모리라 새로고침하면 사라지므로, 화면은 결과 id로 다시 읽는다.
+export async function fetchResult(resultId) {
+  const { data } = await api.get(`/history/${resultId}`)
+  return data
+}
+
+// 고를 수 있는 롤모델 연사 목록
+export async function fetchSpeakers() {
+  const { data } = await api.get('/analysis/speakers')
+  return data.speakers ?? []
 }

@@ -49,10 +49,6 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(next) ? next : fallback
 }
 
-function score(raw, good, bad) {
-  return Math.round(Math.max(0, Math.min(100, (1 - (raw - good) / (bad - good)) * 100)))
-}
-
 function MetricCard({ label, value, unit, status }) {
   return (
     <div className={`rounded-lg border p-4 ${STATUS_STYLE[status]}`}>
@@ -72,47 +68,48 @@ function scoreStatus(value) {
 }
 
 function ScoreBar({ label, score, weight }) {
-  const value = Math.max(0, Math.min(100, toNumber(score)))
-  const status = scoreStatus(value)
+  const isUnavailable = score == null
+  const value = isUnavailable ? null : Math.max(0, Math.min(100, toNumber(score)))
+  const status = isUnavailable ? 'warn' : scoreStatus(value)
 
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-semibold text-slate-700">{label}</span>
-        <span className="text-slate-500">{value}점 · {weight}</span>
+        <span className="text-slate-500">{isUnavailable ? `점수 산정 전 · ${weight}` : `${value}점 · ${weight}`}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${value}%` }} />
+        <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${isUnavailable ? 0 : value}%` }} />
       </div>
     </div>
   )
 }
 
-function buildFocusItems(metrics) {
+function buildFocusItems(metrics, scores) {
   const items = [
     {
       label: '시선',
-      value: `${Math.round(metrics.gazeRatio * 100)}% 이탈`,
-      severity: metrics.gazeRatio > 0.3 ? 3 : metrics.gazeRatio > 0.15 ? 2 : 1,
-      detail: metrics.gazeRatio > 0.15 ? '카메라 응시 리듬을 먼저 잡는 게 좋습니다.' : '시선 처리는 안정적입니다.',
+      value: metrics.gazeRatio == null ? '분석 불가' : `${Math.round(metrics.gazeRatio * 100)}% 이탈`,
+      severity: metrics.gazeRatio == null ? 0 : metrics.gazeRatio > 0.3 ? 3 : metrics.gazeRatio > 0.15 ? 2 : 1,
+      detail: metrics.gazeRatio == null ? '얼굴이 충분히 검출되지 않아 시선을 분석할 수 없습니다.' : metrics.gazeRatio > 0.15 ? '카메라 응시 리듬을 먼저 잡는 게 좋습니다.' : '시선 처리는 안정적입니다.',
     },
     {
       label: '자세',
-      value: `${metrics.tilt.toFixed(1)}도`,
-      severity: metrics.tilt > 15 ? 3 : metrics.tilt > 8 ? 2 : 1,
-      detail: metrics.tilt > 8 ? '상체 중심과 어깨 수평을 더 자주 점검하세요.' : '자세 균형은 좋은 편입니다.',
+      value: metrics.tilt == null ? '분석 불가' : `${metrics.tilt.toFixed(1)}도`,
+      severity: metrics.tilt == null ? 0 : metrics.tilt > 15 ? 3 : metrics.tilt > 8 ? 2 : 1,
+      detail: metrics.tilt == null ? '자세가 충분히 검출되지 않아 어깨 기울기를 분석할 수 없습니다.' : metrics.tilt > 8 ? '상체 중심과 어깨 수평을 더 자주 점검하세요.' : '자세 균형은 좋은 편입니다.',
     },
     {
       label: '제스처',
-      value: `${metrics.gestures}회`,
-      severity: metrics.gestures < 5 || metrics.gestures > 50 ? 2 : 1,
-      detail: metrics.gestures < 5 ? '핵심 포인트에 손동작을 붙이면 전달력이 올라갑니다.' : metrics.gestures > 50 ? '반복 손동작을 줄이고 강조 지점에만 쓰세요.' : '제스처 빈도는 적절합니다.',
+      value: metrics.gesturePerMin == null ? '분석 불가' : `${metrics.gesturePerMin.toFixed(1)}회/분`,
+      severity: scores.gesture == null ? 0 : scores.gesture >= 70 ? 1 : scores.gesture >= 50 ? 2 : 3,
+      detail: metrics.gesturePerMin == null ? '제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다.' : metrics.gesturePerMin < 2 ? '핵심 포인트에 손동작을 붙이면 전달력이 올라갑니다.' : metrics.gesturePerMin > 4 ? '반복 손동작을 줄이고 강조 지점에만 쓰세요.' : '제스처 빈도는 적절합니다.',
     },
     {
       label: '발화',
-      value: `${Math.round(metrics.silenceRatio * 100)}% 침묵`,
-      severity: metrics.silenceRatio > 0.5 ? 3 : metrics.silenceRatio > 0.25 ? 2 : 1,
-      detail: metrics.silenceRatio > 0.5 ? '슬라이드 전환 문장을 미리 정해 흐름을 이어가세요.' : '발화 흐름은 크게 무너지지 않았습니다.',
+      value: metrics.silenceRatio == null ? '분석 불가' : `${Math.round(metrics.silenceRatio * 100)}% 침묵`,
+      severity: metrics.silenceRatio == null ? 0 : metrics.silenceRatio > 0.5 ? 3 : metrics.silenceRatio > 0.25 ? 2 : 1,
+      detail: metrics.silenceRatio == null ? '얼굴이 충분히 검출되지 않아 입 움직임 기반 발화를 분석할 수 없습니다.' : metrics.silenceRatio > 0.5 ? '슬라이드 전환 문장을 미리 정해 흐름을 이어가세요.' : '발화 흐름은 크게 무너지지 않았습니다.',
     },
   ]
 
@@ -120,7 +117,7 @@ function buildFocusItems(metrics) {
 }
 
 function AnalysisOverview({ metrics, scores }) {
-  const focusItems = buildFocusItems(metrics)
+  const focusItems = buildFocusItems(metrics, scores)
   const totalStatus = scores.total == null ? 'warn' : scoreStatus(scores.total)
 
   return (
@@ -155,10 +152,10 @@ function AnalysisOverview({ metrics, scores }) {
         <div>
           <h2 className="mb-3 text-lg font-bold text-slate-950">항목별 점수</h2>
           <div className="space-y-3">
-            <ScoreBar label="시선" score={scores.gaze} weight="30%" />
-            <ScoreBar label="자세" score={scores.pose} weight="25%" />
-            <ScoreBar label="제스처" score={scores.gesture} weight="15%" />
-            <ScoreBar label="시간" score={scores.time} weight="30%" />
+            <ScoreBar label="시선" score={scores.gaze} weight="35.12%" />
+            <ScoreBar label="자세" score={scores.pose} weight="18.87%" />
+            <ScoreBar label="제스처" score={scores.gesture} weight="10.89%" />
+            <ScoreBar label="음성" score={scores.voice} weight="35.12%" />
           </div>
         </div>
       </div>
@@ -204,18 +201,19 @@ function parseCoachingSections(coaching = '') {
 }
 
 function fallbackSectionText(key, metrics) {
-  const gazePct = Math.round(metrics.gazeRatio * 100)
-  const tilt = metrics.tilt.toFixed(1)
-  const blinkPct = Math.round(metrics.blinkRatio * 100)
-  const silencePct = Math.round(metrics.silenceRatio * 100)
+  const gazePct = metrics.gazeRatio == null ? null : Math.round(metrics.gazeRatio * 100)
+  const tilt = metrics.tilt == null ? null : metrics.tilt.toFixed(1)
+  const blinkPct = metrics.blinkRatio == null ? null : Math.round(metrics.blinkRatio * 100)
+  const silencePct = metrics.silenceRatio == null ? null : Math.round(metrics.silenceRatio * 100)
+  const gestureText = metrics.gesturePerMin == null ? '분석 불가' : `${metrics.gesturePerMin.toFixed(1)}회/분`
 
   const fallback = {
-    summary: `- 시선 ${gazePct}%, 자세 ${tilt}도, 제스처 ${metrics.gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.`,
-    gaze: `**진단:** 시선 이탈률은 ${gazePct}%입니다.\n**코칭:** 핵심 문장을 말할 때 카메라를 먼저 보고, 슬라이드는 문장 사이에 짧게 확인하세요.`,
-    pose: `**진단:** 어깨 기울기는 평균 ${tilt}도입니다.\n**코칭:** 카메라 중앙에 코와 명치를 맞추고, 문단이 바뀔 때마다 어깨 높이를 점검하세요.`,
-    gesture: `**진단:** 제스처는 ${metrics.gestures}회 감지되었습니다.\n**코칭:** 숫자, 방향, 크기처럼 의미가 분명한 순간에만 손동작을 붙여 강조하세요.`,
-    focus: `**진단:** 눈 감음 비율은 ${blinkPct}%입니다.\n**코칭:** 문장을 시작할 때 카메라를 또렷하게 보고, 말끝에서 시선을 떨어뜨리지 않도록 연습하세요.`,
-    speech: `**진단:** 침묵 구간 비율은 ${silencePct}%입니다.\n**코칭:** 슬라이드별 첫 문장과 연결 문장을 미리 정해 발표 흐름이 끊기지 않게 하세요.`,
+    summary: `- 시선 ${gazePct == null ? '분석 불가' : `${gazePct}%`}, 자세 ${tilt == null ? '분석 불가' : `${tilt}도`}, 제스처 ${gestureText}를 기준으로 다음 연습 포인트를 정리했습니다.`,
+    gaze: gazePct == null ? '**진단:** 얼굴이 충분히 검출되지 않아 시선을 분석할 수 없습니다.\n**코칭:** 얼굴 전체가 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요.' : `**진단:** 시선 이탈률은 ${gazePct}%입니다.\n**코칭:** 핵심 문장을 말할 때 카메라를 먼저 보고, 슬라이드는 문장 사이에 짧게 확인하세요.`,
+    pose: tilt == null ? '**진단:** 자세가 충분히 검출되지 않아 어깨 기울기를 분석할 수 없습니다.\n**코칭:** 상체와 양쪽 어깨가 카메라 화면에 모두 보이도록 위치를 조정한 뒤 다시 분석해보세요.' : `**진단:** 어깨 기울기는 평균 ${tilt}도입니다.\n**코칭:** 카메라 중앙에 코와 명치를 맞추고, 문단이 바뀔 때마다 어깨 높이를 점검하세요.`,
+    gesture: metrics.gesturePerMin == null ? '**진단:** 제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다.\n**코칭:** 상체와 손이 카메라 화면에 잘 보이도록 위치를 조정한 뒤 다시 분석해보세요.' : `**진단:** 제스처가 ${gestureText}로 나타났습니다.\n**코칭:** 숫자, 방향, 크기처럼 의미가 분명한 순간에 손동작을 활용해 강조하세요.`,
+    focus: blinkPct == null ? '**진단:** 얼굴이 충분히 검출되지 않아 눈 감음 비율을 분석할 수 없습니다.\n**코칭:** 얼굴과 눈이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요.' : `**진단:** 눈 감음 비율은 ${blinkPct}%입니다.\n**코칭:** 문장을 시작할 때 카메라를 또렷하게 보고, 말끝에서 시선을 떨어뜨리지 않도록 연습하세요.`,
+    speech: silencePct == null ? '**진단:** 얼굴이 충분히 검출되지 않아 입 움직임 기반 침묵 비율을 분석할 수 없습니다.\n**코칭:** 얼굴과 입이 카메라 화면에 잘 보이도록 위치와 조명을 조정한 뒤 다시 분석해보세요.' : `**진단:** 침묵 구간 비율은 ${silencePct}%입니다.\n**코칭:** 슬라이드별 첫 문장과 연결 문장을 미리 정해 발표 흐름이 끊기지 않게 하세요.`,
     priority: '1. 가장 낮은 지표 하나를 정해 다음 녹화에서 집중적으로 개선하세요.\n2. 발표 시작과 결론에서 카메라 응시를 의식적으로 유지하세요.',
   }
 
@@ -348,85 +346,100 @@ function CoachingSection({ meta, text, frames }) {
   )
 }
 
-export default function CoachingResult({ result, resultId }) {
+// embedded: 결과 탭 안에서 쓸 때는 바깥 헤더와 인쇄 버튼을 탭 컨테이너가 그리므로 생략한다.
+// resultId: 게시판 공유 버튼에 필요 (없으면 버튼을 숨긴다)
+export default function CoachingResult({ result, resultId, embedded = false }) {
   const navigate = useNavigate()
   const {
-    gaze_away_ratio, shoulder_tilt_avg, gesture_count,
-    ear_blink_ratio, silence_ratio, gaze_timeline, problem_frames, coaching,
-    score_total, score_gaze, score_pose, score_gesture, score_time,
+    gaze_away_ratio, shoulder_tilt_avg, gesture_per_min,
+    ear_blink_ratio, silence_ratio, face_detected_ratio, gaze_timeline, problem_frames, coaching,
+    score_total, score_gaze, score_pose, score_gesture, score_voice, score_time,
   } = result
 
   const metrics = {
-    gazeRatio: toNumber(gaze_away_ratio),
-    tilt: toNumber(shoulder_tilt_avg),
-    gestures: toNumber(gesture_count),
-    blinkRatio: toNumber(ear_blink_ratio),
-    silenceRatio: toNumber(silence_ratio),
+    gazeRatio: gaze_away_ratio == null ? null : toNumber(gaze_away_ratio),
+    tilt: shoulder_tilt_avg == null ? null : toNumber(shoulder_tilt_avg),
+    gesturePerMin: gesture_per_min == null ? null : toNumber(gesture_per_min),
+    blinkRatio: ear_blink_ratio == null ? null : toNumber(ear_blink_ratio),
+    silenceRatio: silence_ratio == null ? null : toNumber(silence_ratio),
+    faceDetectedRatio: face_detected_ratio == null ? null : toNumber(face_detected_ratio),
   }
+  
+  const scores = {
+    total: score_total == null ? null : toNumber(score_total),
+    gaze: score_gaze == null ? null : toNumber(score_gaze),
+    pose: score_pose == null ? null : toNumber(score_pose),
+    gesture: score_gesture == null ? null : toNumber(score_gesture),
+    voice: score_voice == null ? null : toNumber(score_voice),
+    time: score_time == null ? null : toNumber(score_time),
+  }
+  
+  const isLowConfidence = metrics.faceDetectedRatio != null && metrics.faceDetectedRatio < 0.5
 
-  const gazeStatus = metrics.gazeRatio > 0.3 ? 'bad' : metrics.gazeRatio > 0.15 ? 'warn' : 'good'
-  const tiltStatus = metrics.tilt > 15 ? 'bad' : metrics.tilt > 8 ? 'warn' : 'good'
-  const gestureStatus = metrics.gestures < 5 || metrics.gestures > 50 ? 'warn' : 'good'
+  const gazeStatus = metrics.gazeRatio == null ? 'warn' : metrics.gazeRatio > 0.3 ? 'bad' : metrics.gazeRatio > 0.15 ? 'warn' : 'good'
+  const tiltStatus = metrics.tilt == null ? 'warn' : metrics.tilt > 15 ? 'bad' : metrics.tilt > 8 ? 'warn' : 'good'
+  const gestureStatus = scores.gesture == null ? 'warn' : scoreStatus(scores.gesture)
 
   const radarData = [
-    { subject: '시선', score: score(metrics.gazeRatio, 0, 0.4) },
-    { subject: '자세', score: score(metrics.tilt, 0, 20) },
-    { subject: '제스처', score: metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90 },
-    { subject: '집중도', score: score(metrics.blinkRatio, 0, 0.5) },
-    { subject: '발화', score: score(metrics.silenceRatio, 0, 0.7) },
-  ]
+    scores.gaze == null ? null : { subject: '시선', score: scores.gaze },
+    scores.pose == null ? null : { subject: '자세', score: scores.pose },
+    scores.gesture == null ? null : { subject: '제스처', score: scores.gesture },
+    scores.voice == null ? null : { subject: '음성', score: scores.voice },
+  ].filter(Boolean)
 
   const parsedSections = useMemo(() => parseCoachingSections(coaching), [coaching])
   const frames = useMemo(() => normalizeFrames(problem_frames), [problem_frames])
-  const scores = {
-    total: score_total == null ? null : toNumber(score_total),
-    gaze: score_gaze == null ? score(metrics.gazeRatio, 0, 0.4) : toNumber(score_gaze),
-    pose: score_pose == null ? score(metrics.tilt, 0, 20) : toNumber(score_pose),
-    gesture: score_gesture == null ? (metrics.gestures < 5 || metrics.gestures > 50 ? 55 : 90) : toNumber(score_gesture),
-    time: score_time == null ? score(metrics.silenceRatio, 0, 0.7) : toNumber(score_time),
-  }
 
   function handlePrint() {
     window.print()
   }
 
   return (
-    <div className="print-report min-h-screen bg-slate-50 px-4 py-8 text-left">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
-            <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
-          </div>
-          <div className="no-print flex gap-2">
-            <button
-              onClick={handlePrint}
-              className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
-            >
-              인쇄 / PDF 저장
-            </button>
-            {/* [신규 추가] 분석 결과를 발표 사례 라이브러리(게시판)에 공유 */}
-            {resultId && (
+    <div className={embedded ? 'text-left' : 'print-report min-h-screen bg-slate-50 px-4 py-8 text-left'}>
+      <div className={embedded ? 'space-y-6' : 'mx-auto max-w-6xl space-y-6'}>
+        {!embedded && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
+              <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
+            </div>
+            <div className="no-print flex gap-2">
               <button
-                onClick={() => navigate(`/board/new?resultId=${resultId}`)}
-                className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                onClick={handlePrint}
+                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
               >
-                게시판에 공유
+                인쇄 / PDF 저장
               </button>
-            )}
-            <button
-              onClick={() => navigate('/')}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
-            >
-              처음으로
-            </button>
+              {/* 분석 결과를 발표 사례 라이브러리(게시판)에 공유 */}
+              {resultId && (
+                <button
+                  onClick={() => navigate(`/board/new?resultId=${resultId}`)}
+                  className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                >
+                  게시판에 공유
+                </button>
+              )}
+              <button
+                onClick={() => navigate('/')}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"
+              >
+                처음으로
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {isLowConfidence && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="font-semibold">분석 신뢰도 낮음</span>
+            <span className="ml-2">얼굴이 충분히 검출되지 않아 일부 항목의 분석 결과가 제공되지 않을 수 있습니다.</span>
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <MetricCard label="시선 이탈률" value={`${(metrics.gazeRatio * 100).toFixed(0)}%`} unit="" status={gazeStatus} />
-          <MetricCard label="어깨 기울기" value={metrics.tilt.toFixed(1)} unit="도" status={tiltStatus} />
-          <MetricCard label="제스처 횟수" value={metrics.gestures} unit="회" status={gestureStatus} />
+          <MetricCard label="시선 이탈률" value={metrics.gazeRatio == null ? '분석 불가' : `${(metrics.gazeRatio * 100).toFixed(0)}%`} unit="" status={gazeStatus} />
+          <MetricCard label="어깨 기울기" value={metrics.tilt == null ? '분석 불가' : metrics.tilt.toFixed(1)} unit={metrics.tilt == null ? '' : '도'} status={tiltStatus} />
+          <MetricCard label="분당 제스처 횟수" value={metrics.gesturePerMin == null ? '분석 불가' : metrics.gesturePerMin.toFixed(1)} unit={metrics.gesturePerMin == null ? '' : '회/분'} status={gestureStatus} />
         </div>
 
         <AnalysisOverview metrics={metrics} scores={scores} />
@@ -434,13 +447,19 @@ export default function CoachingResult({ result, resultId }) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)]">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-950">종합 점수</h2>
-            <ResponsiveContainer width="100%" height={240}>
-              <RadarChart data={radarData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
-                <Radar dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.28} />
-              </RadarChart>
-            </ResponsiveContainer>
+            {radarData.length >= 3 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <RadarChart data={radarData}>
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
+                  <Radar dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.28} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[240px] items-center justify-center text-sm text-slate-500">
+                분석 가능한 항목이 부족하여 종합 차트를 표시할 수 없습니다.
+              </div>
+            )}
           </section>
 
           {gaze_timeline?.length > 1 && (

@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
-# [수정] board 라우터 추가 (발표 영상 공유 게시판 기능)
-from app.routers import analysis, auth, history, slides, board
+# board = 발표 영상 공유 게시판, audience = 청중 집중도
+from app.routers import analysis, auth, history, slides, board, audience
 
 app = FastAPI(title="PresentationCoach Presentation Analyzer")
 
@@ -34,9 +34,10 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(slides.router, prefix="/api/slides", tags=["slides"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(history.router, prefix="/api/history", tags=["history"])
-# [신규 추가] 발표 영상 공유 게시판 기능
+# 발표 영상 공유 게시판
 app.include_router(board.router, prefix="/api/board", tags=["board"])
-
+# 청중 집중도 대시보드
+app.include_router(audience.router, prefix="/api/audience", tags=["audience"])
 
 @app.get("/api/health")
 def health():

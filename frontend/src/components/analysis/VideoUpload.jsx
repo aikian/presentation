@@ -1,10 +1,23 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { fetchSpeakers } from '../../api/client'
 
 const ACCEPTED = '.mp4,.mov,.avi,.webm,.mkv'
 
 export default function VideoUpload({ onUpload, loading }) {
   const [dragging, setDragging] = useState(false)
+  const [speakers, setSpeakers] = useState([])
+  const [rolemodelId, setRolemodelId] = useState('')
   const inputRef = useRef(null)
+
+  // 따라 하고 싶은 연사를 고를 수 있게 목록을 받아둔다.
+  // 목록을 못 받아도 업로드는 되어야 하므로 실패는 조용히 넘긴다.
+  useEffect(() => {
+    let alive = true
+    fetchSpeakers()
+      .then((list) => alive && setSpeakers(list))
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   function handleFile(file) {
     if (!file) return
@@ -13,7 +26,7 @@ export default function VideoUpload({ onUpload, loading }) {
       alert('MP4, MOV, AVI, WebM, MKV 파일만 업로드할 수 있습니다.')
       return
     }
-    onUpload(file)
+    onUpload(file, { rolemodelId: rolemodelId || null })
   }
 
   return (
@@ -54,6 +67,34 @@ export default function VideoUpload({ onUpload, loading }) {
           onChange={(e) => handleFile(e.target.files[0])}
         />
       </div>
+
+      {speakers.length > 0 && (
+        <div className="mt-6 w-full max-w-lg">
+          <label htmlFor="rolemodel" className="block text-sm font-medium text-gray-700">
+            따라 하고 싶은 연사 <span className="font-normal text-gray-400">(선택)</span>
+          </label>
+          <select
+            id="rolemodel"
+            value={rolemodelId}
+            onChange={(e) => setRolemodelId(e.target.value)}
+            disabled={loading}
+            className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-purple-400 focus:outline-none disabled:opacity-60"
+          >
+            <option value="">고르지 않음 — 명연사 전체 범위와 비교</option>
+            {speakers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {s.affiliation ? ` (${s.affiliation})` : ''}
+                {s.source ? ` · ${s.source}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
+            연사를 고르면 그 사람의 말속도·군말·침묵·억양과 1:1로 비교합니다. 고르지 않으면
+            명연사 {speakers.length}편의 최소~최대 범위를 기준으로 봅니다.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

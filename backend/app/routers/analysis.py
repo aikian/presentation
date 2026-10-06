@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -8,12 +9,16 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.database import get_supabase
+from app.core.database import get_supabase, save_attention_prediction
 from app.middleware.auth import CurrentUser, get_current_user
-from app.services.analysis_schema import build_details
+from app.services.analysis_schema import build_audio_block, build_details
+from app.services.rolemodel import compare
 from app.services.score_calculator import calculate_scores
 from app.services.video_analyzer import run_full_analysis
+from app.services.audio_features import analyze_audio_features
+from app.services.predict_concentration import analyze_audience
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
@@ -30,6 +35,7 @@ def _run_job(
     goal_sec: float | None,
     elapsed_sec: float | None,
     slide_log: list | None,
+    rolemodel_id: str | None = None,
 ):
     def update_step(step: int):
         _jobs[job_id]["step"] = step
@@ -42,6 +48,37 @@ def _run_job(
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
+        
+        # 음성기반 청중의 집중도 추정
+        attention_result = None
+        if settings.enable_audio_analysis:
+            try:
+                audio_metrics = result.get("audio_metrics")
+                audio_features = analyze_audio_features(video_path)
+                
+                if audio_metrics and audio_features:
+                    attention_result = analyze_audience(audio_metrics, audio_features)
+                else:
+                    print("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
+
+            except Exception:
+                print("음성 기반 집중도 예측 실패")
+        else:
+            print("enable_audio_analysis가 꺼져 있어 집중도 예측을 건너뜁니다")
+                    
+
+        # 롤모델 비교. 연사 데이터를 못 읽어도 분석 결과는 그대로 살린다.
+        try:
+            audio_block = build_audio_block(
+                result.get("audio_metrics"), result.get("duration_sec")
+            )
+            if audio_block:
+                refs = get_supabase().table("reference_speakers").select("*").execute().data
+                result["rolemodel_comparison"] = compare(
+                    audio_block["summary"], refs or [], rolemodel_id
+                )
+        except Exception:
+            logger.warning("롤모델 비교를 건너뜁니다", exc_info=True)
 
         # 팀 공유 스키마(docs/schema/) 형식. analysis_results.details에 통째로 저장한다.
         details = build_details(
@@ -50,6 +87,10 @@ def _run_job(
             frame_interval_sec=settings.frame_interval_sec,
             target_time_sec=goal_sec,
         )
+
+        # details를 job 응답에도 넣는다. 결과 화면 탭이 평면 컬럼 대신 details를 읽는다.
+        # DB 저장이 실패해도 화면은 그려져야 하므로 저장 전에 담는다.
+        result["details"] = details
 
         _jobs[job_id] = {"status": "done", "step": 5, "result": result}
 
@@ -68,6 +109,7 @@ def _run_job(
                 "score_gaze": scores["score_gaze"],
                 "score_pose": scores["score_pose"],
                 "score_gesture": scores["score_gesture"],
+                "score_voice": scores["score_voice"],
                 "score_time": scores["score_time"],
                 "score_total": scores["score_total"],
                 "details": details,
@@ -92,13 +134,46 @@ def _run_job(
                             "target_time": int(goal_sec),
                         }).execute()
                     except Exception:
-                        pass
+                        logger.warning("세션 저장 실패", exc_info=True)
+                    
+                # 청중 집중도 결과 저장   
+                if attention_result:
+                    try:
+                        save_attention_prediction(saved_id, attention_result)
+                    except Exception:
+                        print("집중도 예측 결과 저장 실패")
+                else:
+                    print("집중도 예측 결과가 없어 저장하지 않습니다")
         except Exception:
-            pass
+            # 분석은 끝났으니 화면에는 결과를 보여준다. 다만 조용히 묻으면
+            # "분석은 됐는데 히스토리에 없다"는 증상의 원인을 찾을 수 없다.
+            logger.warning("분석 결과 저장 실패 (job %s)", job_id, exc_info=True)
     except Exception as e:
         _jobs[job_id] = {"status": "error", "step": _jobs[job_id].get("step", 0), "error": str(e)}
     finally:
         video_path.unlink(missing_ok=True)
+
+
+@router.get("/speakers")
+def list_speakers():
+    """고를 수 있는 롤모델 연사 목록.
+
+    발표를 올릴 때 "이 사람처럼 말하고 싶다"를 고를 수 있게 한다.
+    고르지 않으면 연사 전체의 범위를 기준선으로 쓴다.
+    """
+    try:
+        res = (
+            get_supabase()
+            .table("reference_speakers")
+            .select("id,name,affiliation,source,title,audio_summary")
+            .order("name")
+            .execute()
+        )
+    except Exception:
+        logger.warning("연사 목록 조회 실패", exc_info=True)
+        return JSONResponse({"speakers": []})
+
+    return JSONResponse({"speakers": res.data or []})
 
 
 @router.post("/upload")
@@ -107,6 +182,7 @@ async def upload_video(
     goal_sec: float | None = Form(None),
     elapsed_sec: float | None = Form(None),
     slide_log: str | None = Form(None),
+    rolemodel_id: str | None = Form(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     suffix = Path(file.filename).suffix.lower()
@@ -143,6 +219,7 @@ async def upload_video(
     loop.run_in_executor(
         _executor, _run_job,
         job_id, tmp_path, current_user.id, goal_sec, elapsed_sec, parsed_log,
+        rolemodel_id or None,
     )
 
     return JSONResponse({"job_id": job_id})
