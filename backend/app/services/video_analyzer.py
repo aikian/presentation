@@ -71,6 +71,70 @@ def _gaze_score(face_landmarks, w: int, h: int) -> float:
     return min(max(yaw_dev, pitch_dev), 1.0)
 
 
+def _gaze_direction(face_landmarks) -> tuple[float, float]:
+    """시선 방향을 부호 있는 (dx, dy)로 돌려준다. 눈 사이 거리로 정규화.
+
+    _gaze_score는 이탈 정도(크기)만 재서 히트맵을 못 그린다.
+    히트맵은 "어느 쪽을" 봤는지가 필요하므로 부호를 살린다.
+    dx > 0 = 화면 기준 오른쪽, dy > 0 = 아래.
+    """
+    lm = face_landmarks.landmark
+    nose = lm[NOSE_TIP]
+    left = lm[LEFT_EYE_OUTER]
+    right = lm[RIGHT_EYE_OUTER]
+
+    face_cx = (left.x + right.x) / 2
+    face_cy = (left.y + right.y) / 2
+    eye_dist = max(abs(right.x - left.x), 1e-6)
+
+    return (nose.x - face_cx) / eye_dist, (nose.y - face_cy) / eye_dist
+
+
+# 시선 방향을 9분할 그리드 칸으로 바꿀 때의 경계값.
+# _gaze_score의 이탈 판정(0.35)과 같은 축이라 그 근처로 맞췄다.
+GAZE_GRID_THRESHOLD = 0.18
+
+# 미소: 입꼬리가 입 중심선보다 이만큼(입 너비 대비) 올라가면 미소로 본다.
+SMILE_THRESHOLD = 0.04
+# 긴장(찌푸림): 눈썹-눈 거리가 눈 사이 거리 대비 이 값 미만이면 눈썹이 내려간 것.
+BROW_TENSION_THRESHOLD = 0.21
+
+# 표정 랜드마크 (MediaPipe FaceMesh 468점 기준)
+LEFT_BROW_TOP = 105     # 왼쪽 눈썹 위
+RIGHT_BROW_TOP = 334    # 오른쪽 눈썹 위
+LEFT_EYE_TOP = 159      # 왼쪽 눈 위꺼풀
+RIGHT_EYE_TOP = 386     # 오른쪽 눈 위꺼풀
+
+
+def _gaze_grid_cell(dx: float, dy: float) -> tuple[int, int]:
+    """시선 방향 → 3x3 그리드의 (행, 열). (1,1)이 정면."""
+    col = 0 if dx < -GAZE_GRID_THRESHOLD else (2 if dx > GAZE_GRID_THRESHOLD else 1)
+    row = 0 if dy < -GAZE_GRID_THRESHOLD else (2 if dy > GAZE_GRID_THRESHOLD else 1)
+    return row, col
+
+
+def _smile_metric(lm) -> float:
+    """입꼬리가 입 중심선 대비 얼마나 올라갔는지. 양수 = 미소 방향.
+
+    영상 좌표는 y가 아래로 커지므로, 입꼬리 y가 중심보다 작으면(위면) 양수가 된다.
+    입 너비로 나눠서 얼굴 크기와 무관하게 만든다.
+    """
+    left = lm[MOUTH_LEFT]
+    right = lm[MOUTH_RIGHT]
+    center_y = (lm[UPPER_LIP].y + lm[LOWER_LIP].y) / 2
+    width = max(abs(right.x - left.x), 1e-6)
+    lift = ((center_y - left.y) + (center_y - right.y)) / 2
+    return lift / width
+
+
+def _brow_gap(lm) -> float:
+    """눈썹-눈꺼풀 거리(눈 사이 거리로 정규화). 작을수록 찌푸림(긴장)."""
+    eye_dist = max(abs(lm[RIGHT_EYE_OUTER].x - lm[LEFT_EYE_OUTER].x), 1e-6)
+    left_gap = lm[LEFT_EYE_TOP].y - lm[LEFT_BROW_TOP].y
+    right_gap = lm[RIGHT_EYE_TOP].y - lm[RIGHT_BROW_TOP].y
+    return ((left_gap + right_gap) / 2) / eye_dist
+
+
 def _ear(landmarks, eye_idxs, w: int, h: int) -> float:
     """Eye Aspect Ratio. 0=완전히 감음, ~0.3=정상."""
     pts = [_landmark_pt(landmarks, i, w, h) for i in eye_idxs]
@@ -186,6 +250,11 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     gaze_timeline: list[dict] = []
     ear_values: list[float] = []
     mar_values: list[float] = []
+
+    # 표정·시선 히트맵 (이보현 블록 구현)
+    gaze_dirs: list[tuple[int, float, float]] = []   # (프레임 인덱스, dx, dy)
+    smile_values: list[float] = []
+    brow_gaps: list[float] = []
     problem_gaze_frame: dict[str, Any] | None = None
     max_gaze_score = 0.0
 
@@ -196,7 +265,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     prev_wrist_positions = []
     gesture_timeline = []
 
-    video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None} for i in range(len(frames))]
+    video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None, "expression": None} for i in range(len(frames))]
 
     # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
     _step(2)
@@ -233,6 +302,22 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                 ear_values.append((left_ear + right_ear) / 2)
 
                 mar_values.append(_mar(lm, w, h))
+
+                # 시선 방향은 일단 모아두고, 영상 전체의 중앙값을 기준으로
+                # 그리드를 나눈다 (아래 집계 부분 참고).
+                dx, dy = _gaze_direction(result.multi_face_landmarks[0])
+                gaze_dirs.append((i, dx, dy))
+
+                # 표정: 미소(입꼬리)와 긴장(눈썹) 지표
+                smile = _smile_metric(lm)
+                smile_values.append(smile)
+                brow_gaps.append(_brow_gap(lm))
+
+                # 시간축에도 표정을 넣는다 (video_timeline 규약: 측정 실패는 None)
+                video_timeline[i]["expression"] = {
+                    "smile": round(smile, 3),
+                    "gaze_cell": None,  # 아래에서 중앙값 기준으로 채운다
+                }
 
     # Step 3: 자세 분석 (Pose)
     _step(3)
@@ -383,6 +468,41 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else None
 
     # EAR 기반 눈 감음 비율
+    # 시선 히트맵: 코끝-눈중심 오프셋은 얼굴형·카메라 각도에 따라 기본값이 달라서
+    # 절대 좌표로 나누면 전부 한 칸에 쏠린다 (코끝은 눈보다 항상 아래라 dy가 늘 양수다).
+    # 발표 중 가장 흔한 방향 = 정면(청중/카메라)이라고 보고, 중앙값을 기준점으로 쓴다.
+    gaze_grid = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    if gaze_dirs:
+        xs = sorted(d[1] for d in gaze_dirs)
+        ys = sorted(d[2] for d in gaze_dirs)
+        mx = xs[len(xs) // 2]
+        my = ys[len(ys) // 2]
+        for idx, dx, dy in gaze_dirs:
+            r, c = _gaze_grid_cell(dx - mx, dy - my)
+            gaze_grid[r][c] += 1
+            if video_timeline[idx].get("expression"):
+                video_timeline[idx]["expression"]["gaze_cell"] = [r, c]
+
+    # 표정 집계 (이보현 블록). 얼굴을 한 번도 못 잡았으면 전부 None.
+    if smile_values:
+        smile_ratio = float(np.mean([s > SMILE_THRESHOLD for s in smile_values]))
+        tension_ratio = float(np.mean([g < BROW_TENSION_THRESHOLD for g in brow_gaps]))
+        # 표정 변화량: 미소 지표가 프레임마다 얼마나 움직였는지.
+        # 거의 안 움직이면 무표정 발표라는 뜻이다.
+        expression_change_std = float(np.std(smile_values))
+        total_cells = sum(sum(row) for row in gaze_grid)
+        gaze_heatmap = {
+            "grid": [[round(v / total_cells, 3) for v in row] for row in gaze_grid],
+            "n_frames": total_cells,
+            # (1,1)=정면. 행=위/중앙/아래, 열=왼쪽/중앙/오른쪽 (화면 기준)
+            "threshold": GAZE_GRID_THRESHOLD,
+        }
+    else:
+        smile_ratio = None
+        tension_ratio = None
+        expression_change_std = None
+        gaze_heatmap = None
+
     ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else None
 
     # 입 움직임 기반 침묵 비율 (MAR이 낮으면 미발화)
@@ -401,6 +521,10 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
         "video_timeline": video_timeline,
+        "smile_ratio": round(smile_ratio, 3) if smile_ratio is not None else None,
+        "tension_ratio": round(tension_ratio, 3) if tension_ratio is not None else None,
+        "expression_change_std": round(expression_change_std, 4) if expression_change_std is not None else None,
+        "gaze_heatmap": gaze_heatmap,
         "problem_frames": problem_frames,
     }
 
