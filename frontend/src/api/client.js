@@ -103,3 +103,10 @@ export async function fetchSurveyResult(resultId) {
   const { data } = await api.get(`audience/${resultId}/survey`)
   return data
 }
+
+// 분석 결과 하나를 details까지 받아온다.
+// 업로드 job 응답은 서버 메모리라 새로고침하면 사라지므로, 화면은 결과 id로 다시 읽는다.
+export async function fetchResult(resultId) {
+  const { data } = await api.get(`/history/${resultId}`)
+  return data
+}
