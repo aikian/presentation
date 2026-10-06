@@ -85,6 +85,10 @@ def _run_job(
             target_time_sec=goal_sec,
         )
 
+        # details를 job 응답에도 넣는다. 결과 화면 탭이 평면 컬럼 대신 details를 읽는다.
+        # DB 저장이 실패해도 화면은 그려져야 하므로 저장 전에 담는다.
+        result["details"] = details
+
         _jobs[job_id] = {"status": "done", "step": 5, "result": result}
 
         try:
@@ -102,6 +106,7 @@ def _run_job(
                 "score_gaze": scores["score_gaze"],
                 "score_pose": scores["score_pose"],
                 "score_gesture": scores["score_gesture"],
+                "score_voice": scores["score_voice"],
                 "score_time": scores["score_time"],
                 "score_total": scores["score_total"],
                 "details": details,
@@ -126,7 +131,7 @@ def _run_job(
                             "target_time": int(goal_sec),
                         }).execute()
                     except Exception:
-                        pass
+                        logger.warning("세션 저장 실패", exc_info=True)
                     
                 # 청중 집중도 결과 저장   
                 if attention_result:
@@ -137,7 +142,9 @@ def _run_job(
                 else:
                     print("집중도 예측 결과가 없어 저장하지 않습니다")
         except Exception:
-            pass
+            # 분석은 끝났으니 화면에는 결과를 보여준다. 다만 조용히 묻으면
+            # "분석은 됐는데 히스토리에 없다"는 증상의 원인을 찾을 수 없다.
+            logger.warning("분석 결과 저장 실패 (job %s)", job_id, exc_info=True)
     except Exception as e:
         _jobs[job_id] = {"status": "error", "step": _jobs[job_id].get("step", 0), "error": str(e)}
     finally:

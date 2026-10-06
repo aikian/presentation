@@ -1,3 +1,6 @@
+from app.services.analysis_schema import build_audio_block
+from app.services.rolemodel import voice_score_detail
+
 AHP_WEIGHTS = {
     "gaze": 0.3512,
     "posture": 0.1887,
@@ -56,19 +59,33 @@ def _calculate_gesture_score(gesture_per_min: float | None, gesture_valid_ratio:
     )
 
 
-def _calculate_voice_score(audio_metrics: dict | None) -> int | None:
-    """음성 분석 결과를 0~100점으로 변환한다.
+def calculate_voice_detail(audio_metrics: dict | None) -> dict | None:
+    """음성 점수와 판정 근거를 함께 만든다.
 
-    음성 세부 지표의 점수 기준과 내부 반영 비율이 확정되기 전까지
-    None을 반환하여 종합점수 계산에서 제외한다.
+    기준과 가중치의 근거는 rolemodel.VOICE_BASELINE 주석에 적어뒀다.
+    요약하면 명연사 6명 7편의 실측 범위를 기준선으로 쓰고, 같은 연사의 다른 강연에서
+    값이 덜 흔들리는 지표에 더 무게를 뒀다.
+
+    말속도 30% · 단조로움 30% · 군말 25% · 침묵 15%
     """
     if not audio_metrics or not audio_metrics.get("speech_available"):
         return None
 
-    # TODO:
-    # 말속도, 군말, 침묵, 단조로움의 점수 기준과
-    # 음성 내부 반영 비율을 확정한 후 구현한다.
-    return None
+    block = build_audio_block(audio_metrics, audio_metrics.get("duration_sec"))
+    if not block:
+        return None
+
+    return voice_score_detail(block.get("summary"))
+
+
+def _calculate_voice_score(audio_metrics: dict | None) -> int | None:
+    """음성 분석 결과를 0~100점으로 변환한다.
+
+    측정하지 못한 지표는 빼고 남은 가중치로 다시 나눈다.
+    하나도 못 재면 None이라서 종합점수 계산에서 제외된다.
+    """
+    detail = calculate_voice_detail(audio_metrics)
+    return detail["score"] if detail else None
 
 
 def _calculate_time_score(elapsed_sec: float | None, goal_sec: float | None) -> int | None:

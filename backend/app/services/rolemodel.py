@@ -145,3 +145,147 @@ def coaching_lines(comparison: dict[str, Any] | None) -> list[str]:
 
     lines.append("위 범위는 명연사 실측값이므로, 벗어난 항목만 짚고 범위 안인 항목은 칭찬하세요.")
     return lines
+
+
+# ---------------------------------------------------------------------------
+# 음성 점수
+# ---------------------------------------------------------------------------
+
+# 점수 기준선. 2026-08-12에 측정한 연사 6명 7편(세바시)의 실측 범위를 상수로 박아둔다.
+#
+# **DB(reference_speakers)를 읽지 않고 상수를 쓰는 이유:**
+# 연사를 더 추가하면 기준선이 넓어져 같은 발표의 점수가 달라진다.
+# 그러면 지난주 70점과 이번주 70점이 다른 뜻이 되어 성장 그래프가 무의미해진다.
+# 가중치를 weights_version으로 고정하는 것과 같은 이유다.
+# 기준선을 바꿀 때는 회의에서 정하고 VOICE_BASELINE_VERSION을 올린다.
+#
+# **지표별 비율(weight)을 이렇게 둔 근거:**
+# 같은 연사의 다른 강연에서 값이 얼마나 흔들리는지(개인 내 변동 / 전체 범위)를 재서,
+# 흔들림이 적은 지표에 더 무게를 뒀다. 흔들리는 지표로 점수를 매기면 그날의 컨디션을
+# 실력으로 오해하게 된다.
+#
+#     단조로움 16% · 말속도 28% · 군말 37% · 침묵 52%
+#
+# 이 순서대로 30 / 30 / 25 / 15를 배정했다.
+# 억양 폭(pitch_std)은 범위 비교에는 쓰지만 점수에서는 뺐다. 신뢰도가 38%로 낮고,
+# 성별과 타고난 음역에 크게 좌우되어 발표 실력으로 보기 어렵다.
+# 억양 변화는 monotone_ratio가 이미 대표한다.
+#
+# **주의:** 대조군이 김경일 연사 한 사람뿐이라 위 신뢰도 숫자는 잠정이다.
+VOICE_BASELINE_VERSION = "ref-7-2026-08"
+
+VOICE_BASELINE = {
+    # 키: (사람이 읽는 이름, 하한, 상한, 가중치, 낮을수록 좋은가)
+    "spm_avg": ("말 속도", 319.7, 411.7, 0.30, None),
+    "monotone_ratio": ("억양 단조로움", 0.137, 0.245, 0.30, True),
+    "filler_per_min": ("군말", 1.49, 2.85, 0.25, True),
+    "silence_ratio": ("침묵 비율", 0.135, 0.250, 0.15, None),
+}
+
+
+def _metric_score(value: float, lo: float, hi: float, lower_is_better: bool | None) -> int:
+    """지표 하나를 0~100점으로 만든다.
+
+    명연사 범위 안이면 100점이고, 벗어나면 벗어난 거리에 비례해 깎는다.
+    **범위 폭만큼 벗어났을 때 0점**이 되도록 잡았다. 조금 벗어난 것과 많이 벗어난 것을
+    같게 취급하면 "개선 필요"라는 판정이 설득력을 잃는다.
+
+    예) 말 속도 범위는 319.7~411.7(폭 92)이다.
+        312음절이면 7.7 모자라므로 100 - 100 x (7.7 / 92) = 92점.
+        250음절이면 69.7 모자라므로 24점.
+
+    군말과 단조로움은 범위보다 낮으면 오히려 좋으므로 100점을 준다.
+    말 속도와 침묵은 너무 적어도 문제라서 양쪽 다 깎는다
+    (침묵이 없으면 듣는 사람이 숨 돌릴 틈이 없다).
+    """
+    width = hi - lo
+    if width <= 0:
+        return 100
+
+    if lo <= value <= hi:
+        return 100
+
+    if value < lo:
+        if lower_is_better is True:
+            return 100
+        distance = lo - value
+    else:
+        if lower_is_better is False:
+            return 100
+        distance = value - hi
+
+    return int(max(0, min(100, round(100 - 100 * distance / width))))
+
+
+def voice_score_detail(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    """음성 요약 지표를 점수와 판정 근거로 바꾼다.
+
+    점수 하나만 돌려주지 않고 지표별 점수와 판정 이유를 함께 담는다.
+    "왜 이 점수인가"를 화면과 코칭에서 그대로 보여줄 수 있어야 한다.
+
+    측정되지 않은 지표(None)는 빼고 남은 가중치로 다시 나눈다.
+    하나도 못 재면 None이다(0점이 아니다. 0점은 "말을 못했다"는 뜻이 된다).
+    """
+    if not summary:
+        return None
+
+    metrics = []
+    for key, (label, lo, hi, weight, lower_is_better) in VOICE_BASELINE.items():
+        value = summary.get(key)
+        if value is None:
+            continue
+
+        value = float(value)
+        score = _metric_score(value, lo, hi, lower_is_better)
+
+        if lo <= value <= hi:
+            position, verdict = "within", "명연사 범위 안"
+        elif value < lo:
+            position = "below"
+            verdict = "명연사보다 좋음" if lower_is_better is True else "기준보다 낮음"
+        else:
+            position = "above"
+            verdict = "기준보다 높음" if lower_is_better is not False else "명연사보다 좋음"
+
+        metrics.append({
+            "key": key,
+            "label": label,
+            "value": round(value, 3),
+            "reference_min": lo,
+            "reference_max": hi,
+            "position": position,
+            "score": score,
+            "weight": weight,
+            "verdict": verdict,
+            # 점수를 깎은 항목만 개선 대상으로 본다. 범위를 벗어났어도
+            # 좋은 쪽으로 벗어난 것은 고칠 게 없다.
+            "concern": score < 100,
+        })
+
+    if not metrics:
+        return None
+
+    weight_sum = sum(m["weight"] for m in metrics)
+    total = round(sum(m["score"] * m["weight"] for m in metrics) / weight_sum)
+
+    # 개선 우선순위: 가중치까지 반영해 총점을 가장 많이 깎은 항목이 먼저다.
+    # 점수만 보면 가중치 15%인 침묵이 30%인 말 속도보다 앞설 수 있다.
+    concerns = sorted(
+        (m for m in metrics if m["concern"]),
+        key=lambda m: (100 - m["score"]) * m["weight"],
+        reverse=True,
+    )
+
+    return {
+        "baseline_version": VOICE_BASELINE_VERSION,
+        "score": total,
+        "metrics": metrics,
+        "priority": [m["key"] for m in concerns],
+        "measured_weight": round(weight_sum, 2),
+    }
+
+
+def voice_score(summary: dict[str, Any] | None) -> int | None:
+    """음성 종합점수만 꺼낸다. 근거까지 필요하면 voice_score_detail을 쓴다."""
+    detail = voice_score_detail(summary)
+    return detail["score"] if detail else None

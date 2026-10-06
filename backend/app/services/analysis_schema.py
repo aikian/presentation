@@ -11,6 +11,8 @@ analysis_results.details 컬럼에 이 JSON을 통째로 저장한다.
 """
 from typing import Any
 
+from app.services.rolemodel import voice_score_detail
+
 SCHEMA_VERSION = "0.1"
 WEIGHTS_VERSION = "ahp-v2-partial"
 
@@ -115,6 +117,7 @@ def build_details(
     """
     audio_metrics = metrics.get("audio_metrics")
     audio_duration = (audio_metrics or {}).get("duration_sec") or None
+    audio_block = build_audio_block(audio_metrics, duration_sec or audio_duration)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -124,7 +127,7 @@ def build_details(
             "target_time_sec": target_time_sec,
         },
         "video_timeline": metrics.get("video_timeline") or None,   # 시선·표정 / 자세·제스처 담당
-        "audio": build_audio_block(audio_metrics, duration_sec or audio_duration),
+        "audio": audio_block,
         "summary": {
             "gaze_away_ratio": metrics.get("gaze_away_ratio"),
             "smile_ratio": None,
@@ -146,4 +149,8 @@ def build_details(
         # 롤모델 비교. 스키마 v0.1에 없는 실험 필드라 x_ 접두사를 쓴다.
         # 회의에서 정식 필드로 승격할지 정한다.
         "x_rolemodel": metrics.get("rolemodel_comparison"),
+        # 음성 점수의 판정 근거. scores.voice는 총점 하나뿐이라
+        # "왜 이 점수인가"를 화면에서 보여줄 수 없다.
+        # 지표별 점수·기준 범위·개선 우선순위를 여기에 담는다.
+        "x_voice_score": voice_score_detail((audio_block or {}).get("summary")),
     }
