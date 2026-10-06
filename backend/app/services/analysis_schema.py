@@ -190,9 +190,9 @@ def build_details(
         "audio": audio_block,
         "summary": {
             "gaze_away_ratio": metrics.get("gaze_away_ratio"),
-            "smile_ratio": None,
-            "tension_ratio": None,
-            "expression_change_std": None,
+            "smile_ratio": metrics.get("smile_ratio"),
+            "tension_ratio": metrics.get("tension_ratio"),
+            "expression_change_std": metrics.get("expression_change_std"),
             "gesture_active_ratio": metrics.get("gesture_active_ratio"),
             "gesture_per_min": metrics.get("gesture_per_min"),
             "gesture_valid_ratio": metrics.get("gesture_valid_ratio"),
@@ -215,4 +215,7 @@ def build_details(
         "x_voice_score": voice_score_detail((audio_block or {}).get("summary")),
         # 발표 영상인지에 대한 판정. 화면은 scorable이 false면 점수를 숨긴다.
         "x_validity": build_validity(metrics),
+        # 시선 9분할 히트맵 (이보현 블록 MVP). 3x3 비율 행렬, (1,1)=정면.
+        # PNG 대신 숫자로 저장한다 — 화면이 그리면 되고 Storage가 필요 없다.
+        "x_gaze_heatmap": metrics.get("gaze_heatmap"),
     }

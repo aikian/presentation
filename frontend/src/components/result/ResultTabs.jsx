@@ -4,6 +4,7 @@ import CoachingResult from '../analysis/CoachingResult'
 import VoiceTab from './VoiceTab'
 import RoleModelTab from './RoleModelTab'
 import PlaceholderTab from './PlaceholderTab'
+import VisualTab from './VisualTab'
 import ValidityBanner from './ValidityBanner'
 
 // 결과 화면 탭 컨테이너.
@@ -68,17 +69,7 @@ export default function ResultTabs({ result, resultId }) {
           />
         )
       case 'visual':
-        return (
-          <PlaceholderTab
-            title="히트맵·표정"
-            owner="이보현"
-            available={[
-              details?.summary?.gaze_away_ratio != null ? '시선 이탈 비율' : null,
-              details?.summary?.smile_ratio != null ? '미소 비율' : null,
-              Object.keys(details?.artifacts ?? {}).length ? '생성된 히트맵 이미지' : null,
-            ].filter(Boolean)}
-          />
-        )
+        return <VisualTab details={details} />
       default:
         return null
     }
