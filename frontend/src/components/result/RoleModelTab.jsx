@@ -74,8 +74,78 @@ function Row({ metric }) {
   )
 }
 
+/** 연사 한 명을 골랐을 때. 범위가 아니라 그 사람의 값이 목표다. */
+function OneRow({ metric }) {
+  const { label, key, value, target, diff, diff_ratio, verdict, concern } = metric
+  const sign = diff > 0 ? '+' : ''
+
+  return (
+    <div className={`rounded-lg border p-4 ${concern ? 'border-rose-200 bg-rose-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="font-semibold text-slate-900">{label}</span>
+        <span className={concern ? 'font-semibold text-rose-700' : 'font-semibold text-emerald-700'}>
+          {verdict}
+        </span>
+      </div>
+      <div className="mt-1 text-sm text-slate-600">
+        내 값 <b className="text-slate-900">{value}</b>
+        <span className="mx-1.5 text-slate-300">|</span>
+        연사 <b className="text-slate-900">{target}</b>
+        <span className="mx-1.5 text-slate-300">|</span>
+        차이 {sign}{diff}
+        {diff_ratio != null && ` (${(diff_ratio * 100).toFixed(0)}%)`}
+      </div>
+      {WHY[key] && <p className="mt-2 text-xs leading-relaxed text-slate-500">{WHY[key]}</p>}
+    </div>
+  )
+}
+
+function OneComparison({ rm }) {
+  const s = rm.speaker ?? {}
+  const concerns = rm.metrics.filter((m) => m.concern)
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="text-lg font-bold text-slate-900">{s.name} 연사와 비교</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          {[s.affiliation, s.source, s.title].filter(Boolean).join(' · ')}
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+          따라 하고 싶은 연사로 고르셨기 때문에, 범위 안에 있는지가 아니라 이 연사의 값에
+          얼마나 가까운지를 봅니다. 차이가 15% 안이면 비슷하다고 봤습니다.
+        </p>
+        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+          {concerns.length === 0
+            ? '네 지표 모두 이 연사와 비슷하거나 더 좋습니다.'
+            : `${concerns.length}개 지표가 이 연사와 뚜렷하게 다릅니다.`}
+        </div>
+      </section>
+
+      <section>
+        <h4 className="mb-2 font-semibold text-slate-900">지표별 비교</h4>
+        <div className="space-y-3">
+          {rm.metrics.map((m) => (
+            <OneRow key={m.key} metric={m} />
+          ))}
+        </div>
+      </section>
+
+      <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+        <b>참고:</b> 한 사람의 값과 맞추는 것이 항상 좋은 것은 아닙니다. 목소리와 말투는 사람마다
+        다르고, 이 연사의 수치는 그 강연 한 편을 측정한 값입니다. 방향을 참고하는 정도로 보시면
+        좋겠습니다.
+      </p>
+    </div>
+  )
+}
+
 export default function RoleModelTab({ details }) {
   const rm = details?.x_rolemodel ?? null
+
+  if (rm?.mode === 'one') {
+    return <OneComparison rm={rm} />
+  }
 
   if (!rm) {
     return (

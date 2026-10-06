@@ -74,6 +74,8 @@ export async function uploadVideo(file, metadata = {}) {
   if (metadata.goal_sec != null) form.append('goal_sec', metadata.goal_sec)
   if (metadata.elapsed_sec != null) form.append('elapsed_sec', metadata.elapsed_sec)
   if (metadata.slide_log?.length) form.append('slide_log', JSON.stringify(metadata.slide_log))
+  // 따라 하고 싶은 연사를 고른 경우. 안 고르면 연사 전체 범위를 기준으로 쓴다.
+  if (metadata.rolemodel_id) form.append('rolemodel_id', metadata.rolemodel_id)
   const { data } = await api.post('/analysis/upload', form)
   return data // { job_id }
 }
@@ -109,4 +111,10 @@ export async function fetchSurveyResult(resultId) {
 export async function fetchResult(resultId) {
   const { data } = await api.get(`/history/${resultId}`)
   return data
+}
+
+// 고를 수 있는 롤모델 연사 목록
+export async function fetchSpeakers() {
+  const { data } = await api.get('/analysis/speakers')
+  return data.speakers ?? []
 }

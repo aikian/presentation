@@ -55,12 +55,12 @@ export default function VideoAnalysis() {
     return () => clearInterval(timerRef.current)
   }, [location.state?.jobId, startPolling])
 
-  async function handleUpload(file) {
+  async function handleUpload(file, options = {}) {
     setStage('progress')
     setStepHint(0)
     setError(null)
     try {
-      const { job_id } = await uploadVideo(file)
+      const { job_id } = await uploadVideo(file, { rolemodel_id: options.rolemodelId })
       jobIdRef.current = job_id
       startPolling(job_id)
     } catch (e) {

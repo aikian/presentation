@@ -81,14 +81,85 @@ def _verdict(value: float, lo: float, hi: float, lower_is_better: bool | None) -
     return position, position != better_side
 
 
+def compare_to_one(user_summary: dict[str, Any] | None,
+                   reference: dict[str, Any]) -> dict[str, Any] | None:
+    """연사 한 명을 골랐을 때의 1:1 비교.
+
+    여러 연사의 min~max 범위와 달리, 고른 연사의 값 하나가 목표가 된다.
+    "이지영 연사는 분당 341음절인데 당신은 312음절"처럼 읽힌다.
+    따라 하고 싶은 사람을 정한 경우라서, 범위 안인지보다 얼마나 가까운지가 중요하다.
+    """
+    if not user_summary:
+        return None
+
+    target = reference.get("audio_summary") or {}
+    metrics = []
+    for key, label, lower_is_better in COMPARED:
+        mine = user_summary.get(key)
+        theirs = target.get(key)
+        if mine is None or theirs is None:
+            continue
+
+        mine, theirs = float(mine), float(theirs)
+        diff = mine - theirs
+        # 연사 값 대비 몇 퍼센트 차이인지. 지표마다 단위가 달라 절대값은 비교가 안 된다.
+        rel = abs(diff) / abs(theirs) if theirs else None
+
+        if lower_is_better is True and diff < 0:
+            verdict = "연사보다 좋음"
+            concern = False
+        elif rel is not None and rel <= 0.15:
+            verdict = "연사와 비슷함"
+            concern = False
+        else:
+            verdict = "연사보다 높음" if diff > 0 else "연사보다 낮음"
+            concern = True
+
+        metrics.append({
+            "key": key,
+            "label": label,
+            "value": round(mine, 3),
+            "target": round(theirs, 3),
+            "diff": round(diff, 3),
+            "diff_ratio": round(rel, 3) if rel is not None else None,
+            "verdict": verdict,
+            "concern": concern,
+        })
+
+    if not metrics:
+        return None
+
+    return {
+        "mode": "one",
+        "speaker": {
+            "id": reference.get("id"),
+            "name": reference.get("name"),
+            "affiliation": reference.get("affiliation"),
+            "source": reference.get("source"),
+            "title": reference.get("title"),
+        },
+        "metrics": metrics,
+    }
+
+
 def compare(user_summary: dict[str, Any] | None,
-            references: list[dict[str, Any]]) -> dict[str, Any] | None:
+            references: list[dict[str, Any]],
+            target_speaker_id: str | None = None) -> dict[str, Any] | None:
     """사용자의 audio.summary를 롤모델 기준선과 비교한다.
+
+    target_speaker_id를 주면 그 연사 한 명과 1:1로 비교한다.
+    주지 않으면 연사 전체의 min~max 범위를 기준선으로 쓴다.
 
     비교할 수 없으면 None. 읽는 쪽은 null 방어가 필요하다.
     """
     if not user_summary:
         return None
+
+    if target_speaker_id:
+        picked = next((r for r in references if r.get("id") == target_speaker_id), None)
+        if picked:
+            return compare_to_one(user_summary, picked)
+        logger.info("고른 연사(%s)를 찾지 못해 전체 범위로 비교합니다", target_speaker_id)
 
     baseline = build_baseline(references)
     if not baseline:
@@ -117,6 +188,7 @@ def compare(user_summary: dict[str, Any] | None,
         return None
 
     return {
+        "mode": "range",
         "reference_count": len(references),
         "reference_names": sorted({r["name"] for r in references if r.get("name")}),
         "metrics": metrics,
