@@ -20,3 +20,8 @@ matplotlib==3.9.0
 librosa==0.10.2.post1
 faster-whisper==1.0.3
 soundfile==0.12.1
+# 집중도 예측(설문 분석·가중치 학습)이 쓴다. weights_db가 모듈 상단에서 import해서
+# 없으면 서버가 시작을 못 한다. scipy는 librosa 의존성으로 깔리지만
+# survey_analyzer가 직접 import하므로 버전을 못박아 명시한다.
+pandas==2.2.2
+scipy==1.13.1
