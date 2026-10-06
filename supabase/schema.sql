@@ -56,6 +56,28 @@ alter table public.analysis_results
 alter table public.analysis_results
   add column if not exists details jsonb;
 
+-- 음성 점수 평면 컬럼. details.scores.voice와 같은 값이고 히스토리·PDF 호환용이다.
+alter table public.analysis_results
+  add column if not exists score_voice integer;
+
+-- 측정하지 못한 지표는 0이 아니라 null로 저장한다.
+-- 0으로 두면 "얼굴이 안 잡혀 못 쟀다"가 "완벽했다"로 읽혀서, 1학기 시연 때
+-- 카메라에 아무것도 안 잡혔는데 총점이 높게 나오는 문제가 있었다.
+-- (운영 DB에는 이미 적용돼 있고, 이 파일을 실제 상태와 맞추는 것이다.)
+alter table public.analysis_results
+  alter column gaze_away_ratio drop not null,
+  alter column shoulder_tilt_avg drop not null,
+  alter column gesture_count drop not null,
+  alter column ear_blink_ratio drop not null,
+  alter column silence_ratio drop not null;
+
+alter table public.analysis_results
+  alter column gaze_away_ratio drop default,
+  alter column shoulder_tilt_avg drop default,
+  alter column gesture_count drop default,
+  alter column ear_blink_ratio drop default,
+  alter column silence_ratio drop default;
+
 create index if not exists analysis_results_user_created_at_idx
   on public.analysis_results (user_id, created_at desc);
 
