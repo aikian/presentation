@@ -347,7 +347,8 @@ function CoachingSection({ meta, text, frames }) {
 }
 
 // embedded: 결과 탭 안에서 쓸 때는 바깥 헤더와 인쇄 버튼을 탭 컨테이너가 그리므로 생략한다.
-export default function CoachingResult({ result, embedded = false }) {
+// resultId: 게시판 공유 버튼에 필요 (없으면 버튼을 숨긴다)
+export default function CoachingResult({ result, resultId, embedded = false }) {
   const navigate = useNavigate()
   const {
     gaze_away_ratio, shoulder_tilt_avg, gesture_per_min,
@@ -409,6 +410,15 @@ export default function CoachingResult({ result, embedded = false }) {
               >
                 인쇄 / PDF 저장
               </button>
+              {/* 분석 결과를 발표 사례 라이브러리(게시판)에 공유 */}
+              {resultId && (
+                <button
+                  onClick={() => navigate(`/board/new?resultId=${resultId}`)}
+                  className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                >
+                  게시판에 공유
+                </button>
+              )}
               <button
                 onClick={() => navigate('/')}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-white"

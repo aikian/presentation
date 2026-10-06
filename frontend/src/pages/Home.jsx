@@ -33,6 +33,27 @@ const features = [
     border: 'border-purple-200 hover:border-purple-400',
     path: '/analysis',
   },
+  // [신규 추가] 성장 분석 / 발표 영상 공유 게시판
+  {
+    id: 'growth',
+    icon: '성장',
+    title: '성장 분석',
+    description: '이전 발표와 현재 발표를 비교해\n점수 변화와 AI 성장 피드백을 확인합니다.',
+    detail: '점수 그래프 + AI 성장 피드백',
+    bg: 'bg-green-50 hover:bg-green-100',
+    border: 'border-green-200 hover:border-green-400',
+    path: '/growth',
+  },
+  {
+    id: 'board',
+    icon: '공유',
+    title: '발표 사례 라이브러리',
+    description: '발표 영상과 AI 분석 결과를 공유하고\n다른 사람의 발표를 보며 비교합니다.',
+    detail: '검색 · 댓글 · 우수 사례 추천',
+    bg: 'bg-amber-50 hover:bg-amber-100',
+    border: 'border-amber-200 hover:border-amber-400',
+    path: '/board',
+  },
 ]
 
 const scoreRows = [
@@ -329,6 +350,13 @@ export default function Home() {
             </div>
             <button onClick={() => go('/history')} className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
               발표 히스토리
+            </button>
+            {/* [신규 추가] */}
+            <button onClick={() => go('/growth')} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+              성장 분석
+            </button>
+            <button onClick={() => go('/board')} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+              발표 사례 라이브러리
             </button>
             <button
               onClick={() => { setSettingsOpen(true); setMenuOpen(false) }}
