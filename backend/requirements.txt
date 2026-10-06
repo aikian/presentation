@@ -14,3 +14,9 @@ sqlalchemy==2.0.30
 supabase==2.5.3
 reportlab==4.2.2
 matplotlib==3.9.0
+# 음성 분석(STT·피치·음량). audio_analyzer는 함수 안에서 import해서 없어도 서버가 떴지만,
+# audio_features는 파일 맨 위에서 import하고 routers/analysis가 그걸 불러온다.
+# 그래서 빠지면 서버가 시작 자체를 못 한다.
+librosa==0.10.2.post1
+faster-whisper==1.0.3
+soundfile==0.12.1
