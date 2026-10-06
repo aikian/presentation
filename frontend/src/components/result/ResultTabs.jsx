@@ -4,6 +4,7 @@ import CoachingResult from '../analysis/CoachingResult'
 import VoiceTab from './VoiceTab'
 import RoleModelTab from './RoleModelTab'
 import PlaceholderTab from './PlaceholderTab'
+import ValidityBanner from './ValidityBanner'
 
 // 결과 화면 탭 컨테이너.
 //
@@ -28,10 +29,23 @@ export default function ResultTabs({ result, resultId }) {
   // 업로드 직후에는 job 응답(평면 필드 + details)이고,
   // 히스토리에서 열면 DB 행(평면 컬럼 + details)이다. 둘 다 details를 갖는다.
   const details = result?.details ?? null
+  const validity = details?.x_validity ?? null
+  // 발표 영상이 아니면 점수를 보여주지 않는다. 사용자가 그 숫자를 자기 점수로 읽는다.
+  const scorable = validity ? validity.scorable !== false : true
 
   function renderBody() {
     switch (active) {
       case 'score':
+        if (!scorable) {
+          return (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
+              <p className="font-medium text-slate-700">점수를 매기지 않았습니다.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                발표자 얼굴도 말소리도 찾지 못해서, 어떤 항목도 측정하지 못했습니다.
+              </p>
+            </div>
+          )
+        }
         return <CoachingResult result={result} resultId={resultId} embedded />
       case 'voice':
         return <VoiceTab details={details} />
@@ -111,7 +125,10 @@ export default function ResultTabs({ result, resultId }) {
           ))}
         </div>
 
-        <div className="mt-6">{renderBody()}</div>
+        <div className="mt-6 space-y-4">
+          <ValidityBanner validity={validity} />
+          {renderBody()}
+        </div>
       </div>
     </div>
   )

@@ -35,6 +35,7 @@ def _run_job(
     goal_sec: float | None,
     elapsed_sec: float | None,
     slide_log: list | None,
+    rolemodel_id: str | None = None,
 ):
     def update_step(step: int):
         _jobs[job_id]["step"] = step
@@ -73,7 +74,9 @@ def _run_job(
             )
             if audio_block:
                 refs = get_supabase().table("reference_speakers").select("*").execute().data
-                result["rolemodel_comparison"] = compare(audio_block["summary"], refs or [])
+                result["rolemodel_comparison"] = compare(
+                    audio_block["summary"], refs or [], rolemodel_id
+                )
         except Exception:
             logger.warning("롤모델 비교를 건너뜁니다", exc_info=True)
 
@@ -151,12 +154,35 @@ def _run_job(
         video_path.unlink(missing_ok=True)
 
 
+@router.get("/speakers")
+def list_speakers():
+    """고를 수 있는 롤모델 연사 목록.
+
+    발표를 올릴 때 "이 사람처럼 말하고 싶다"를 고를 수 있게 한다.
+    고르지 않으면 연사 전체의 범위를 기준선으로 쓴다.
+    """
+    try:
+        res = (
+            get_supabase()
+            .table("reference_speakers")
+            .select("id,name,affiliation,source,title,audio_summary")
+            .order("name")
+            .execute()
+        )
+    except Exception:
+        logger.warning("연사 목록 조회 실패", exc_info=True)
+        return JSONResponse({"speakers": []})
+
+    return JSONResponse({"speakers": res.data or []})
+
+
 @router.post("/upload")
 async def upload_video(
     file: UploadFile = File(...),
     goal_sec: float | None = Form(None),
     elapsed_sec: float | None = Form(None),
     slide_log: str | None = Form(None),
+    rolemodel_id: str | None = Form(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     suffix = Path(file.filename).suffix.lower()
@@ -193,6 +219,7 @@ async def upload_video(
     loop.run_in_executor(
         _executor, _run_job,
         job_id, tmp_path, current_user.id, goal_sec, elapsed_sec, parsed_log,
+        rolemodel_id or None,
     )
 
     return JSONResponse({"job_id": job_id})

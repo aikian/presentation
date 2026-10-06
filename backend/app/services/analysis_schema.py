@@ -104,6 +104,66 @@ def build_scores_block(metrics: dict[str, Any], target_time_sec: float | None) -
     }
 
 
+# 발표 영상으로 보고 점수를 매겨도 되는지 판단하는 기준.
+#
+# 얼굴이 이 비율 미만으로 잡히면 발표자가 화면에 거의 없다는 뜻이다.
+# 고정 카메라로 찍은 발표는 보통 90% 이상 잡힌다.
+# 명연사 강연 영상도 객석 컷이 섞인 전체 구간 기준으로 33~74%였다.
+FACE_DETECTED_MIN = 0.30
+
+
+def build_validity(metrics: dict[str, Any]) -> dict[str, Any]:
+    """이 영상을 발표로 보고 분석해도 되는지 판정한다.
+
+    지표마다 null을 넣는 것만으로는 부족하다.
+    얼굴이 하나도 안 잡힌 영상을 올려도 음성만 들리면 총점이 나오고,
+    사용자는 그 점수를 자기 발표 점수로 읽는다.
+    1학기 시연에서 카메라에 아무것도 안 잡혔는데 높은 점수가 나온 것과 같은 문제다.
+
+    그래서 "무엇을 못 쟀는가"가 아니라 "이 영상이 발표인가"를 따로 판정하고,
+    화면이 점수를 보여줘야 할지 말아야 할지 판단할 근거를 남긴다.
+    """
+    face_ratio = metrics.get("face_detected_ratio")
+    audio = metrics.get("audio_metrics") or {}
+    speech_available = bool(audio.get("speech_available"))
+
+    face_ok = face_ratio is not None and face_ratio >= FACE_DETECTED_MIN
+
+    problems = []
+    if not face_ok:
+        shown = "0%" if face_ratio is None else f"{face_ratio * 100:.0f}%"
+        problems.append({
+            "code": "face_not_detected",
+            "message": f"발표자 얼굴이 화면에서 거의 검출되지 않았습니다 (검출률 {shown}).",
+        })
+    if not speech_available:
+        problems.append({
+            "code": "no_speech",
+            "message": "영상에서 말소리를 찾지 못했습니다.",
+        })
+
+    # 얼굴도 말소리도 없으면 발표 영상이 아니라고 본다.
+    if not face_ok and not speech_available:
+        level = "invalid"
+        verdict = "발표 영상으로 보기 어렵습니다. 점수를 매기지 않습니다."
+    elif problems:
+        level = "partial"
+        verdict = "일부 항목만 분석했습니다. 측정하지 못한 항목은 점수에서 제외했습니다."
+    else:
+        level = "ok"
+        verdict = "정상적으로 분석했습니다."
+
+    return {
+        "level": level,
+        "verdict": verdict,
+        "problems": problems,
+        "face_detected_ratio": face_ratio,
+        "speech_available": speech_available,
+        # 점수를 보여줘도 되는지. 화면은 이 값만 보면 된다.
+        "scorable": level != "invalid",
+    }
+
+
 def build_details(
     metrics: dict[str, Any],
     *,
@@ -153,4 +213,6 @@ def build_details(
         # "왜 이 점수인가"를 화면에서 보여줄 수 없다.
         # 지표별 점수·기준 범위·개선 우선순위를 여기에 담는다.
         "x_voice_score": voice_score_detail((audio_block or {}).get("summary")),
+        # 발표 영상인지에 대한 판정. 화면은 scorable이 false면 점수를 숨긴다.
+        "x_validity": build_validity(metrics),
     }
