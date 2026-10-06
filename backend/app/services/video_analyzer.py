@@ -13,9 +13,12 @@ import numpy as np
 
 from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
+from app.services.audio_analyzer import MONOTONE_THRESHOLD
 from app.services.rolemodel import coaching_lines
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
+from app.services.habit_detector import analyze_filler_habits
+from app.services.habit_detector import analyze_monotone_habits
 
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
@@ -103,16 +106,20 @@ def _shoulder_tilt_signed(pose_landmarks) -> float:
     return angle
 
 
-def _lean_direction(pose_landmarks, threshold_deg: float = 5.0) -> str:
+def _lean_direction(pose_landmarks) -> str:
     signed_tilt = _shoulder_tilt_signed(pose_landmarks)
 
-    if abs(signed_tilt) < threshold_deg:
-        return "none"
+    if signed_tilt < 0:
+        return "left"
+    elif signed_tilt > 0:
+        return "right"
+    return "none"
 
-    return "left" if signed_tilt < 0 else "right"
 
+def _extract_frames(video_path: Path, interval_sec: float | None = None):
+    if interval_sec is None:
+        interval_sec = settings.frame_interval_sec
 
-def _extract_frames(video_path: Path):
     # OpenCV stderr 억제 (EBML/webm 파싱 경고)
     import os, sys
     devnull = open(os.devnull, 'w')
@@ -126,21 +133,34 @@ def _extract_frames(video_path: Path):
         devnull.close()
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps < 1 or fps > 120:
-        fps = 30  # 브라우저 webm 녹화본의 FPS 파싱 실패 시 기본값
 
-    interval = max(1, int(fps * settings.frame_interval_sec))
+    if not fps or fps < 1 or fps > 120:
+        fps = None
+
     frames = []
+    frame_times = []
     idx = 0
+    next_sample_sec = 0.0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        if idx % interval == 0:
+
+        if fps is not None:
+            current_sec = idx / fps
+        else:
+            current_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+
+        if current_sec + 1e-6 >= next_sample_sec:
             frames.append(frame)
+            frame_times.append(round(current_sec, 3))
+            next_sample_sec += interval_sec
+
         idx += 1
+
     cap.release()
-    return frames
+    return frames, frame_times
 
 
 def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
@@ -149,11 +169,14 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             on_step(n)
 
     _step(1)
-    frames = _extract_frames(video_path)
+    frames, frame_times = _extract_frames(video_path)
+    gesture_frames, gesture_frame_times = _extract_frames(video_path, interval_sec=0.5)
+
     if not frames:
         return {
             "gaze_away_ratio": None, "face_detected_ratio": 0.0,
             "shoulder_tilt_avg": None, "gesture_count": 0,
+            "gesture_active_ratio": None, "gesture_valid_ratio": None, "gesture_event_count": None,
             "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
@@ -171,8 +194,9 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     max_pose_tilt = 0.0
     gesture_count = 0
     prev_wrist_positions = []
+    gesture_timeline = []
 
-    video_timeline = [{"sec": round(i * settings.frame_interval_sec, 1), "posture": None, "gesture": None} for i in range(len(frames))]
+    video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None} for i in range(len(frames))]
 
     # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
     _step(2)
@@ -191,14 +215,14 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                 score = _gaze_score(result.multi_face_landmarks[0], w, h)
                 gaze_scores.append(score)
-                gaze_timeline.append({"sec": round(i * settings.frame_interval_sec, 1), "score": round(score, 3)})
+                gaze_timeline.append({"sec": round(frame_times[i], 1), "score": round(score, 3)})
 
                 if score > 0.35 and score > max_gaze_score:
                     max_gaze_score = score
                     problem_gaze_frame = {
                         "type": "gaze",
                         "label": "시선 이탈",
-                        "sec": round(i * settings.frame_interval_sec, 1),
+                        "sec": round(frame_times[i], 1),
                         "score": round(score, 3),
                         "value": f"{score * 100:.0f}%",
                         "image": _frame_to_b64(frame),
@@ -232,7 +256,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                     problem_pose_frame = {
                         "type": "pose",
                         "label": "자세 기울어짐",
-                        "sec": round(i * settings.frame_interval_sec, 1),
+                        "sec": round(frame_times[i], 1),
                         "score": round(tilt, 2),
                         "value": f"{tilt:.1f}도",
                         "image": _frame_to_b64(frame),
@@ -241,14 +265,17 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     # Step 4: 제스처 분석 (Hands)
     _step(4)
     with mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
-        for i, frame in enumerate(frames):
+        for i, frame in enumerate(gesture_frames):
+            current_sec = gesture_frame_times[i]
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = hands.process(rgb)
             hands_visible = bool(result.multi_hand_landmarks)
-            video_timeline[i]["gesture"] = {
+            
+            gesture_timeline.append({
+                "sec": round(current_sec, 1),
                 "active": None,
                 "hands_visible": hands_visible,
-            }
+            })
 
             current_wrist_positions = []
 
@@ -274,14 +301,81 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                     if movements:
                         movement_max = max(movements)
+
+
+                        # TODO:
+                        # movement_max >= 0.10은 임시 임계값.
+                        # 추가 영상 실험 후 근거 있는 active 판정 기준으로 재설정 필요.
                         active = movement_max >= 0.10
 
-                        video_timeline[i]["gesture"]["active"] = active
+                        gesture_timeline[-1]["active"] = active
 
 
                 prev_wrist_positions = current_wrist_positions
+
             else:
                 prev_wrist_positions = []
+
+
+    # 0.5초 간격 제스처 분석 결과를 기존 video_timeline 구간에 집계
+    for item in video_timeline:
+        start_sec = item["sec"]
+        end_sec = start_sec + settings.frame_interval_sec
+
+        samples = [
+            g for g in gesture_timeline
+            if start_sec <= g["sec"] < end_sec
+        ]
+
+        if not samples:
+            item["gesture"] = None
+            continue
+
+        hands_visible = any(g["hands_visible"] for g in samples)
+        measured_active = [g["active"] for g in samples if g["active"] is not None]
+
+        item["gesture"] = {
+            "active": (
+                any(measured_active)
+                if measured_active
+                else None
+            ),
+            "hands_visible": hands_visible,
+        }
+
+
+    # 제스처 판정이 가능한 샘플만 사용하여 활성 비율 계산
+    gesture_states = [
+        item["gesture"]["active"]
+        for item in video_timeline
+        if item.get("gesture") is not None
+        and item["gesture"].get("active") is not None
+    ]
+
+    # 판정된 것 중 몇 %가 active인가?
+    gesture_active_ratio = (
+        sum(state is True for state in gesture_states) / len(gesture_states)
+        if gesture_states
+        else None
+    )
+
+    # 전체 분석 시점 중 몇 %에서 제스처 판정이 가능했나?
+    gesture_valid_ratio = (
+        len(gesture_states) / len(video_timeline)
+        if video_timeline
+        else None
+    )
+
+    # 연속된 active=True 구간을 하나의 제스처 이벤트로 계산
+    gesture_event_count = 0
+    in_gesture = False
+
+    for state in gesture_states:
+        if state is True and not in_gesture:
+            gesture_event_count += 1
+            in_gesture = True
+        elif state is False:
+            in_gesture = False
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
@@ -300,6 +394,9 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "face_detected_ratio": round(face_detected_ratio, 3),
         "shoulder_tilt_avg": round(shoulder_tilt_avg, 2) if shoulder_tilt_avg is not None else None,
         "gesture_count": gesture_count,
+        "gesture_active_ratio": round(gesture_active_ratio, 3) if gesture_active_ratio is not None else None,
+        "gesture_valid_ratio": (round(gesture_valid_ratio, 3) if gesture_valid_ratio is not None else None),
+        "gesture_event_count": gesture_event_count,
         "ear_blink_ratio": round(ear_blink_ratio, 3) if ear_blink_ratio is not None else None,
         "silence_ratio": round(silence_ratio, 3) if silence_ratio is not None else None,
         "gaze_timeline": gaze_timeline,
@@ -355,6 +452,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
     shoulder_tilt = metrics.get("shoulder_tilt_avg")
     blink_ratio = metrics.get("ear_blink_ratio")
     silence_ratio = metrics.get("silence_ratio")
+    gesture_per_min = metrics.get("gesture_per_min")
+    gesture_valid_ratio = metrics.get("gesture_valid_ratio")
 
     # 얼굴이 안 잡히면 지표가 None으로 온다. 0으로 적으면 "완벽했다"는 뜻이 되므로
     # 측정을 못 했다는 사실을 그대로 프롬프트에 넘긴다.
@@ -362,6 +461,15 @@ def _build_coaching_prompt(metrics: dict) -> str:
     pose_text = f"{shoulder_tilt:.1f}도" if shoulder_tilt is not None else "분석 불가"
     blink_text = f"{blink_ratio * 100:.1f}%" if blink_ratio is not None else "분석 불가"
     silence_text = f"{silence_ratio * 100:.1f}%" if silence_ratio is not None else "분석 불가"
+
+    if (
+        gesture_per_min is not None
+        and gesture_valid_ratio is not None
+        and gesture_valid_ratio >= 0.2
+    ):
+        gesture_text = f"분당 {gesture_per_min:.2f}회"
+    else:
+        gesture_text = "분석 불가"
 
     # 음성 분석이 되면 입 모양으로 추정한 침묵 대신 실제 음성 지표로 발화를 평가한다.
     # 둘 다 넣으면 같은 항목을 서로 다른 수치로 말하게 되므로, 음성이 없을 때만 남긴다.
@@ -379,7 +487,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
 
 - 시선 이탈 비율: {gaze_text}
 - 어깨 기울기 평균: {pose_text}
-- 제스처 횟수: {metrics['gesture_count']}회
+- 제스처 빈도: {gesture_text}
+- 제스처 임시 평가 기준: 분당 2~4회를 현재 프로젝트의 적정 범위로 사용하며, 분석 불가인 경우 평가하지 마세요.
 - 눈 감음 비율: {blink_text}{silence_line}{voice}{rolemodel_block}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
@@ -397,8 +506,8 @@ def _build_coaching_prompt(metrics: dict) -> str:
 **코칭:** 상체 균형을 개선할 구체 행동을 제안하세요.
 
 ## 제스처
-**진단:** 제스처 횟수를 바탕으로 현재 상태를 평가하세요.
-**코칭:** 손동작을 더 효과적으로 쓰는 방법을 제안하세요.
+**진단:** 분당 제스처 빈도를 바탕으로 현재 상태를 평가하세요. 분석 불가인 경우 임의로 평가하지 마세요.
+**코칭:** 분석 가능한 경우 손동작을 더 효과적으로 쓰는 방법을 제안하고, 분석 불가인 경우 손이 카메라에 잘 보이도록 안내하세요.
 
 ## 집중도
 **진단:** 눈 감음 비율을 바탕으로 청중 몰입감을 평가하세요.
@@ -534,7 +643,8 @@ def _fallback_coaching(metrics: dict) -> str:
 
     ratio = gaze_ratio * 100 if gaze_ratio is not None else None
     tilt = shoulder_tilt if shoulder_tilt is not None else None
-    gestures = metrics["gesture_count"]
+    gesture_per_min = metrics.get("gesture_per_min")
+    gesture_valid_ratio = metrics.get("gesture_valid_ratio")
     blink = blink_ratio * 100 if blink_ratio is not None else None
     silence = silence_ratio * 100 if silence_ratio is not None else None
 
@@ -564,15 +674,23 @@ def _fallback_coaching(metrics: dict) -> str:
         pose_diagnosis = f"어깨 균형이 {tilt:.1f}도로 잘 유지되고 있습니다."
         pose_coaching = "지금처럼 정면 자세를 유지하면서, 강조 구간에서는 상체를 살짝 앞으로 보내 전달력을 높이세요."
 
-    if gestures < 5:
-        gesture_diagnosis = "손 동작이 거의 없어 핵심 포인트의 강조가 약할 수 있습니다."
-        gesture_coaching = "첫째, 둘째처럼 구조를 말할 때 손가락으로 번호를 보여주고, 결론에서는 양손을 가볍게 열어 강조하세요."
-    elif gestures > 50:
-        gesture_diagnosis = f"제스처가 {gestures}회로 많아 시선이 손동작에 분산될 수 있습니다."
-        gesture_coaching = "문장마다 움직이기보다 핵심 단어 1개에만 손동작을 붙이고, 나머지 시간에는 손을 고정하세요."
-    else:
-        gesture_diagnosis = f"제스처 사용이 {gestures}회로 적절한 편입니다."
+    if (gesture_per_min is None
+        or gesture_valid_ratio is None
+        or gesture_valid_ratio < 0.2 ):
+        gesture_diagnosis = "제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다."
+        gesture_coaching = "상체와 손이 카메라 화면에 잘 보이도록 위치를 조정한 뒤 다시 분석해보세요."
+
+    elif gesture_per_min < 2.0:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 현재 비교적 적게 나타났습니다."
+        gesture_coaching = "핵심 단어나 순서를 설명할 때 손동작을 사용해 중요한 내용을 강조해보세요."
+
+    elif gesture_per_min <= 4.0:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 안정적으로 나타났습니다."
         gesture_coaching = "현재 빈도를 유지하면서 숫자, 방향, 크기 표현에 맞춰 제스처 종류를 분명히 나눠보세요."
+
+    else:
+        gesture_diagnosis = f"제스처가 분당 {gesture_per_min:.2f}회로 비교적 자주 나타났습니다."
+        gesture_coaching = "핵심 단어에만 손동작을 사용하고, 강조가 필요하지 않은 구간에서는 손의 움직임을 줄여보세요."
 
     if blink is None:
         focus_diagnosis = "얼굴이 충분히 검출되지 않아 눈 감음 비율을 분석하기 어렵습니다."
@@ -591,7 +709,11 @@ def _fallback_coaching(metrics: dict) -> str:
         priorities.append("시선 이탈을 줄이기 위해 핵심 문장마다 카메라 응시를 고정하세요.")
     if tilt is not None and tilt > 8:
         priorities.append("어깨 균형을 맞추기 위해 발표 전 자세 기준점을 정하세요.")
-    if gestures < 5 or gestures > 50:
+    if (gesture_per_min is not None
+        and gesture_valid_ratio is not None
+        and gesture_valid_ratio >= 0.2
+        and (gesture_per_min < 2.0 or gesture_per_min > 4.0)
+        ):
         priorities.append("제스처 빈도를 조절해 강조 지점에만 손동작을 사용하세요.")
     if blink is not None and blink > 40:
         priorities.append("눈 감음 비율을 낮추기 위해 문장 시작 시 카메라를 또렷하게 바라보세요.")
@@ -604,9 +726,10 @@ def _fallback_coaching(metrics: dict) -> str:
 
     gaze_summary = f"{ratio:.0f}%" if ratio is not None else "분석 불가"
     pose_summary = f"{tilt:.1f}도" if tilt is not None else "분석 불가"
+    gesture_summary = f"분당 {gesture_per_min:.2f}회" if gesture_per_min is not None and gesture_valid_ratio is not None and gesture_valid_ratio >= 0.2 else "분석 불가"
 
     return "\n\n".join([
-        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gestures}회를 기준으로 다음 연습 포인트를 정리했습니다.",
+        f"## 한줄 요약\n- 시선 {gaze_summary}, 자세 {pose_summary}, 제스처 {gesture_summary}를 기준으로 다음 연습 포인트를 정리했습니다.",
         f"## 시선\n**진단:** {gaze_diagnosis}\n**코칭:** {gaze_coaching}",
         f"## 자세\n**진단:** {pose_diagnosis}\n**코칭:** {pose_coaching}",
         f"## 제스처\n**진단:** {gesture_diagnosis}\n**코칭:** {gesture_coaching}",
@@ -618,30 +741,74 @@ def _fallback_coaching(metrics: dict) -> str:
 def _video_duration_sec(video_path: Path) -> float | None:
     """영상 길이(초). 스키마의 meta.duration_sec으로 나간다."""
     cap = cv2.VideoCapture(str(video_path))
+
     try:
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        if fps and 1 <= fps <= 120 and frame_count and frame_count >= 1:
+            return round(frame_count / fps, 1)
+
+        last_sec = None
+
+        while True:
+            ret, _ = cap.read()
+            if not ret:
+                break
+
+            pos_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
+            if pos_msec >= 0:
+                last_sec = pos_msec / 1000.0
+
+        return round(last_sec, 1) if last_sec is not None else None
+
     finally:
         cap.release()
-
-    if not fps or fps < 1 or fps > 120 or not frame_count or frame_count < 1:
-        return None
-    return round(frame_count / fps, 1)
 
 
 def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str, Any]:
     metrics = analyze_video(video_path, on_step)
 
     # TODO:
-    # 아래 습관 탐지 임계값은 기능 연동 테스트를 위한 임시값이다.
-    # 최종값은 문헌 검토 및 실험 결과를 바탕으로 재설정한다.
+    # 아래 습관 탐지 임계값 중 지속시간·반복 횟수 기준은
+    # 기능 연동 및 실험을 위한 임시값이다.
+    #
+    # [자세]
+    # - 롤모델 발표 영상 3편 분석 결과를 바탕으로
+    #   어깨 기울기 15도를 프로젝트의 경험적 기준으로 설정
+    # - 발표 자세에 대한 보편적 기준이 아닌 프로젝트 내부 기준
+    # - 절대 어깨 기울기는 카메라 기울기와 개인의 기본 자세에 영향을 받을 수 있음
+    # - 추후 기준 자세 대비 상대 각도 방식 적용 검토
+    # - 상대 각도 방식 적용 시 각도·지속시간·반복 횟수 기준 재검증
+    #
+    # [제스처]
+    # - 제스처는 0.5초 간격으로 별도 분석 후 기존 video_timeline 구간에 집계
+    # - active 판정 기준 movement_max >= 0.10은 현재 임시값
+    # - 추가 발표 영상 테스트 후 active 임계값과 비활성 지속시간 기준 재검증 필요
+    #
+    # [음성]
+    # - 군말 반복 횟수 기준은 현재 임시값
+    # - 단순 누적 횟수는 발표 길이와 발생 간격을 반영하지 못하므로
+    #   filler_per_min 또는 일정 시간 내 동일 군말 반복 여부 활용 검토
+    # - 단조로움 2초 지속 기준은 짧은 구간도 습관으로 판정할 수 있어 재검토 필요
+    # - 군말·단조로움 기준은 추가 실제 발표 영상으로 검증 후 확정
+
+    # 자세 기울기 기준
+    posture_tilt_threshold_deg = 15.0
+
+    # 영상 습관 탐지 임시 기준
     temp_persistent_threshold_sec = 6.0
     temp_repeated_threshold_count = 2
     temp_gesture_inactive_threshold_sec = 4.0
 
+    # 음성 습관 탐지 임시 기준
+    temp_filler_repeated_threshold_count = 3
+    temp_monotone_persistent_threshold_sec = 2.0
+
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
+        tilt_threshold_deg=posture_tilt_threshold_deg,
         persistent_threshold_sec=temp_persistent_threshold_sec,
         repeated_threshold_count=temp_repeated_threshold_count,
     )
@@ -652,17 +819,56 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         persistent_threshold_sec=temp_gesture_inactive_threshold_sec,
     )
 
-    # 음성 분석. 실패해도 예외를 올리지 않으므로 영상 분석 결과는 그대로 살아남는다.
+    # 음성 분석. 실패해도 예외를 올리지 않으므로
+    # 영상 분석 결과는 그대로 살아남는다.
     if settings.enable_audio_analysis:
         metrics["audio_metrics"] = analyze_audio(video_path)
-        
+
+        audio_metrics = metrics["audio_metrics"]
+
+        if audio_metrics.get("speech_available"):
+            metrics["filler_habits"] = analyze_filler_habits(
+                filler_words=audio_metrics.get("filler_words", []),
+                repeated_threshold_count=temp_filler_repeated_threshold_count,
+            )
+
+            metrics["monotone_habits"] = analyze_monotone_habits(
+                audio_timeline=audio_metrics.get("timeline", []),
+                monotone_threshold=MONOTONE_THRESHOLD,
+                persistent_threshold_sec=temp_monotone_persistent_threshold_sec,
+            )
+        else:
+            metrics["filler_habits"] = None
+            metrics["monotone_habits"] = None
+
     else:
         metrics["audio_metrics"] = None
+        metrics["filler_habits"] = None
+        metrics["monotone_habits"] = None
 
     metrics["duration_sec"] = _video_duration_sec(video_path)
 
+    # 연속된 제스처 활성 구간 수를 영상 길이로 정규화하여 분당 횟수 계산
+    duration_sec = metrics["duration_sec"]
+    gesture_event_count = metrics.get("gesture_event_count")
+
+    if (
+        duration_sec is not None
+        and duration_sec > 0
+        and gesture_event_count is not None
+    ):
+        metrics["gesture_per_min"] = round(
+            gesture_event_count / (duration_sec / 60.0),
+            2,
+        )
+    else:
+        metrics["gesture_per_min"] = None
+
+
     if on_step:
         on_step(5)
+
     coaching = _gemini_coaching(metrics, api_key)
     metrics["coaching"] = coaching
+
     return metrics
