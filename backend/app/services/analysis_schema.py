@@ -200,6 +200,7 @@ def build_details(
         },          # 영상 지표 집계 담당
         "scores": build_scores_block(metrics, target_time_sec),
         "habits": {
+            "gaze": metrics.get("gaze_habits"),
             "posture": metrics.get("posture_habits"),
             "gesture": metrics.get("gesture_habits"),
             "filler": metrics.get("filler_habits"),

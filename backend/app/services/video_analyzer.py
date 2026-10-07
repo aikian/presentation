@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
 from app.services.audio_analyzer import MONOTONE_THRESHOLD
 from app.services.rolemodel import coaching_lines
+from app.services.habit_detector import analyze_gaze_habits
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
 from app.services.habit_detector import analyze_filler_habits
@@ -928,6 +929,13 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # 음성 습관 탐지 임시 기준
     temp_filler_repeated_threshold_count = 3
     temp_monotone_persistent_threshold_sec = 2.0
+
+    metrics["gaze_habits"] = analyze_gaze_habits(
+        video_timeline=metrics.get("video_timeline", []),
+        frame_interval_sec=settings.frame_interval_sec,
+        persistent_threshold_sec=temp_persistent_threshold_sec,
+        repeated_threshold_count=temp_repeated_threshold_count,
+    )
 
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
