@@ -14,6 +14,7 @@ import BoardList from './pages/BoardList'
 import BoardWrite from './pages/BoardWrite'
 import BoardDetail from './pages/BoardDetail'
 import PredictAttention from './pages/PredictAttention'
+import ResultDetail from './pages/ResultDetail'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -50,6 +51,8 @@ function AppRoutes() {
       <Route path="/" element={<PrivateRoute><Shell><Home /></Shell></PrivateRoute>} />
       <Route path="/analysis" element={<PrivateRoute><Shell><VideoAnalysis /></Shell></PrivateRoute>} />
       <Route path="/history" element={<PrivateRoute><Shell><History /></Shell></PrivateRoute>} />
+      {/* 히스토리에서 지난 분석 결과 다시 열기 */}
+      <Route path="/result/:resultId" element={<PrivateRoute><Shell><ResultDetail /></Shell></PrivateRoute>} />
       {/* 청중 집중도 — 내비게이션(Shell)을 같이 쓴다 */}
       <Route path="/attention/:id" element={<PrivateRoute><Shell><PredictAttention /></Shell></PrivateRoute>} />
 

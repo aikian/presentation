@@ -275,6 +275,13 @@ export default function History() {
                     )}
                   </button>
 
+                  {/* 탭 5개짜리 전체 결과 화면으로 이동 (details 기반) */}
+                  <button
+                    onClick={() => navigate(`/result/${r.id}`)}
+                    className="shrink-0 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg px-3 py-2 transition-colors mr-2"
+                  >
+                    전체 결과
+                  </button>
                   {/* 청중의 집중도 페이지 이동 버튼 */}
                   <button
                     onClick={() => {
