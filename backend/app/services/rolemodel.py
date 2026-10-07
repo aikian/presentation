@@ -35,6 +35,13 @@ COMPARED = [
     ("silence_ratio", "침묵 비율", None),
     ("monotone_ratio", "억양 단조로움", True),  # 억양 변화가 많을수록 좋다
     ("pitch_std", "억양 폭", None),            # 너무 밋밋해도, 너무 출렁여도 듣기 불편하다
+    # 표정 (2026-10-07, 연사 7편 영상을 사용자와 같은 함수로 측정해 추가)
+    # 미소 비율은 연사 간 범위가 0.107~0.685로 넓다. 개인 스타일이라 범위 비교만 한다.
+    ("smile_ratio", "미소 비율", None),
+    # 표정 변화량은 0.071~0.099의 좁은 띠다. 이보다 낮으면 무표정 발표라는 신호가 된다.
+    ("expression_change_std", "표정 변화량", False),  # 많을수록(생동감) 좋다
+    # tension_ratio(긴장)는 연사 7편 전부 0이라 기준 범위가 안 만들어져 뺐다.
+    # 임계값(BROW 0.21)이 너무 낮을 가능성이 있어 사용자 데이터가 쌓이면 재검토한다.
 ]
 
 # 기준선을 만들 만큼 연사가 모였는지 판단하는 최소 개수.
@@ -47,7 +54,8 @@ def build_baseline(references: list[dict[str, Any]]) -> dict[str, Any] | None:
     평균 하나로 줄이지 않고 최소~최대 범위를 쓴다.
     연사마다 스타일이 달라서 평균은 아무도 아닌 값이 되기 쉽다.
     """
-    summaries = [r.get("audio_summary") or {} for r in references]
+    # 음성 지표는 audio_summary에, 표정 지표는 video_summary에 있다. 합쳐서 본다.
+    summaries = [{**(r.get("audio_summary") or {}), **(r.get("video_summary") or {})} for r in references]
     if len(summaries) < MIN_REFERENCES:
         return None
 
@@ -92,7 +100,7 @@ def compare_to_one(user_summary: dict[str, Any] | None,
     if not user_summary:
         return None
 
-    target = reference.get("audio_summary") or {}
+    target = {**(reference.get("audio_summary") or {}), **(reference.get("video_summary") or {})}
     metrics = []
     for key, label, lower_is_better in COMPARED:
         mine = user_summary.get(key)

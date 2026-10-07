@@ -74,8 +74,14 @@ def _run_job(
             )
             if audio_block:
                 refs = get_supabase().table("reference_speakers").select("*").execute().data
+                # 음성 요약에 표정 지표를 합쳐서 비교한다. 연사 쪽도 같은 함수로 잰 값이다.
+                user_summary = {
+                    **audio_block["summary"],
+                    "smile_ratio": result.get("smile_ratio"),
+                    "expression_change_std": result.get("expression_change_std"),
+                }
                 result["rolemodel_comparison"] = compare(
-                    audio_block["summary"], refs or [], rolemodel_id
+                    user_summary, refs or [], rolemodel_id
                 )
         except Exception:
             logger.warning("롤모델 비교를 건너뜁니다", exc_info=True)
