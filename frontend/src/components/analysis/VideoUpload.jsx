@@ -81,13 +81,16 @@ export default function VideoUpload({ onUpload, loading }) {
             className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-purple-400 focus:outline-none disabled:opacity-60"
           >
             <option value="">고르지 않음 — 명연사 전체 범위와 비교</option>
-            {speakers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.affiliation ? ` (${s.affiliation})` : ''}
-                {s.source ? ` · ${s.source}` : ''}
-              </option>
-            ))}
+            {speakers.map((s, i) => {
+              // 출처·소속은 보여주지 않고 이름만. 같은 연사의 강연이 여럿이면 번호로 구분한다.
+              const dup = speakers.filter((x) => x.name === s.name).length > 1
+              const nth = speakers.slice(0, i + 1).filter((x) => x.name === s.name).length
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.name}{dup ? ` ${nth}` : ''}
+                </option>
+              )
+            })}
           </select>
           <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
             연사를 고르면 그 사람의 말속도·군말·침묵·억양과 1:1로 비교합니다. 고르지 않으면

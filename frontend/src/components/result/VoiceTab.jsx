@@ -190,7 +190,7 @@ export default function VoiceTab({ details }) {
             <div className={`h-full ${scoreColor(voice.score)}`} style={{ width: `${voice.score}%` }} />
           </div>
           <p className="mt-3 text-xs leading-relaxed text-slate-500">
-            명연사 6명 7편(세바시)의 실측 범위를 기준으로 삼았습니다. 범위 안이면 만점이고, 벗어난
+            명연사 7편의 실측 범위를 기준으로 삼았습니다. 범위 안이면 만점이고, 벗어난
             거리에 비례해 깎입니다. 지표별 반영 비율은 같은 연사의 다른 강연에서 값이 덜 흔들리는
             지표에 더 무게를 뒀습니다.
             {voice.measured_weight < 1 && (

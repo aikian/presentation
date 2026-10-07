@@ -112,9 +112,7 @@ function OneComparison({ rm }) {
     <div className="space-y-6">
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h3 className="text-lg font-bold text-slate-900">{s.name} 연사와 비교</h3>
-        <p className="mt-1 text-sm text-slate-600">
-          {[s.affiliation, s.source, s.title].filter(Boolean).join(' · ')}
-        </p>
+
         <p className="mt-2 text-xs leading-relaxed text-slate-500">
           따라 하고 싶은 연사로 고르셨기 때문에, 범위 안에 있는지가 아니라 이 연사의 값에
           얼마나 가까운지를 봅니다. 차이가 15% 안이면 비슷하다고 봤습니다.
@@ -173,7 +171,7 @@ export default function RoleModelTab({ details }) {
           기준: {rm.reference_names.join(', ')} 등 발표 {rm.reference_count}편의 실측 범위
         </p>
         <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          세바시 강연에서 연사가 화면에 잡히는 구간만 골라 같은 방식으로 음성을 분석한 값입니다.
+          연사 강연 영상에서 연사가 화면에 잡히는 구간만 골라 같은 방식으로 분석한 값입니다.
           평균 하나로 줄이지 않고 최소~최대 범위를 쓴 이유는, 연사마다 스타일이 달라서 평균이
           아무에게도 해당하지 않는 값이 되기 쉽기 때문입니다.
         </p>
