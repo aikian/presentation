@@ -59,12 +59,12 @@ def _run_job(
                 if audio_metrics and audio_features:
                     attention_result = analyze_audience(audio_metrics, audio_features)
                 else:
-                    print("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
+                    logger.info("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
 
             except Exception:
-                print("음성 기반 집중도 예측 실패")
+                logger.warning("음성 기반 집중도 예측 실패", exc_info=True)
         else:
-            print("enable_audio_analysis가 꺼져 있어 집중도 예측을 건너뜁니다")
+            logger.info("enable_audio_analysis가 꺼져 있어 집중도 예측을 건너뜁니다")
                     
 
         # 롤모델 비교. 연사 데이터를 못 읽어도 분석 결과는 그대로 살린다.
@@ -147,9 +147,9 @@ def _run_job(
                     try:
                         save_attention_prediction(saved_id, attention_result)
                     except Exception:
-                        print("집중도 예측 결과 저장 실패")
+                        logger.warning("집중도 예측 결과 저장 실패", exc_info=True)
                 else:
-                    print("집중도 예측 결과가 없어 저장하지 않습니다")
+                    logger.info("집중도 예측 결과가 없어 저장하지 않습니다")
         except Exception:
             # 분석은 끝났으니 화면에는 결과를 보여준다. 다만 조용히 묻으면
             # "분석은 됐는데 히스토리에 없다"는 증상의 원인을 찾을 수 없다.
