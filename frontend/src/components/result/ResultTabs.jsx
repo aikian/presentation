@@ -5,6 +5,7 @@ import VoiceTab from './VoiceTab'
 import RoleModelTab from './RoleModelTab'
 import PlaceholderTab from './PlaceholderTab'
 import VisualTab from './VisualTab'
+import TimelineTab from './TimelineTab'
 import ValidityBanner from './ValidityBanner'
 
 // 결과 화면 탭 컨테이너.
@@ -53,21 +54,7 @@ export default function ResultTabs({ result, resultId }) {
       case 'rolemodel':
         return <RoleModelTab details={details} />
       case 'timeline':
-        return (
-          <PlaceholderTab
-            title="타임라인·습관"
-            owner="김민서"
-            available={[
-              details?.video_timeline?.length
-                ? `자세·제스처 시간축 ${details.video_timeline.length}구간`
-                : null,
-              details?.habits?.posture ? '자세 습관 탐지 결과' : null,
-              details?.habits?.gesture ? '제스처 습관 탐지 결과' : null,
-              details?.habits?.filler ? '군말 습관 탐지 결과' : null,
-              details?.habits?.monotone ? '단조로움 습관 탐지 결과' : null,
-            ].filter(Boolean)}
-          />
-        )
+        return <TimelineTab details={details} />
       case 'visual':
         return <VisualTab details={details} />
       default:
