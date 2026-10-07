@@ -59,20 +59,29 @@ _PANEL = colors.HexColor("#f8fafc")
 _INDIGO_SOFT = colors.HexColor("#eef2ff")
 
 
-def _make_chart(gaze: float, tilt: float, gestures: int) -> bytes:
+def _make_chart(gaze, tilt, gestures) -> bytes:
+    """지표 가로 막대. None(측정 실패)은 0으로 그리지 않고 뺀다."""
     labels = (
         ["시선 이탈률 (%)", "어깨 기울기 (도)", "제스처 횟수 (회)"]
         if _KR == "KR"
         else ["Gaze away (%)", "Shoulder tilt (deg)", "Gestures"]
     )
-    values = [round(gaze * 100, 1), round(tilt, 1), gestures]
-    bar_colors = [
-        "#ef4444" if gaze > 0.3 else "#f59e0b" if gaze > 0.15 else "#22c55e",
-        "#ef4444" if tilt > 15 else "#f59e0b" if tilt > 8 else "#22c55e",
-        "#f59e0b" if gestures < 5 or gestures > 50 else "#22c55e",
-    ]
+    triples = []
+    if gaze is not None:
+        triples.append((labels[0], round(gaze * 100, 1),
+                        "#ef4444" if gaze > 0.3 else "#f59e0b" if gaze > 0.15 else "#22c55e"))
+    if tilt is not None:
+        triples.append((labels[1], round(tilt, 1),
+                        "#ef4444" if tilt > 15 else "#f59e0b" if tilt > 8 else "#22c55e"))
+    if gestures is not None:
+        triples.append((labels[2], gestures,
+                        "#f59e0b" if gestures < 5 or gestures > 50 else "#22c55e"))
+    if not triples:
+        triples = [("측정 없음" if _KR == "KR" else "N/A", 0, "#94a3b8")]
+    labels = [t[0] for t in triples]
+    values = [t[1] for t in triples]
     fig, ax = plt.subplots(figsize=(5.5, 2.6))
-    bars = ax.barh(labels, values, color=bar_colors, height=0.45)
+    bars = ax.barh(labels, values, color=[t[2] for t in triples], height=0.45)
     ax.bar_label(bars, fmt="%.1f", padding=4, fontsize=9)
     ax.set_xlim(0, max(values) * 1.35 + 1)
     ax.spines["top"].set_visible(False)
@@ -87,9 +96,16 @@ def _make_chart(gaze: float, tilt: float, gestures: int) -> bytes:
 
 
 def _make_score_chart(scores: dict) -> bytes:
-    labels = ["시선", "자세", "제스처", "시간"] if _KR == "KR" else ["Gaze", "Pose", "Gesture", "Time"]
-    keys = ["score_gaze", "score_pose", "score_gesture", "score_time"]
-    values = [scores.get(k, 0) for k in keys]
+    # 측정하지 못한 항목(None)은 0점으로 그리지 않고 차트에서 뺀다.
+    # 0은 "최악"이라는 뜻이라, 목표 시간을 안 정했을 뿐인데 시간 0점으로 보이면 오해를 부른다.
+    all_labels = (["시선", "자세", "제스처", "음성", "시간"] if _KR == "KR"
+                  else ["Gaze", "Pose", "Gesture", "Voice", "Time"])
+    all_keys = ["score_gaze", "score_pose", "score_gesture", "score_voice", "score_time"]
+    pairs = [(l, scores.get(k)) for l, k in zip(all_labels, all_keys) if scores.get(k) is not None]
+    if not pairs:
+        pairs = [("측정 없음" if _KR == "KR" else "N/A", 0)]
+    labels = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
     bar_colors = ["#22c55e" if v >= 70 else "#f59e0b" if v >= 50 else "#ef4444" for v in values]
 
     fig, ax = plt.subplots(figsize=(5.5, 2.2))
@@ -362,15 +378,27 @@ def generate_report(record: dict) -> bytes:
     score_total = record.get("score_total")
     has_scores = score_total is not None
 
-    gaze_status = "좋음" if gaze <= 0.15 else "주의" if gaze <= 0.3 else "개선 필요"
-    tilt_status = "좋음" if tilt <= 8 else "주의" if tilt <= 15 else "개선 필요"
-    gesture_status = "적절함" if 5 <= gestures <= 50 else "주의"
+    # 얼굴 미검출 등으로 지표가 None일 수 있다. 0으로 표기하면 "완벽/최악"으로 읽히므로
+    # 측정하지 못했다는 사실을 그대로 적는다.
+    if gaze is None:
+        gaze_line = "• 시선 이탈률: 측정 안 됨 (얼굴 미검출)"
+    else:
+        gaze_status = "좋음" if gaze <= 0.15 else "주의" if gaze <= 0.3 else "개선 필요"
+        gaze_line = f"• 시선 이탈률: {gaze * 100:.0f}%  ({gaze_status})"
 
-    metrics_text = (
-        f"• 시선 이탈률: {gaze * 100:.0f}%  ({gaze_status})<br/>"
-        f"• 어깨 기울기: {tilt:.1f}도  ({tilt_status})<br/>"
-        f"• 제스처 횟수: {gestures}회  ({gesture_status})"
-    )
+    if tilt is None:
+        tilt_line = "• 어깨 기울기: 측정 안 됨"
+    else:
+        tilt_status = "좋음" if tilt <= 8 else "주의" if tilt <= 15 else "개선 필요"
+        tilt_line = f"• 어깨 기울기: {tilt:.1f}도  ({tilt_status})"
+
+    if gestures is None:
+        gesture_line = "• 제스처 횟수: 측정 안 됨"
+    else:
+        gesture_status = "적절함" if 5 <= gestures <= 50 else "주의"
+        gesture_line = f"• 제스처 횟수: {gestures}회  ({gesture_status})"
+
+    metrics_text = gaze_line + "<br/>" + tilt_line + "<br/>" + gesture_line
 
     elapsed = record.get("elapsed_sec")
     goal = record.get("goal_sec")
@@ -404,9 +432,19 @@ def generate_report(record: dict) -> bytes:
     # ── Page 2: 지표 + 차트 ──────────────────────────────────────────────────
     story.append(Paragraph("분석 지표", section_s))
     metric_cards = Table([[
-        _metric_card("시선 이탈률", f"{gaze * 100:.0f}%", "good" if gaze <= 0.15 else "warn" if gaze <= 0.3 else "bad", metric_value_s, metric_label_s),
-        _metric_card("어깨 기울기", f"{tilt:.1f}도", "good" if tilt <= 8 else "warn" if tilt <= 15 else "bad", metric_value_s, metric_label_s),
-        _metric_card("제스처 횟수", f"{gestures}회", "good" if 5 <= gestures <= 50 else "warn", metric_value_s, metric_label_s),
+        # 측정 실패(None)는 0%가 아니라 "측정 안 됨"으로 적는다
+        _metric_card("시선 이탈률",
+                     "측정 안 됨" if gaze is None else f"{gaze * 100:.0f}%",
+                     "warn" if gaze is None else ("good" if gaze <= 0.15 else "warn" if gaze <= 0.3 else "bad"),
+                     metric_value_s, metric_label_s),
+        _metric_card("어깨 기울기",
+                     "측정 안 됨" if tilt is None else f"{tilt:.1f}도",
+                     "warn" if tilt is None else ("good" if tilt <= 8 else "warn" if tilt <= 15 else "bad"),
+                     metric_value_s, metric_label_s),
+        _metric_card("제스처 횟수",
+                     "측정 안 됨" if gestures is None else f"{gestures}회",
+                     "warn" if gestures is None else ("good" if 5 <= gestures <= 50 else "warn"),
+                     metric_value_s, metric_label_s),
     ]], colWidths=[doc.width / 3] * 3)
     metric_cards.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -426,22 +464,29 @@ def generate_report(record: dict) -> bytes:
         story.append(Paragraph("항목별 점수", section_s))
 
         scores_dict = {
-            "score_gaze": record.get("score_gaze", 0),
-            "score_pose": record.get("score_pose", 0),
-            "score_gesture": record.get("score_gesture", 0),
-            "score_time": record.get("score_time", 0),
+            "score_gaze": record.get("score_gaze"),
+            "score_pose": record.get("score_pose"),
+            "score_gesture": record.get("score_gesture"),
+            "score_voice": record.get("score_voice"),
+            "score_time": record.get("score_time"),
         }
         score_chart_png = _make_score_chart(scores_dict)
         score_img = RLImage(io.BytesIO(score_chart_png), width=12 * cm, height=5.2 * cm)
         story.append(score_img)
 
+        def _fmt_score(v):
+            return "측정 안 됨" if v is None else f"{v}점"
+
+        # 가중치는 AHP v2 (score_calculator.AHP_WEIGHTS와 같은 값).
+        # 시간 점수는 목표 시간을 정한 발표에만 있고 종합점수에 들어가지 않는다.
         tbl_data = [
             ["항목", "점수", "가중치"],
-            ["시선", f"{scores_dict['score_gaze']}점", "30%"],
-            ["자세", f"{scores_dict['score_pose']}점", "25%"],
-            ["제스처", f"{scores_dict['score_gesture']}점", "15%"],
-            ["시간 관리", f"{scores_dict['score_time']}점", "30%"],
-            ["종합", f"{score_total}점", "100%"],
+            ["시선", _fmt_score(scores_dict["score_gaze"]), "35.1%"],
+            ["자세", _fmt_score(scores_dict["score_pose"]), "18.9%"],
+            ["제스처", _fmt_score(scores_dict["score_gesture"]), "10.9%"],
+            ["음성", _fmt_score(scores_dict["score_voice"]), "35.1%"],
+            ["시간 관리", _fmt_score(scores_dict["score_time"]), "별도"],
+            ["종합", _fmt_score(score_total), "100%"],
         ]
         tbl = Table(tbl_data, colWidths=[5 * cm, 3 * cm, 3 * cm])
         tbl.setStyle(TableStyle([
