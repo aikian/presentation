@@ -431,8 +431,8 @@ def analyze_audio_features(video_path: Path) -> dict[str, Any]:
             "silences": silences
         }
     
-    except Exception as exc:
-        logger.warning("오디오 feature 분석 실패: %s", exc)
+    except Exception:
+        logger.warning("오디오 feature 분석 실패", exc_info=True)
         return {
             "timeline": [],
             "silences": []
