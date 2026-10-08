@@ -153,7 +153,7 @@ export default function PredictAttention() {
 
                             <div className="border-t border-gray-100 px-5 py-4">
                                 <p className="mt-2 text-xs leading-5 text-indigo-800">
-                                    업로드 CSV 열 순서: 응답자 번호, 문항 1~6번 점수, 자유 의견 (총 7열)
+                                    업로드 CSV 열 순서: 응답자 번호, 문항 1~5번 점수, 자유 의견 (총 7열)
                                 </p>
                                 
                                 <ol className="list-decimal list-inside space-y-3 text-left text-sm leading-6 text-gray-700">
@@ -185,7 +185,7 @@ export default function PredictAttention() {
                                 <div className="mt-5 rounded-lg bg-indigo-50 p-4">
                                     <p className="text-xs leading-5 text-indigo-800">
                                         객관식 문항은 1~5점 척도로 구성하는 것을 권장합니다.
-                                        단, 집중도 문항(6번)은 0~100점으로 입력해주세요.
+                                        단, 집중도 문항(5번)은 0~100점으로 입력해주세요.
                                         자유 의견 문항은 서술형으로 설정해주세요.
                                     </p>
                                 </div>
