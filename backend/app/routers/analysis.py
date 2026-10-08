@@ -58,6 +58,13 @@ def _run_job(
                 
                 if audio_metrics and audio_features:
                     attention_result = analyze_audience(audio_metrics, audio_features)
+                    if attention_result.get("status") != "SUCCESS":
+                        logger.warning(
+                            "집중도 예측 실패 (code=%s): %s",
+                            attention_result.get("error_code"),
+                            attention_result.get("message")
+                        )
+                        attention_result = None
                 else:
                     logger.info("집중도 예측 생략: audio_metrics=%s, audio_features=%s",bool(audio_metrics), bool(audio_features))
 
