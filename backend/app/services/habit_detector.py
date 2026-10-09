@@ -1,3 +1,194 @@
+def get_analysis_status(valid_count: int, total_count: int) -> dict:
+    """
+    분석 가능한 데이터의 개수와 비율을 반환한다.
+
+    현재는 분석 가능한 데이터가 전혀 없는 경우만 구분한다.
+    데이터 부족(insufficient) 기준은 추후 검증 후 적용한다.
+
+    [현재 상태]
+    - available: 유효 데이터가 1개 이상 존재함
+    - unavailable: 유효 데이터가 전혀 없음
+    - available은 데이터가 충분하다는 의미가 아님
+
+    [추후 개선]
+    - 실제 발표 영상 테스트를 통해 최소 유효 데이터 비율 검증 필요
+    - 검증 후 데이터 부족 상태(insufficient) 판정 추가 예정
+    """
+    valid_ratio = (
+        round(valid_count / total_count, 3)
+        if total_count > 0
+        else 0.0
+    )
+
+    status = "unavailable" if valid_count == 0 else "available"
+
+    return {
+        "analysis_status": status,
+        "valid_ratio": valid_ratio,
+    }
+
+
+# 시선
+
+GAZE_DIRECTION_MAP = {
+    (0, 0): "left_up",
+    (0, 1): "up",
+    (0, 2): "right_up",
+    (1, 0): "left",
+    (1, 1): "center",
+    (1, 2): "right",
+    (2, 0): "left_down",
+    (2, 1): "down",
+    (2, 2): "right_down",
+}
+
+
+def extract_gaze_points(video_timeline: list[dict]) -> list[dict]:
+    """
+    video_timeline의 gaze_cell을 시선 방향 정보로 변환한다.
+
+    gaze_cell이 없거나 시선 분석이 불가능한 시점은 제외한다.
+    """
+    gaze_points = []
+
+    for item in video_timeline:
+        expression = item.get("expression")
+
+        if expression is None:
+            continue
+
+        gaze_cell = expression.get("gaze_cell")
+
+        if gaze_cell is None or len(gaze_cell) != 2:
+            continue
+
+        direction = GAZE_DIRECTION_MAP.get(tuple(gaze_cell))
+
+        if direction is None:
+            continue
+
+        gaze_points.append({
+            "sec": item["sec"],
+            "direction": direction,
+            "gaze_cell": gaze_cell,
+        })
+
+    return gaze_points
+
+
+def group_gaze_segments(gaze_points: list[dict], frame_interval_sec: float) -> list[dict]:
+    """
+    연속해서 같은 방향을 바라본 시점을 하나의 시선 구간으로 묶는다.
+
+    같은 방향이 frame_interval_sec 간격으로 이어지는 경우
+    동일한 구간으로 처리한다.
+    """
+    if not gaze_points:
+        return []
+
+    segments = []
+
+    current_segment = {
+        "start_sec": gaze_points[0]["sec"],
+        "end_sec": gaze_points[0]["sec"],
+        "direction": gaze_points[0]["direction"],
+    }
+
+    for point in gaze_points[1:]:
+        time_gap = point["sec"] - current_segment["end_sec"]
+        same_direction = point["direction"] == current_segment["direction"]
+
+        if time_gap <= frame_interval_sec and same_direction:
+            current_segment["end_sec"] = point["sec"]
+
+        else:
+            current_segment["duration_sec"] = round(current_segment["end_sec"] - current_segment["start_sec"] + frame_interval_sec, 1)
+            segments.append(current_segment)
+
+            current_segment = {
+                "start_sec": point["sec"],
+                "end_sec": point["sec"],
+                "direction": point["direction"],
+            }
+
+    current_segment["duration_sec"] = round(current_segment["end_sec"] - current_segment["start_sec"] + frame_interval_sec, 1)
+    segments.append(current_segment)
+
+    return segments
+
+
+def detect_gaze_habits(segments: list[dict], persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+    """
+    시선 구간을 바탕으로 지속형/반복형 시선 습관을 탐지한다.
+
+    center가 아닌 특정 방향을 일정 시간 이상 계속 바라보면 지속형,
+    같은 방향을 일정 횟수 이상 반복해서 바라보면 반복형으로 판단한다.
+
+    임계값은 현재 함수 내부에서 고정하지 않고 외부에서 전달받는다.
+    """
+
+    persistent = []
+    repeated = []
+
+    # 1. 지속형 탐지
+    for segment in segments:
+        if segment["direction"] != "center" and segment["duration_sec"] >= persistent_threshold_sec:
+            persistent.append(segment)
+
+    # 2. 방향별 반복 횟수 계산
+    direction_counts = {}
+
+    for segment in segments:
+        direction = segment.get("direction")
+
+        if direction and direction != "center":
+            direction_counts[direction] = direction_counts.get(direction, 0) + 1
+
+    # 3. 반복형 탐지
+    for direction, count in direction_counts.items():
+        if count >= repeated_threshold_count:
+            repeated.append({
+                "direction": direction,
+                "count": count,
+            })
+
+    return {
+        "persistent": persistent,
+        "repeated": repeated,
+    }
+
+
+def analyze_gaze_habits(video_timeline: list[dict], frame_interval_sec: float, persistent_threshold_sec: float, repeated_threshold_count: int) -> dict:
+    """
+    video_timeline을 기반으로 시선 습관 탐지 전체 과정을 수행한다.
+    """
+
+    gaze_points = extract_gaze_points(video_timeline)
+
+    segments = group_gaze_segments(
+        gaze_points,
+        frame_interval_sec,
+    )
+
+    habits = detect_gaze_habits(
+        segments,
+        persistent_threshold_sec,
+        repeated_threshold_count,
+    )
+
+    status_info = get_analysis_status(
+        valid_count=len(gaze_points),
+        total_count=len(video_timeline),
+    )
+
+    return {
+        "gaze_points": gaze_points,
+        "segments": segments,
+        "habits": habits,
+        **status_info,
+    }
+
+
 # 자세
 
 def extract_problem_posture_points(video_timeline: list[dict], tilt_threshold_deg: float) -> list[dict]:
@@ -149,10 +340,23 @@ def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float
         repeated_threshold_count,
     )
 
+    valid_count = sum(
+        1
+        for item in video_timeline
+        if item.get("posture") is not None
+        and item["posture"].get("shoulder_tilt_deg") is not None
+    )
+
+    status_info = get_analysis_status(
+        valid_count=valid_count,
+        total_count=len(video_timeline),
+    )
+
     return {
         "problem_points": problem_points,
         "segments": segments,
         "habits": habits,
+        **status_info,
     }
 
 # 제스처
@@ -261,10 +465,23 @@ def analyze_gesture_habits(video_timeline: list[dict],frame_interval_sec: float,
         persistent_threshold_sec,
     )
 
+    valid_count = sum(
+        1
+        for item in video_timeline
+        if item.get("gesture") is not None
+        and item["gesture"].get("active") is not None
+    )
+
+    status_info = get_analysis_status(
+        valid_count=valid_count,
+        total_count=len(video_timeline),
+    )
+
     return {
         "inactive_points": inactive_points,
         "segments": segments,
         "persistent": persistent,
+        **status_info,
     }
 
 
@@ -438,6 +655,21 @@ def analyze_monotone_habits(audio_timeline: list[dict], monotone_threshold: floa
     """
     audio_timeline을 기반으로 단조로움 습관 탐지 전체 과정을 수행한다.
     """
+    # 연속된 1초 구간에서 두 피치값이 모두 유효한 경우만 계산
+    total_count = max(len(audio_timeline) - 1, 0)
+
+    valid_count = sum(
+        1
+        for prev, cur in zip(audio_timeline, audio_timeline[1:])
+        if cur["sec"] - prev["sec"] == 1.0
+        and prev.get("pitch_hz") is not None
+        and cur.get("pitch_hz") is not None
+        and prev["pitch_hz"] > 0
+        and cur["pitch_hz"] > 0
+    )
+
+    status_info = get_analysis_status(valid_count, total_count)
+
     monotone_points = extract_monotone_points(
         audio_timeline,
         monotone_threshold,
@@ -457,5 +689,6 @@ def analyze_monotone_habits(audio_timeline: list[dict], monotone_threshold: floa
         "monotone_points": monotone_points,
         "segments": segments,
         "persistent": persistent,
+        **status_info,
     }
 
