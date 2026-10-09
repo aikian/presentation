@@ -453,15 +453,25 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     )
 
     # 연속된 active=True 구간을 하나의 제스처 이벤트로 계산
+    # None(측정 불가) 구간은 연속성을 끊되, 이벤트로 계산하지 않음
     gesture_event_count = 0
     in_gesture = False
 
-    for state in gesture_states:
-        if state is True and not in_gesture:
-            gesture_event_count += 1
+    for item in video_timeline:
+        gesture = item.get("gesture")
+        state = gesture.get("active") if gesture is not None else None
+
+        if state is True:
+            if not in_gesture:
+                gesture_event_count += 1
             in_gesture = True
-        elif state is False:
+        else:
+            # False 또는 None이면 연속 구간 종료
             in_gesture = False
+
+    # 제스처를 판정할 수 있는 구간이 전혀 없으면 분석 불가 처리
+    if not gesture_states:
+        gesture_event_count = None
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
