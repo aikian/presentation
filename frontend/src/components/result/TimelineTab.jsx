@@ -75,11 +75,18 @@ function PostureChart({ timeline, postureHabits }) {
   )
 }
 
-function HabitCard({ title, items, emptyText }) {
+function HabitCard({ title, items, emptyText, analysisStatus }) {
+  const unavailable = analysisStatus === 'unavailable'
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h4 className="font-semibold text-slate-900">{title}</h4>
-      {items.length === 0 ? (
+
+      {unavailable ? (
+        <p className="mt-1.5 text-sm text-slate-500">
+          분석 가능한 데이터가 없습니다
+        </p>
+      ) : items.length === 0 ? (
         <p className="mt-1.5 text-sm text-emerald-700">{emptyText}</p>
       ) : (
         <ul className="mt-1.5 space-y-1">
@@ -161,11 +168,11 @@ export default function TimelineTab({ details }) {
           영상 검증 후 조정됩니다.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <HabitCard title="시선" items={gazeItems} emptyText={gaze?.gaze_points?.length ? '지속되거나 반복되는 시선 이탈이 없습니다' : '시선 분석 데이터가 없습니다'} />
-          <HabitCard title="자세" items={postureItems} emptyText="기울어짐 습관이 없습니다" />
-          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" />
-          <HabitCard title="군말" items={fillerItems} emptyText="반복되는 군말이 없습니다" />
-          <HabitCard title="억양" items={monotoneItems} emptyText="단조롭게 이어진 구간이 없습니다" />
+          <HabitCard title="시선" items={gazeItems} emptyText="지속되거나 반복되는 시선 이탈이 없습니다" analysisStatus={gaze?.analysis_status ?? (gaze?.gaze_points?.length ? 'available' : 'unavailable')} />
+          <HabitCard title="자세" items={postureItems} emptyText="기울어짐 습관이 없습니다" analysisStatus={posture?.analysis_status ?? (posture ? 'available' : 'unavailable')} />
+          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" analysisStatus={gesture?.analysis_status ?? (gesture ? 'available' : 'unavailable')} />
+          <HabitCard title="군말" items={fillerItems} emptyText="반복되는 군말이 없습니다" analysisStatus={filler ? 'available' : 'unavailable'} />
+          <HabitCard title="억양" items={monotoneItems} emptyText="단조롭게 이어진 구간이 없습니다" analysisStatus={monotone?.analysis_status ?? (monotone ? 'available' : 'unavailable')} />
         </div>
       </section>
     </div>

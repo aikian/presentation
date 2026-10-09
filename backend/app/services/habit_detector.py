@@ -1,3 +1,33 @@
+def get_analysis_status(valid_count: int, total_count: int) -> dict:
+    """
+    분석 가능한 데이터의 개수와 비율을 반환한다.
+
+    현재는 분석 가능한 데이터가 전혀 없는 경우만 구분한다.
+    데이터 부족(insufficient) 기준은 추후 검증 후 적용한다.
+
+    [현재 상태]
+    - available: 유효 데이터가 1개 이상 존재함
+    - unavailable: 유효 데이터가 전혀 없음
+    - available은 데이터가 충분하다는 의미가 아님
+
+    [추후 개선]
+    - 실제 발표 영상 테스트를 통해 최소 유효 데이터 비율 검증 필요
+    - 검증 후 데이터 부족 상태(insufficient) 판정 추가 예정
+    """
+    valid_ratio = (
+        round(valid_count / total_count, 3)
+        if total_count > 0
+        else 0.0
+    )
+
+    status = "unavailable" if valid_count == 0 else "available"
+
+    return {
+        "analysis_status": status,
+        "valid_ratio": valid_ratio,
+    }
+
+
 # 시선
 
 GAZE_DIRECTION_MAP = {
@@ -146,10 +176,16 @@ def analyze_gaze_habits(video_timeline: list[dict], frame_interval_sec: float, p
         repeated_threshold_count,
     )
 
+    status_info = get_analysis_status(
+        valid_count=len(gaze_points),
+        total_count=len(video_timeline),
+    )
+
     return {
         "gaze_points": gaze_points,
         "segments": segments,
         "habits": habits,
+        **status_info,
     }
 
 
@@ -304,10 +340,23 @@ def analyze_posture_habits(video_timeline: list[dict], frame_interval_sec: float
         repeated_threshold_count,
     )
 
+    valid_count = sum(
+        1
+        for item in video_timeline
+        if item.get("posture") is not None
+        and item["posture"].get("shoulder_tilt_deg") is not None
+    )
+
+    status_info = get_analysis_status(
+        valid_count=valid_count,
+        total_count=len(video_timeline),
+    )
+
     return {
         "problem_points": problem_points,
         "segments": segments,
         "habits": habits,
+        **status_info,
     }
 
 # 제스처
@@ -416,10 +465,23 @@ def analyze_gesture_habits(video_timeline: list[dict],frame_interval_sec: float,
         persistent_threshold_sec,
     )
 
+    valid_count = sum(
+        1
+        for item in video_timeline
+        if item.get("gesture") is not None
+        and item["gesture"].get("active") is not None
+    )
+
+    status_info = get_analysis_status(
+        valid_count=valid_count,
+        total_count=len(video_timeline),
+    )
+
     return {
         "inactive_points": inactive_points,
         "segments": segments,
         "persistent": persistent,
+        **status_info,
     }
 
 
@@ -593,6 +655,21 @@ def analyze_monotone_habits(audio_timeline: list[dict], monotone_threshold: floa
     """
     audio_timeline을 기반으로 단조로움 습관 탐지 전체 과정을 수행한다.
     """
+    # 연속된 1초 구간에서 두 피치값이 모두 유효한 경우만 계산
+    total_count = max(len(audio_timeline) - 1, 0)
+
+    valid_count = sum(
+        1
+        for prev, cur in zip(audio_timeline, audio_timeline[1:])
+        if cur["sec"] - prev["sec"] == 1.0
+        and prev.get("pitch_hz") is not None
+        and cur.get("pitch_hz") is not None
+        and prev["pitch_hz"] > 0
+        and cur["pitch_hz"] > 0
+    )
+
+    status_info = get_analysis_status(valid_count, total_count)
+
     monotone_points = extract_monotone_points(
         audio_timeline,
         monotone_threshold,
@@ -612,5 +689,6 @@ def analyze_monotone_habits(audio_timeline: list[dict], monotone_threshold: floa
         "monotone_points": monotone_points,
         "segments": segments,
         "persistent": persistent,
+        **status_info,
     }
 
