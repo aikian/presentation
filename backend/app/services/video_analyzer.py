@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.services.audio_analyzer import analyze_audio
 from app.services.audio_analyzer import MONOTONE_THRESHOLD
 from app.services.rolemodel import coaching_lines
+from app.services.habit_detector import analyze_gaze_habits
 from app.services.habit_detector import analyze_posture_habits
 from app.services.habit_detector import analyze_gesture_habits
 from app.services.habit_detector import analyze_filler_habits
@@ -452,15 +453,25 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     )
 
     # 연속된 active=True 구간을 하나의 제스처 이벤트로 계산
+    # None(측정 불가) 구간은 연속성을 끊되, 이벤트로 계산하지 않음
     gesture_event_count = 0
     in_gesture = False
 
-    for state in gesture_states:
-        if state is True and not in_gesture:
-            gesture_event_count += 1
+    for item in video_timeline:
+        gesture = item.get("gesture")
+        state = gesture.get("active") if gesture is not None else None
+
+        if state is True:
+            if not in_gesture:
+                gesture_event_count += 1
             in_gesture = True
-        elif state is False:
+        else:
+            # False 또는 None이면 연속 구간 종료
             in_gesture = False
+
+    # 제스처를 판정할 수 있는 구간이 전혀 없으면 분석 불가 처리
+    if not gesture_states:
+        gesture_event_count = None
 
     problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
     gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
@@ -928,6 +939,13 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     # 음성 습관 탐지 임시 기준
     temp_filler_repeated_threshold_count = 3
     temp_monotone_persistent_threshold_sec = 2.0
+
+    metrics["gaze_habits"] = analyze_gaze_habits(
+        video_timeline=metrics.get("video_timeline", []),
+        frame_interval_sec=settings.frame_interval_sec,
+        persistent_threshold_sec=temp_persistent_threshold_sec,
+        repeated_threshold_count=temp_repeated_threshold_count,
+    )
 
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),

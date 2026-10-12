@@ -14,6 +14,17 @@ const HABIT_LABEL = {
   repeated: '반복됨',
 }
 
+const GAZE_LABEL = {
+  left: '왼쪽',
+  right: '오른쪽',
+  up: '위쪽',
+  down: '아래쪽',
+  left_up: '왼쪽 위',
+  right_up: '오른쪽 위',
+  left_down: '왼쪽 아래',
+  right_down: '오른쪽 아래',
+}
+
 function fmtSec(s) {
   if (s == null) return '?'
   const m = Math.floor(s / 60)
@@ -64,11 +75,18 @@ function PostureChart({ timeline, postureHabits }) {
   )
 }
 
-function HabitCard({ title, items, emptyText }) {
+function HabitCard({ title, items, emptyText, analysisStatus }) {
+  const unavailable = analysisStatus === 'unavailable'
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h4 className="font-semibold text-slate-900">{title}</h4>
-      {items.length === 0 ? (
+
+      {unavailable ? (
+        <p className="mt-1.5 text-sm text-slate-500">
+          분석 가능한 데이터가 없습니다
+        </p>
+      ) : items.length === 0 ? (
         <p className="mt-1.5 text-sm text-emerald-700">{emptyText}</p>
       ) : (
         <ul className="mt-1.5 space-y-1">
@@ -85,12 +103,23 @@ export default function TimelineTab({ details }) {
   const timeline = details?.video_timeline ?? null
   const habits = details?.habits ?? {}
 
+  const gaze = habits.gaze ?? null
   const posture = habits.posture ?? null
   const gesture = habits.gesture ?? null
   const filler = habits.filler ?? null
   const monotone = habits.monotone ?? null
 
   // 습관 탐지 결과를 사람이 읽는 문장으로
+  const gazeItems = []
+
+  for (const h of gaze?.habits?.persistent ?? []) {
+    gazeItems.push(`${fmtSec(h.start_sec)}부터 ${fmtSec(h.duration_sec)} 동안 ${GAZE_LABEL[h.direction] ?? h.direction} 방향을 지속적으로 바라봄`)
+  }
+
+  for (const h of gaze?.habits?.repeated ?? []) {
+    gazeItems.push(`${GAZE_LABEL[h.direction] ?? h.direction} 방향으로 시선을 ${h.count ?? '여러'}회 반복적으로 돌림`)
+  }
+  
   const postureItems = []
   for (const h of posture?.habits?.persistent ?? []) {
     postureItems.push(`${fmtSec(h.start_sec)}부터 ${fmtSec(h.duration_sec)} 동안 ${h.direction === 'left' ? '왼쪽' : '오른쪽'}으로 기울어짐`)
@@ -111,7 +140,7 @@ export default function TimelineTab({ details }) {
     (m) => `${fmtSec(m.start_sec)}부터 ${fmtSec(m.duration_sec)} 동안 억양이 거의 변하지 않음`,
   )
 
-  const nothingMeasured = !timeline?.length && !posture && !gesture && !filler && !monotone
+  const nothingMeasured = !timeline?.length && !gaze && !posture && !gesture && !filler && !monotone
 
   if (nothingMeasured) {
     return (
@@ -139,10 +168,11 @@ export default function TimelineTab({ details }) {
           영상 검증 후 조정됩니다.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <HabitCard title="자세" items={postureItems} emptyText="기울어짐 습관이 없습니다" />
-          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" />
-          <HabitCard title="군말" items={fillerItems} emptyText="반복되는 군말이 없습니다" />
-          <HabitCard title="억양" items={monotoneItems} emptyText="단조롭게 이어진 구간이 없습니다" />
+          <HabitCard title="시선" items={gazeItems} emptyText="지속되거나 반복되는 시선 이탈이 없습니다" analysisStatus={gaze?.analysis_status ?? (gaze?.gaze_points?.length ? 'available' : 'unavailable')} />
+          <HabitCard title="자세" items={postureItems} emptyText="기울어짐 습관이 없습니다" analysisStatus={posture?.analysis_status ?? (posture ? 'available' : 'unavailable')} />
+          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" analysisStatus={gesture?.analysis_status ?? (gesture ? 'available' : 'unavailable')} />
+          <HabitCard title="군말" items={fillerItems} emptyText="반복되는 군말이 없습니다" analysisStatus={filler ? 'available' : 'unavailable'} />
+          <HabitCard title="억양" items={monotoneItems} emptyText="단조롭게 이어진 구간이 없습니다" analysisStatus={monotone?.analysis_status ?? (monotone ? 'available' : 'unavailable')} />
         </div>
       </section>
     </div>
