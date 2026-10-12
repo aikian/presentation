@@ -178,8 +178,14 @@ export async function uploadSurveyCsv(file, resultId) {
 }
 
 export async function fetchAttentionResult(resultId) {
-  const res = await api.get(`/audience/${resultId}/attention`)
-  return res.data
+  try {
+    const { data } = await api.get(`/audience/${resultId}/attention`)
+    return data
+  } catch (error) {
+    // 저장된 추측값이 없으면 에러가 아니라 null를 반환
+    if (error.response?.status === 404) return null
+    throw error
+  }
 }
 
 export async function fetchSurveyResult(resultId) {
