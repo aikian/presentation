@@ -5,9 +5,7 @@ import AnalysisProgress from '../components/analysis/AnalysisProgress'
 import ResultTabs from '../components/result/ResultTabs'
 import { useToast } from '../components/common/Toast'
 import { uploadVideo, pollAnalysis } from '../api/client'
-
 const POLL_INTERVAL = 2000
-
 export default function VideoAnalysis() {
   const location = useLocation()
   const toast = useToast()
@@ -18,7 +16,6 @@ export default function VideoAnalysis() {
   const [stepHint, setStepHint] = useState(0)
   const jobIdRef = useRef(null)
   const timerRef = useRef(null)
-
   const startPolling = useCallback((jobId) => {
     timerRef.current = setInterval(async () => {
       try {
@@ -41,7 +38,6 @@ export default function VideoAnalysis() {
       }
     }, POLL_INTERVAL)
   }, [])
-
   // 발표 모드에서 넘어온 job_id 자동 처리
   useEffect(() => {
     const jobId = location.state?.jobId
@@ -54,7 +50,6 @@ export default function VideoAnalysis() {
     }
     return () => clearInterval(timerRef.current)
   }, [location.state?.jobId, startPolling])
-
   async function handleUpload(file, options = {}) {
     setStage('progress')
     setStepHint(0)
@@ -70,23 +65,22 @@ export default function VideoAnalysis() {
       setStage('error')
     }
   }
-
   if (stage === 'upload') return <VideoUpload onUpload={handleUpload} loading={false} />
   if (stage === 'progress') return <AnalysisProgress stepHint={stepHint} />
   if (stage === 'result') return <ResultTabs result={result} resultId={resultId} />
-
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-5xl mb-4">⚠️</div>
-        <p className="text-red-600 font-medium">{error}</p>
+    <main className="mx-auto w-full max-w-lg px-5 py-20 text-left">
+      <div className="rounded-3xl border border-rose-200 bg-white p-8 text-center">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-xl font-bold text-rose-600">!</span>
+        <h1 className="mt-4 text-xl font-extrabold text-slate-950">분석하지 못했어요</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{error}</p>
         <button
           onClick={() => setStage('upload')}
-          className="mt-6 px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors"
+          className="mt-6 rounded-xl bg-blue-600 px-6 py-2.5 font-semibold text-white transition hover:bg-blue-700"
         >
           다시 시도
         </button>
       </div>
-    </div>
+    </main>
   )
 }
