@@ -27,17 +27,36 @@ function fmtSec(s) {
 }
 
 /** 자세 기울기 라인 + 제스처 활성 점 + 습관 구간 띠 */
-function PostureChart({ timeline, postureHabits }) {
+function PostureChart({ timeline, postureHabits, gazeHabits }) {
+  // 반복 시선 습관으로 탐지된 방향
+  const repeatedDirections = new Set(
+    (gazeHabits?.habits?.repeated ?? []).map((h) => h.direction)
+  )
+
+  // 반복 습관에 해당하는 실제 발생 구간
+  const gazeSegments = (gazeHabits?.segments ?? []).filter(
+    (s) => repeatedDirections.has(s.direction)
+  )
+
+  // 발생 시점별 방향 정보
+  const gazePointMap = new Map(
+    gazeSegments.map((s) => [s.start_sec, s.direction])
+  )
+
   const data = useMemo(
     () =>
       (timeline || []).map((t) => ({
         sec: t.sec,
         tilt: t.posture?.shoulder_tilt_deg ?? null,
-        gesture: t.gesture?.active ? 0 : null, // 활성 구간을 바닥에 점으로
+        gesture: t.gesture?.active ? 0 : null,
+        gaze: gazePointMap.has(t.sec) ? 0.5 : null,
+        gazeDirection: gazePointMap.get(t.sec) ?? null,
       })),
-    [timeline],
+    [timeline, gazeHabits],
   )
+
   const segments = postureHabits?.segments ?? []
+
 
   if (!data.some((d) => d.tilt != null)) {
     return <p className="text-sm text-slate-500">자세 시간축이 없습니다 (몸이 화면에 충분히 잡히지 않았습니다).</p>
@@ -54,32 +73,47 @@ function PostureChart({ timeline, postureHabits }) {
           <XAxis dataKey="sec" unit="s" tick={{ fontSize: 11 }} stroke="#94a3b8" />
           <YAxis unit="°" tick={{ fontSize: 11 }} stroke="#94a3b8" />
           <Tooltip
-            formatter={(v, name) => [v == null ? EMPTY : v, name === 'tilt' ? '어깨 기울기(도)' : '제스처 활성']}
+            formatter={(v, name, props) => {
+              if (name === 'tilt') return [v == null ? EMPTY : v, '어깨 기울기(도)']
+              if (name === 'gesture') return ['활성', '제스처']
+
+              if (name === 'gaze') {
+                const direction = props.payload?.gazeDirection
+                return [
+                  GAZE_LABEL[direction] ?? direction ?? '시선 이동',
+                  '반복 시선 습관',
+                ]
+              }
+
+              return [v, name]
+            }}
             labelFormatter={(l) => `${l}초`}
           />
           <Line type="monotone" dataKey="tilt" stroke="#4f46e5" dot={false} strokeWidth={2} connectNulls />
           <Scatter dataKey="gesture" fill="#10b981" />
+          <Scatter dataKey="gaze" fill="#e11d48" />
         </ComposedChart>
       </ResponsiveContainer>
       <div className="mt-1 flex gap-3 text-[11px] text-slate-500">
         <span><i className="mr-1 inline-block h-2 w-3 bg-indigo-600 align-middle" />어깨 기울기</span>
         <span><i className="mr-1 inline-block h-2 w-3 bg-emerald-500 align-middle" />제스처 활성 시점</span>
         <span><i className="mr-1 inline-block h-2 w-3 bg-rose-300 align-middle" />자세 문제 구간</span>
+        <span><i className="mr-1 inline-block h-2 w-3 bg-rose-600 align-middle" />반복 시선 이동</span>
       </div>
     </div>
   )
 }
 
-function HabitCard({ title, items, emptyText, analysisStatus }) {
+function HabitCard({ title, items, emptyText, analysisStatus, insufficient = false }) {
   const unavailable = analysisStatus === 'unavailable'
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h4 className="font-semibold text-slate-900">{title}</h4>
 
-      {unavailable ? (
+      {unavailable || insufficient ? (
         <p className="mt-1.5 text-sm text-slate-500">
-          분석 가능한 데이터가 없습니다
+          분석 데이터가 부족하여 습관을 판단하기 어렵습니다
         </p>
       ) : items.length === 0 ? (
         <p className="mt-1.5 text-sm text-emerald-700">{emptyText}</p>
@@ -99,6 +133,9 @@ export default function TimelineTab({ details }) {
   const habits = details?.habits ?? {}
 
   const gaze = habits.gaze ?? null
+  // 시선 분석 데이터가 극히 적은 경우 결과 해석 제한
+  // 0.1은 이보현테스트 사례를 구분하기 위한 임시 기준이며 추후 검증 가능
+  const gazeInsufficient = gaze?.valid_ratio != null && gaze.valid_ratio < 0.1
   const posture = habits.posture ?? null
   const gesture = habits.gesture ?? null
   const filler = habits.filler ?? null
@@ -149,11 +186,11 @@ export default function TimelineTab({ details }) {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="text-lg font-bold text-slate-900">자세·제스처 흐름</h3>
+        <h3 className="text-lg font-bold text-slate-900">자세·제스처·시선 흐름</h3>
         <p className="mb-3 text-xs text-slate-500">
-          어깨 기울기의 변화와 손동작이 있었던 시점입니다. 붉은 띠는 자세 문제로 탐지된 구간입니다.
+          어깨 기울기 변화, 손동작 활성 시점, 반복 시선 이동 시점을 표시합니다. 붉은 띠는 자세 문제로 탐지된 구간입니다.
         </p>
-        <PostureChart timeline={timeline} postureHabits={posture} />
+        <PostureChart timeline={timeline} postureHabits={posture} gazeHabits={gaze} />
       </section>
 
       <section>
@@ -163,9 +200,9 @@ export default function TimelineTab({ details }) {
           영상 검증 후 조정됩니다.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <HabitCard title="시선" items={gazeItems} emptyText="지속되거나 반복되는 시선 이탈이 없습니다" analysisStatus={gaze?.analysis_status ?? (gaze?.gaze_points?.length ? 'available' : 'unavailable')} />
+          <HabitCard title="시선" items={gazeItems} emptyText="지속되거나 반복되는 시선 이탈이 없습니다" analysisStatus={gaze?.analysis_status ?? (gaze?.gaze_points?.length ? 'available' : 'unavailable')} insufficient={gazeInsufficient} />
           <HabitCard title="자세" items={postureItems} emptyText="기울어짐 습관이 없습니다" analysisStatus={posture?.analysis_status ?? (posture ? 'available' : 'unavailable')} />
-          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" analysisStatus={gesture?.analysis_status ?? (gesture ? 'available' : 'unavailable')} />
+          <HabitCard title="제스처" items={gestureItems} emptyText="손동작이 오래 끊긴 구간이 없습니다" analysisStatus={details?.scores?.gesture == null ? 'unavailable' : (gesture?.analysis_status ?? (gesture ? 'available' : 'unavailable'))} />
           <HabitCard title="군말" items={fillerItems} emptyText="반복되는 군말이 없습니다" analysisStatus={filler ? 'available' : 'unavailable'} />
           <HabitCard title="억양" items={monotoneItems} emptyText="단조롭게 이어진 구간이 없습니다" analysisStatus={monotone?.analysis_status ?? (monotone ? 'available' : 'unavailable')} />
         </div>
