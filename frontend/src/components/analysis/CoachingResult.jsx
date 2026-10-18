@@ -76,7 +76,7 @@ function ScoreBar({ label, score, weight }) {
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-semibold text-slate-700">{label}</span>
-        <span className="text-slate-500">{isUnavailable ? `측정 안 됨 · ${weight}` : `${value}점 · ${weight}`}</span>
+        <span className="text-slate-500">{isUnavailable ? `점수 산정 불가 · ${weight}` : `${value}점 · ${weight}`}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${isUnavailable ? 0 : value}%` }} />
@@ -101,9 +101,9 @@ function buildFocusItems(metrics, scores) {
     },
     {
       label: '제스처',
-      value: metrics.gesturePerMin == null ? '분석 불가' : `${metrics.gesturePerMin.toFixed(1)}회/분`,
+      value: metrics.gesturePerMin == null ? '분석 불가' : `${metrics.gesturePerMin.toFixed(1)}회/분${scores.gesture == null ? ' · 관찰된 데이터 기준' : ''}`,
       severity: scores.gesture == null ? 0 : scores.gesture >= 70 ? 1 : scores.gesture >= 50 ? 2 : 3,
-      detail: metrics.gesturePerMin == null ? '제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다.' : metrics.gesturePerMin < 2 ? '핵심 포인트에 손동작을 붙이면 전달력이 올라갑니다.' : metrics.gesturePerMin > 4 ? '반복 손동작을 줄이고 강조 지점에만 쓰세요.' : '제스처 빈도는 적절합니다.',
+      detail: scores.gesture == null ? '유효 데이터가 부족하여 전체 발표의 제스처 빈도를 평가하기 어렵습니다.' : metrics.gesturePerMin == null ? '제스처를 충분히 판정하지 못해 손동작 빈도를 분석하기 어렵습니다.' : metrics.gesturePerMin < 2 ? '핵심 포인트에 손동작을 붙이면 전달력이 올라갑니다.' : metrics.gesturePerMin > 4 ? '반복 손동작을 줄이고 강조 지점에만 쓰세요.' : '제스처 빈도는 적절합니다.',
     },
     {
       label: '발화',
@@ -442,7 +442,7 @@ export default function CoachingResult({ result, resultId, embedded = false }) {
         <div className="grid gap-3 sm:grid-cols-3">
           <MetricCard label="시선 이탈률" value={metrics.gazeRatio == null ? '분석 불가' : `${(metrics.gazeRatio * 100).toFixed(0)}%`} unit="" status={gazeStatus} />
           <MetricCard label="어깨 기울기" value={metrics.tilt == null ? '분석 불가' : metrics.tilt.toFixed(1)} unit={metrics.tilt == null ? '' : '도'} status={tiltStatus} />
-          <MetricCard label="분당 제스처 횟수" value={metrics.gesturePerMin == null ? '분석 불가' : metrics.gesturePerMin.toFixed(1)} unit={metrics.gesturePerMin == null ? '' : '회/분'} status={gestureStatus} />
+          <MetricCard label={scores.gesture == null ? '분당 제스처 횟수 · 관찰된 데이터 기준' : '분당 제스처 횟수'} value={metrics.gesturePerMin == null ? '분석 불가' : metrics.gesturePerMin.toFixed(1)} unit={metrics.gesturePerMin == null ? '' : '회/분'} status={gestureStatus} />
         </div>
 
         <AnalysisOverview metrics={metrics} scores={scores} />
