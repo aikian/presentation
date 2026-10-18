@@ -22,25 +22,21 @@ def _calculate_gesture_score(gesture_per_min: float | None, gesture_valid_ratio:
     gesture_valid_ratio가 너무 낮아 제스처 판정 데이터가 부족한 경우에는
     낮은 점수를 부여하지 않고 None을 반환한다.
 
-    현재 점수 기준은 롤모델 발표 영상의 실측 결과를 바탕으로 설정한
-    임시 경험적 기준이며, 추가 영상 검증 후 재조정한다.
+    현재 점수 기준은 롤모델 발표 영상의 실측 결과를 참고한
+    프로젝트 내부의 경험적 기준이다.
+    보편적으로 검증된 기준은 아니며, 향후 추가 검증 및 개선이 가능하다.
     """
     if gesture_per_min is None or gesture_valid_ratio is None:
         return None
 
-    # TODO:
-    # 판정 가능 비율 기준은 현재 실험을 위한 임시값이다.
-    # 추가 영상 검증 후 재조정한다.
+    # 판정 가능 비율 20%는 데이터 부족 여부를 판단하기 위한 내부 기준이다.
+    # 다양한 촬영 환경에서 추가 검증 가능
     if gesture_valid_ratio < 0.2:
         return None
 
-    # TODO:
-    # 2~4회/분은 기존 롤모델 영상 실측값을 바탕으로 설정한 임시 기준이다.
-    # gesture.active 분석 방식을 0.5초 간격으로 개선했으므로,
-    # 동일 롤모델 영상을 재분석한 뒤 gesture_per_min 분포와 점수 기준을 재검증한다.
-    #
-    # 이 기준은 현재 gesture.active 판정 방식에 종속된 경험적 기준이며,
-    # 일반적인 발표의 보편적 기준을 의미하지 않는다.
+    # 분당 2~4회는 기존 롤모델 발표 영상의 실측값을 참고한 경험적 기준이다.
+    # 제스처 활동 판정 방식 변경에 따른 점수 기준의 추가 검증 가능
+    # 일반적인 발표에 적용되는 보편적 기준은 아니다.
 
     if 2.0 <= gesture_per_min <= 4.0:
         return 100
@@ -156,7 +152,8 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
     #
     # gesture_valid_ratio를 함께 확인하여 판정 데이터가 부족한 경우
     # 점수 계산에서 제외한다.
-    # active 판정 및 점수화 기준은 현재 임시값이며 추가 검증이 필요하다.
+    # active 판정 및 점수화 기준은 프로젝트 내부의 경험적 기준이며,
+    # 향후 추가 검증 및 개선이 가능하다.
     gesture = _calculate_gesture_score(
         gesture_per_min=metrics.get("gesture_per_min"),
         gesture_valid_ratio=metrics.get("gesture_valid_ratio"),
