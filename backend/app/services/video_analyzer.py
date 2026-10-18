@@ -457,11 +457,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                     if movements:
                         movement_max = max(movements)
 
-
-                        # TODO:
-                        # movement_max >= 0.10은 임시 임계값.
-                        # 추가 영상 실험 후 근거 있는 active 판정 기준으로 재설정 필요.
-                        active = movement_max >= 0.10
+                        # 손목 이동 거리 임계값 0.085는 발표 영상 테스트를 통해 설정한 경험적 기준이다.
+                        active = movement_max >= 0.085
 
                         gesture_timeline[-1]["active"] = active
 
@@ -692,7 +689,7 @@ def _build_coaching_prompt(metrics: dict) -> str:
 - 시선 이탈 비율: {gaze_text}
 - 어깨 기울기 평균: {pose_text}
 - 제스처 빈도: {gesture_text}
-- 제스처 임시 평가 기준: 분당 2~4회를 현재 프로젝트의 적정 범위로 사용하며, 분석 불가인 경우 평가하지 마세요.
+- 제스처 평가 기준: 분당 2~4회를 현재 프로젝트의 적정 범위로 사용하며, 분석 불가인 경우 평가하지 마세요.
 - 눈 감음 비율: {blink_text}{silence_line}{voice}{rolemodel_block}
 
 반드시 아래 Markdown 템플릿의 제목과 순서를 그대로 유지하세요.
@@ -974,60 +971,68 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     metrics = analyze_video(video_path, on_step)
 
     # TODO:
-    # 아래 습관 탐지 임계값 중 지속시간·반복 횟수 기준은
-    # 기능 연동 및 실험을 위한 임시값이다.
+    # 아래 습관 탐지 임계값은 프로젝트 내부의 경험적 기준이며,
+    # 실제 발표 영상으로 기본 동작을 확인했다.
+    # 보편적으로 검증된 기준은 아니며, 향후 추가 검증 및 개선이 가능하다.
     #
     # [자세]
     # - 롤모델 발표 영상 3편 분석 결과를 바탕으로
     #   어깨 기울기 15도를 프로젝트의 경험적 기준으로 설정
-    # - 발표 자세에 대한 보편적 기준이 아닌 프로젝트 내부 기준
+    # - 실제 발표 영상으로 자세 습관 탐지 결과 확인
+    # - 어깨 기울기 15도, 지속시간 6초, 반복 횟수 2회 기준 유지
+    # - 보편적으로 검증된 기준이 아닌 프로젝트 내부 기준
     # - 절대 어깨 기울기는 카메라 기울기와 개인의 기본 자세에 영향을 받을 수 있음
-    # - 추후 기준 자세 대비 상대 각도 방식 적용 검토
-    # - 상대 각도 방식 적용 시 각도·지속시간·반복 횟수 기준 재검증
+    # - 향후 기준 자세 대비 상대 각도 방식 및 임계값 추가 검증 가능
     #
     # [제스처]
     # - 제스처는 0.5초 간격으로 별도 분석 후 기존 video_timeline 구간에 집계
-    # - active 판정 기준 movement_max >= 0.10은 현재 임시값
-    # - 추가 발표 영상 테스트 후 active 임계값과 비활성 지속시간 기준 재검증 필요
+    # - active 판정 기준 movement_max >= 0.085 적용
+    # - 발표 영상 테스트를 통해 활동 및 비활동 구간의 탐지 결과 확인
+    # - 비활동 지속시간 4초는 프로젝트의 경험적 기준으로 설정
+    # - 해당 기준은 보편적으로 검증된 기준이 아니며, 향후 추가 검증 가능
     #
     # [음성]
-    # - 군말 반복 횟수 기준은 현재 임시값
-    # - 단순 누적 횟수는 발표 길이와 발생 간격을 반영하지 못하므로
-    #   filler_per_min 또는 일정 시간 내 동일 군말 반복 여부 활용 검토
-    # - 단조로움 2초 지속 기준은 짧은 구간도 습관으로 판정할 수 있어 재검토 필요
-    # - 군말·단조로움 기준은 추가 실제 발표 영상으로 검증 후 확정
+    # - 군말 반복 횟수 3회, 단조로움 지속시간 2초 기준 유지
+    # - 실제 발표 영상의 분석 결과로 기본 탐지 동작 확인
+    # - 일반 단어가 군말로 잘못 탐지될 가능성 있음
+    # - 군말 반복 횟수는 발표 길이와 발생 간격을 반영하지 못함
+    # - filler_per_min 또는 일정 시간 내 동일 군말 반복 여부 활용 검토 가능
+    # - 단조로움은 짧은 구간도 습관으로 판정할 가능성이 있어
+    #   향후 추가 영상 데이터를 통한 검증 및 기준 개선 가능
 
     # 자세 기울기 기준
     posture_tilt_threshold_deg = 15.0
 
-    # 영상 습관 탐지 임시 기준
-    temp_persistent_threshold_sec = 6.0
-    temp_repeated_threshold_count = 2
-    temp_gesture_inactive_threshold_sec = 4.0
+    # 시선·자세 습관 탐지 공통 기준
+    persistent_threshold_sec = 6.0
+    repeated_threshold_count = 2
 
-    # 음성 습관 탐지 임시 기준
-    temp_filler_repeated_threshold_count = 3
-    temp_monotone_persistent_threshold_sec = 2.0
+    # 제스처 습관 탐지 기준
+    gesture_inactive_threshold_sec = 4.0
+
+    # 음성 습관 탐지 기준
+    filler_repeated_threshold_count = 3
+    monotone_persistent_threshold_sec = 2.0
 
     metrics["gaze_habits"] = analyze_gaze_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
-        persistent_threshold_sec=temp_persistent_threshold_sec,
-        repeated_threshold_count=temp_repeated_threshold_count,
+        persistent_threshold_sec=persistent_threshold_sec,
+        repeated_threshold_count=repeated_threshold_count,
     )
 
     metrics["posture_habits"] = analyze_posture_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
         tilt_threshold_deg=posture_tilt_threshold_deg,
-        persistent_threshold_sec=temp_persistent_threshold_sec,
-        repeated_threshold_count=temp_repeated_threshold_count,
+        persistent_threshold_sec=persistent_threshold_sec,
+        repeated_threshold_count=repeated_threshold_count,
     )
 
     metrics["gesture_habits"] = analyze_gesture_habits(
         video_timeline=metrics.get("video_timeline", []),
         frame_interval_sec=settings.frame_interval_sec,
-        persistent_threshold_sec=temp_gesture_inactive_threshold_sec,
+        persistent_threshold_sec=gesture_inactive_threshold_sec,
     )
 
     # 음성 분석. 실패해도 예외를 올리지 않으므로
@@ -1040,13 +1045,13 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         if audio_metrics.get("speech_available"):
             metrics["filler_habits"] = analyze_filler_habits(
                 filler_words=audio_metrics.get("filler_words", []),
-                repeated_threshold_count=temp_filler_repeated_threshold_count,
+                repeated_threshold_count=filler_repeated_threshold_count,
             )
 
             metrics["monotone_habits"] = analyze_monotone_habits(
                 audio_timeline=audio_metrics.get("timeline", []),
                 monotone_threshold=MONOTONE_THRESHOLD,
-                persistent_threshold_sec=temp_monotone_persistent_threshold_sec,
+                persistent_threshold_sec=monotone_persistent_threshold_sec,
             )
         else:
             metrics["filler_habits"] = None
@@ -1063,11 +1068,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
     duration_sec = metrics["duration_sec"]
     gesture_event_count = metrics.get("gesture_event_count")
 
-    if (
-        duration_sec is not None
-        and duration_sec > 0
-        and gesture_event_count is not None
-    ):
+    if (duration_sec is not None and duration_sec > 0 and gesture_event_count is not None):
         metrics["gesture_per_min"] = round(
             gesture_event_count / (duration_sec / 60.0),
             2,
