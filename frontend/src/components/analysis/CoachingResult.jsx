@@ -76,7 +76,7 @@ function ScoreBar({ label, score, weight }) {
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-semibold text-slate-700">{label}</span>
-        <span className="text-slate-500">{isUnavailable ? `점수 산정 전 · ${weight}` : `${value}점 · ${weight}`}</span>
+        <span className="text-slate-500">{isUnavailable ? `측정 안 됨 · ${weight}` : `${value}점 · ${weight}`}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${SCORE_COLOR[status]}`} style={{ width: `${isUnavailable ? 0 : value}%` }} />
@@ -121,22 +121,22 @@ function AnalysisOverview({ metrics, scores }) {
   const totalStatus = scores.total == null ? 'warn' : scoreStatus(scores.total)
 
   return (
-    <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:grid-cols-[220px_minmax(0,1fr)]">
-      <div className="flex flex-col justify-between rounded-lg bg-slate-950 p-5 text-white">
+    <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-4 text-slate-950">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Score</p>
+          <p className="text-sm font-semibold text-slate-500">종합 점수</p>
           <div className="mt-2 flex items-end gap-1">
             <span className="text-5xl font-bold leading-none">{scores.total ?? '-'}</span>
-            <span className="pb-1 text-sm text-slate-300">/ 100</span>
+            <span className="pb-1 text-sm text-slate-500">/ 100</span>
           </div>
         </div>
-        <div className={`mt-5 h-1.5 rounded-full ${SCORE_COLOR[totalStatus]}`} />
+        <span className={`h-3 w-3 rounded-full ${SCORE_COLOR[totalStatus]}`} aria-hidden="true" />
       </div>
 
-      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.8fr)]">
-        <div>
-          <h2 className="mb-3 text-lg font-bold text-slate-950">핵심 진단</h2>
-          <div className="grid gap-2">
+      <div className="space-y-4">
+        <details>
+          <summary className="cursor-pointer text-sm font-semibold text-slate-600">핵심 진단 보기</summary>
+          <div className="mt-3 grid gap-2">
             {focusItems.map((item) => (
               <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
@@ -147,11 +147,10 @@ function AnalysisOverview({ metrics, scores }) {
               </div>
             ))}
           </div>
-        </div>
+        </details>
 
         <div>
-          <h2 className="mb-3 text-lg font-bold text-slate-950">항목별 점수</h2>
-          <div className="space-y-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <ScoreBar label="시선" score={scores.gaze} weight="35.12%" />
             <ScoreBar label="자세" score={scores.pose} weight="18.87%" />
             <ScoreBar label="제스처" score={scores.gesture} weight="10.89%" />
@@ -356,13 +355,17 @@ export default function CoachingResult({ result, resultId, embedded = false }) {
     score_total, score_gaze, score_pose, score_gesture, score_voice, score_time,
   } = result
 
+  const summary = result.details?.summary ?? {}
+  const gestureRate = gesture_per_min ?? summary.gesture_per_min
+  const faceRatio = face_detected_ratio ?? result.details?.x_validity?.face_detected_ratio
+
   const metrics = {
     gazeRatio: gaze_away_ratio == null ? null : toNumber(gaze_away_ratio),
     tilt: shoulder_tilt_avg == null ? null : toNumber(shoulder_tilt_avg),
-    gesturePerMin: gesture_per_min == null ? null : toNumber(gesture_per_min),
+    gesturePerMin: gestureRate == null ? null : toNumber(gestureRate),
     blinkRatio: ear_blink_ratio == null ? null : toNumber(ear_blink_ratio),
     silenceRatio: silence_ratio == null ? null : toNumber(silence_ratio),
-    faceDetectedRatio: face_detected_ratio == null ? null : toNumber(face_detected_ratio),
+    faceDetectedRatio: faceRatio == null ? null : toNumber(faceRatio),
   }
   
   const scores = {
@@ -444,7 +447,7 @@ export default function CoachingResult({ result, resultId, embedded = false }) {
 
         <AnalysisOverview metrics={metrics} scores={scores} />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)]">
+        <div className={`grid gap-6 ${gaze_timeline?.length > 1 ? 'lg:grid-cols-2' : ''}`}>
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-950">종합 점수</h2>
             {radarData.length >= 3 ? (

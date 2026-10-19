@@ -5,12 +5,11 @@ import SlideViewer from '../components/presentation/SlideViewer'
 import SlideControls from '../components/presentation/SlideControls'
 import WebcamRecorder from '../components/presentation/WebcamRecorder'
 import GestureController from '../components/presentation/GestureController'
+import NavBar from '../components/common/NavBar'
 import { useToast } from '../components/common/Toast'
 import { uploadSlides, deleteSlides, uploadVideo } from '../api/client'
-
 const SUPPORTS_FOLDER = typeof window !== 'undefined' && 'showDirectoryPicker' in window
 const SETTINGS_KEY = 'presentationcoach.settings'
-
 function loadPresentationSettings() {
   try {
     return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
@@ -18,6 +17,7 @@ function loadPresentationSettings() {
     return {}
   }
 }
+const QUICK_MINUTES = [5, 10, 15, 20]
 
 function GoalModal({ onStart }) {
   const savedSettings = loadPresentationSettings()
@@ -37,39 +37,51 @@ function GoalModal({ onStart }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40">
-      <div className="w-[22rem] rounded-lg bg-white p-6 text-left shadow-xl">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-sm font-bold text-blue-700">
-            SET
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl bg-white p-7 text-left shadow-2xl">
+        <h2 className="text-xl font-extrabold tracking-tight text-slate-950">촬영 설정</h2>
+        <p className="mt-1 text-sm text-slate-500">시작하면 바로 녹화가 시작됩니다.</p>
+
+        <div className="mt-6">
+          <label htmlFor="goal-min" className="text-sm font-bold text-slate-900">
+            목표 시간 <span className="font-normal text-slate-400">(선택)</span>
+          </label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {QUICK_MINUTES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMinutes(String(m))}
+                className={`rounded-lg border px-3.5 py-1.5 text-sm font-semibold transition ${
+                  String(minutes) === String(m)
+                    ? 'border-blue-600 bg-blue-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {m}분
+              </button>
+            ))}
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">발표 설정</h2>
-            <p className="text-sm text-gray-500">시작 전에 녹화 옵션을 정하세요.</p>
+          <div className="relative mt-2">
+            <input
+              id="goal-min"
+              type="number"
+              min="1"
+              max="120"
+              placeholder="직접 입력"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 pr-10 text-base focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            />
+            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">분</span>
           </div>
         </div>
 
-        <input
-          type="number"
-          min="1"
-          max="120"
-          placeholder="목표 시간 (분, 선택)"
-          value={minutes}
-          onChange={(e) => setMinutes(e.target.value)}
-          className="mb-3 w-full rounded-lg border px-4 py-2 text-center text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        {SUPPORTS_FOLDER && (
-          <button
-            onClick={pickFolder}
-            className="mb-3 flex w-full items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-50"
-          >
-            <span>{folderName ? `저장 폴더: ${folderName}` : '영상 저장 폴더 선택 (선택)'}</span>
-          </button>
-        )}
-
-        <label className="mb-5 flex cursor-pointer items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-          <span className="text-sm font-medium text-gray-800">발표 중 내 얼굴 표시</span>
+        <label className="mt-5 flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3.5">
+          <span>
+            <span className="block text-sm font-bold text-slate-900">발표 중 내 얼굴 표시</span>
+            <span className="block text-xs text-slate-500">끄더라도 녹화와 분석은 그대로 진행됩니다.</span>
+          </span>
           <input
             type="checkbox"
             checked={showFacePreview}
@@ -78,11 +90,23 @@ function GoalModal({ onStart }) {
           />
         </label>
 
+        {SUPPORTS_FOLDER && (
+          <button
+            onClick={pickFolder}
+            className="mt-3 flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:bg-slate-50"
+          >
+            <span className="font-bold text-slate-900">영상 저장 폴더</span>
+            <span className={folderName ? 'font-semibold text-blue-700' : 'text-slate-400'}>
+              {folderName || '선택 안 함'}
+            </span>
+          </button>
+        )}
+
         <button
           onClick={() => onStart(minutes ? parseInt(minutes) * 60 : null, folderHandle, { showFacePreview })}
-          className="w-full rounded-lg bg-blue-600 py-2.5 font-semibold text-white transition hover:bg-blue-700"
+          className="mt-6 w-full rounded-xl bg-blue-600 py-3 font-bold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
-          발표 시작
+          촬영 시작
         </button>
       </div>
     </div>
@@ -101,7 +125,6 @@ async function saveToFolder(blob, folderHandle) {
     console.error('폴더 저장 실패:', e)
   }
 }
-
 export default function PresentationMode() {
   const navigate = useNavigate()
   const toast = useToast()
@@ -117,14 +140,11 @@ export default function PresentationMode() {
   const webcamRef = useRef(null)
   const timerRef = useRef(null)
   const folderHandleRef = useRef(null)
-
   // SlideLog: 슬라이드별 체류 시간 기록
   const slideLogRef = useRef([])          // [{slide: 0, duration: 3.2}, ...]
   const slideStartRef = useRef(null)       // 현재 슬라이드가 표시된 시각(ms)
   const currentRef = useRef(0)            // setCurrent와 동기화용
-
   useEffect(() => () => clearInterval(timerRef.current), [])
-
   function _recordCurrentSlide() {
     if (slideStartRef.current !== null) {
       const duration = parseFloat(((Date.now() - slideStartRef.current) / 1000).toFixed(1))
@@ -132,7 +152,6 @@ export default function PresentationMode() {
     }
     slideStartRef.current = Date.now()
   }
-
   async function handleUpload(file) {
     setLoading(true)
     try {
@@ -147,7 +166,6 @@ export default function PresentationMode() {
       setLoading(false)
     }
   }
-
   function handleStart(goal, folderHandle, options = {}) {
     folderHandleRef.current = folderHandle
     setGoalSec(goal)
@@ -158,21 +176,18 @@ export default function PresentationMode() {
     slideStartRef.current = Date.now()
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000)
   }
-
   async function handleExit() {
     if (exiting) return
     clearInterval(timerRef.current)
     _recordCurrentSlide()  // 마지막 슬라이드 체류 시간 기록
     setExiting(true)
     if (session) await deleteSlides(session.sessionId).catch(() => {})
-
     try {
       const blob = await webcamRef.current?.stop()
       if (blob && blob.size > 0) {
         if (folderHandleRef.current) {
           await saveToFolder(blob, folderHandleRef.current)
         }
-
         const file = new File([blob], 'webcam_recording.webm', { type: blob.type })
         const { job_id } = await uploadVideo(file, {
           goal_sec: goalSec,
@@ -187,7 +202,6 @@ export default function PresentationMode() {
     }
     navigate('/')
   }
-
   const prev = useCallback(() => {
     _recordCurrentSlide()
     setCurrent((c) => {
@@ -196,7 +210,6 @@ export default function PresentationMode() {
       return next
     })
   }, [])
-
   const next = useCallback(() => {
     _recordCurrentSlide()
     setCurrent((c) => {
@@ -205,11 +218,17 @@ export default function PresentationMode() {
       return n
     })
   }, [session])
-
-  if (!session) return <FileUpload onUpload={handleUpload} loading={loading} />
-
+  // 슬라이드를 올리기 전에는 일반 화면(밝은 테마 + 내비게이션), 촬영이 시작되면 전체 화면 어두운 테마
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <NavBar />
+        <FileUpload onUpload={handleUpload} loading={loading} />
+      </div>
+    )
+  }
   return (
-    <div className="fixed inset-0 z-50 flex h-screen w-screen flex-col bg-black">
+    <div className="fixed inset-0 z-50 flex h-screen w-screen flex-col bg-slate-950">
       <SlideViewer slides={session.slides} current={current} onPrev={prev} onNext={next} />
       <SlideControls
         current={current}
@@ -231,13 +250,12 @@ export default function PresentationMode() {
       {webcamStream && (
         <GestureController stream={webcamStream} onLeft={prev} onRight={next} />
       )}
-
       {showGoal && <GoalModal onStart={handleStart} />}
-
       {exiting && (
-        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-30">
-          <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-white text-sm">녹화 저장 중... 잠시만 기다려 주세요</p>
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+          <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white border-t-transparent" />
+          <p className="text-base font-semibold text-white">녹화를 저장하고 있어요</p>
+          <p className="mt-1 text-sm text-white/60">저장이 끝나면 자동으로 분석이 시작됩니다.</p>
         </div>
       )}
     </div>

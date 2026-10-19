@@ -22,6 +22,7 @@ from app.services.habit_detector import analyze_filler_habits
 from app.services.habit_detector import analyze_monotone_habits
 
 mp_face_mesh = mp.solutions.face_mesh
+mp_face_detection = mp.solutions.face_detection
 mp_pose = mp.solutions.pose
 mp_hands = mp.solutions.hands
 
@@ -54,6 +55,72 @@ def _frame_to_b64(frame: np.ndarray) -> str:
 def _landmark_pt(lm, idx, w, h):
     p = lm[idx]
     return np.array([p.x * w, p.y * h])
+
+
+def _restore_face_coordinates(face_landmarks, x1, y1, crop_w, crop_h, width, height):
+    """크롭에서 얻은 좌표를 원본 좌표계로 돌려 지표 계산 기준을 유지한다."""
+    for landmark in face_landmarks.landmark:
+        landmark.x = (x1 + landmark.x * crop_w) / width
+        landmark.y = (y1 + landmark.y * crop_h) / height
+        landmark.z *= crop_w / width
+    return face_landmarks
+
+
+def _detect_face_with_fallback(face_mesh, face_detector, rgb: np.ndarray):
+    """전체 프레임에서 실패하면 발표자가 있는 상단 중앙을 확대해 한 번 더 찾는다.
+
+    세로 영상이나 전신 촬영은 얼굴이 프레임에서 차지하는 비율이 작아 FaceMesh가
+    얼굴을 놓칠 수 있다. 크롭은 탐지에만 사용하고 문제 장면 이미지는 원본 프레임을
+    유지한다. 좌표는 원본 좌표계로 복원하여 크롭 여부에 따른 지표 차이를 방지한다.
+    """
+    result = face_mesh.process(rgb)
+    if result.multi_face_landmarks:
+        h, w = rgb.shape[:2]
+        return result.multi_face_landmarks[0], w, h
+
+    h, w = rgb.shape[:2]
+
+    # FaceDetection은 작은 얼굴의 위치를 먼저 잡는 데 FaceMesh보다 강하다.
+    # 검출 상자를 넉넉히 확장한 뒤 FaceMesh를 다시 적용한다.
+    detection_result = face_detector.process(rgb)
+    if detection_result.detections:
+        box = detection_result.detections[0].location_data.relative_bounding_box
+        pad = 0.5
+        x1 = max(0, int((box.xmin - box.width * pad) * w))
+        x2 = min(w, int((box.xmin + box.width * (1 + pad)) * w))
+        y1 = max(0, int((box.ymin - box.height * pad) * h))
+        y2 = min(h, int((box.ymin + box.height * (1 + pad)) * h))
+        face_crop = rgb[y1:y2, x1:x2]
+        if face_crop.size:
+            cropped_result = face_mesh.process(face_crop)
+            if cropped_result.multi_face_landmarks:
+                crop_h, crop_w = face_crop.shape[:2]
+                landmarks = _restore_face_coordinates(
+                    cropped_result.multi_face_landmarks[0], x1, y1, crop_w, crop_h, w, h,
+                )
+                return landmarks, w, h
+
+    # 얼굴 검출기도 놓친 경우를 위해 발표 영상에서 흔한 상단 중앙 구도를 재시도한다.
+    crop_specs = (
+        (0.10, 0.00, 0.90, 0.70),
+        (0.20, 0.00, 0.80, 0.55),
+        (0.10, 0.15, 0.90, 0.90),
+    )
+    for x1_ratio, y1_ratio, x2_ratio, y2_ratio in crop_specs:
+        x1, x2 = int(w * x1_ratio), int(w * x2_ratio)
+        y1, y2 = int(h * y1_ratio), int(h * y2_ratio)
+        crop = rgb[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+        cropped_result = face_mesh.process(crop)
+        if cropped_result.multi_face_landmarks:
+            crop_h, crop_w = crop.shape[:2]
+            landmarks = _restore_face_coordinates(
+                cropped_result.multi_face_landmarks[0], x1, y1, crop_w, crop_h, w, h,
+            )
+            return landmarks, w, h
+
+    return None, w, h
 
 
 def _gaze_score(face_landmarks, w: int, h: int) -> float:
@@ -275,15 +342,17 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         max_num_faces=1,
         refine_landmarks=True,
         min_detection_confidence=0.5,
-    ) as face_mesh:
+    ) as face_mesh, mp_face_detection.FaceDetection(
+        model_selection=1,
+        min_detection_confidence=0.3,
+    ) as face_detector:
         for i, frame in enumerate(frames):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = face_mesh.process(rgb)
-            if result.multi_face_landmarks:
-                lm = result.multi_face_landmarks[0].landmark
-                h, w = frame.shape[:2]
+            face_landmarks, w, h = _detect_face_with_fallback(face_mesh, face_detector, rgb)
+            if face_landmarks:
+                lm = face_landmarks.landmark
 
-                score = _gaze_score(result.multi_face_landmarks[0], w, h)
+                score = _gaze_score(face_landmarks, w, h)
                 gaze_scores.append(score)
                 gaze_timeline.append({"sec": round(frame_times[i], 1), "score": round(score, 3)})
 
@@ -306,7 +375,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
                 # 시선 방향은 일단 모아두고, 영상 전체의 중앙값을 기준으로
                 # 그리드를 나눈다 (아래 집계 부분 참고).
-                dx, dy = _gaze_direction(result.multi_face_landmarks[0])
+                dx, dy = _gaze_direction(face_landmarks)
                 gaze_dirs.append((i, dx, dy))
 
                 # 표정: 미소(입꼬리)와 긴장(눈썹) 지표

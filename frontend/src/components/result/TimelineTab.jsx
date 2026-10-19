@@ -9,11 +9,6 @@ import {
 
 const EMPTY = '측정되지 않음'
 
-const HABIT_LABEL = {
-  persistent: '오래 지속',
-  repeated: '반복됨',
-}
-
 const GAZE_LABEL = {
   left: '왼쪽',
   right: '오른쪽',

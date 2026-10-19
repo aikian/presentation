@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import CoachingResult from '../analysis/CoachingResult'
 import VoiceTab from './VoiceTab'
 import RoleModelTab from './RoleModelTab'
-import PlaceholderTab from './PlaceholderTab'
 import VisualTab from './VisualTab'
 import TimelineTab from './TimelineTab'
 import ValidityBanner from './ValidityBanner'
+import { downloadPdf } from '../../api/client'
 
 // 결과 화면 탭 컨테이너.
 //
@@ -26,6 +26,8 @@ const TABS = [
 
 export default function ResultTabs({ result, resultId }) {
   const [active, setActive] = useState('score')
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
   const navigate = useNavigate()
 
   // 업로드 직후에는 job 응답(평면 필드 + details)이고,
@@ -34,6 +36,18 @@ export default function ResultTabs({ result, resultId }) {
   const validity = details?.x_validity ?? null
   // 발표 영상이 아니면 점수를 보여주지 않는다. 사용자가 그 숫자를 자기 점수로 읽는다.
   const scorable = validity ? validity.scorable !== false : true
+
+  async function handleDownload() {
+    setDownloading(true)
+    setDownloadError('')
+    try {
+      await downloadPdf(resultId)
+    } catch {
+      setDownloadError('보고서를 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   function renderBody() {
     switch (active) {
@@ -64,18 +78,24 @@ export default function ResultTabs({ result, resultId }) {
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 text-left">
-      <div className="mx-auto max-w-6xl">
+      <div className={`mx-auto ${active === 'score' ? 'max-w-3xl' : 'max-w-6xl'}`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-indigo-600">PresentationCoach</p>
             <h1 className="mt-1 text-3xl font-bold text-slate-950">분석 결과</h1>
           </div>
-          <div className="no-print flex gap-2">
+          <div className="no-print flex flex-wrap gap-2">
+            {resultId && (
+              <button onClick={handleDownload} disabled={downloading}
+                className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50">
+                {downloading ? '보고서 생성 중…' : 'PDF 보고서 다운로드'}
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
             >
-              인쇄 / PDF 저장
+              현재 탭 인쇄
             </button>
             <button
               onClick={() => navigate('/')}
@@ -85,6 +105,7 @@ export default function ResultTabs({ result, resultId }) {
             </button>
           </div>
         </div>
+        {downloadError && <p role="alert" className="mt-3 text-sm text-rose-700">{downloadError}</p>}
 
         {/* 탭 바. 인쇄할 때는 숨기고 전체를 펼쳐 보여주는 게 맞지만, 그건 PDF 개편 때 같이 한다. */}
         <div className="no-print mt-6 flex gap-1 overflow-x-auto border-b border-slate-200">

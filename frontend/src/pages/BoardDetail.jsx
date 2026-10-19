@@ -11,7 +11,10 @@ import { useAuth } from '../context/AuthContext'
 const pct = (v) => (v == null ? '-' : `${(v * 100).toFixed(0)}%`)
 const deg = (v) => (v == null ? '-' : `${Number(v).toFixed(1)}도`)
 const times = (v) => (v == null ? '-' : `${v}회`)
-const point = (v) => (v == null ? '-' : `${v}점`)
+const point = (v) => {
+  const score = typeof v === 'object' && v !== null ? v.score : v
+  return score == null ? '-' : `${score}점`
+}
 
 // 게시글 스냅샷(board_snapshot)과 "내 최근 발표"를 같은 항목으로 나란히 놓는다. (사용자 시나리오 5)
 function buildCompareRows(snap, mine) {
@@ -20,6 +23,7 @@ function buildCompareRows(snap, mine) {
   return [
     { label: 'AI 총점', theirs: point(scores.total), mine: point(mine?.score_total) },
     { label: '시선 점수', theirs: point(scores.gaze), mine: point(mine?.score_gaze) },
+    { label: '음성 점수', theirs: point(scores.voice), mine: point(mine?.score_voice) },
     { label: '자세 점수', theirs: point(scores.posture), mine: point(mine?.score_pose) },
     { label: '제스처 점수', theirs: point(scores.gesture), mine: point(mine?.score_gesture) },
     { label: '시간 점수', theirs: point(scores.time), mine: point(mine?.score_time) },
@@ -55,12 +59,15 @@ export default function BoardDetail() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    Promise.all([
-      load(),
-      fetchBoardRecommendations(postId, 5).then((r) => !cancelled && setRecs(r.items ?? [])).catch(() => {}),
-      fetchHistory(1, 1).then((r) => !cancelled && setMine(r.items?.[0] ?? null)).catch(() => {}),
-    ]).finally(() => { if (!cancelled) setLoading(false) })
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      setLoading(true)
+      return Promise.all([
+        load(),
+        fetchBoardRecommendations(postId, 5).then((r) => !cancelled && setRecs(r.items ?? [])).catch(() => {}),
+        fetchHistory(1, 1).then((r) => !cancelled && setMine(r.items?.[0] ?? null)).catch(() => {}),
+      ]).finally(() => { if (!cancelled) setLoading(false) })
+    })
     return () => { cancelled = true }
   }, [postId, load])
 
