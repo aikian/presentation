@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.database import get_supabase, save_attention_prediction
+from app.core.database import execute_supabase, get_supabase, save_attention_prediction
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_audio_block, build_details
 from app.services.rolemodel import compare
@@ -80,7 +80,12 @@ def _run_job(
                 result.get("audio_metrics"), result.get("duration_sec")
             )
             if audio_block:
-                refs = get_supabase().table("reference_speakers").select("*").execute().data
+                refs = execute_supabase(
+                    lambda: get_supabase()
+                    .table("reference_speakers")
+                    .select("*")
+                    .execute()
+                ).data
                 # 음성 요약에 표정 지표를 합쳐서 비교한다. 연사 쪽도 같은 함수로 잰 값이다.
                 user_summary = {
                     **audio_block["summary"],
@@ -105,8 +110,11 @@ def _run_job(
         # DB 저장이 실패해도 화면은 그려져야 하므로 저장 전에 담는다.
         result["details"] = details
 
-        _jobs[job_id] = {"status": "done", "step": 5, "result": result}
+        # Keep polling until persistence finishes so a successful job always
+        # reaches the UI with its history result id.
+        _jobs[job_id] = {"status": "pending", "step": 5}
 
+        saved_id = None
         try:
             result_id = uuid.uuid4().hex
             sb_payload = {
@@ -132,20 +140,32 @@ def _run_job(
             if goal_sec is not None:
                 sb_payload["goal_sec"] = goal_sec
 
-            sb_res = get_supabase().table("analysis_results").insert(sb_payload).execute()
+            sb_res = execute_supabase(
+                lambda: get_supabase()
+                .table("analysis_results")
+                .upsert(sb_payload, on_conflict="id")
+                .execute()
+            )
             if sb_res.data:
                 saved_id = sb_res.data[0]["id"]
-                _jobs[job_id]["result_id"] = saved_id
 
                 if slide_log and goal_sec is not None:
                     try:
                         session_id = uuid.uuid4().hex
-                        get_supabase().table("sessions").insert({
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "slide_log": slide_log,
-                            "target_time": int(goal_sec),
-                        }).execute()
+                        execute_supabase(
+                            lambda: get_supabase()
+                            .table("sessions")
+                            .upsert(
+                                {
+                                    "session_id": session_id,
+                                    "user_id": user_id,
+                                    "slide_log": slide_log,
+                                    "target_time": int(goal_sec),
+                                },
+                                on_conflict="session_id",
+                            )
+                            .execute()
+                        )
                     except Exception:
                         logger.warning("세션 저장 실패", exc_info=True)
                     
@@ -161,6 +181,12 @@ def _run_job(
             # 분석은 끝났으니 화면에는 결과를 보여준다. 다만 조용히 묻으면
             # "분석은 됐는데 히스토리에 없다"는 증상의 원인을 찾을 수 없다.
             logger.warning("분석 결과 저장 실패 (job %s)", job_id, exc_info=True)
+        completed_job = {"status": "done", "step": 5, "result": result}
+        if saved_id:
+            completed_job["result_id"] = saved_id
+        else:
+            completed_job["save_error"] = "analysis_result_not_persisted"
+        _jobs[job_id] = completed_job
     except Exception as e:
         _jobs[job_id] = {"status": "error", "step": _jobs[job_id].get("step", 0), "error": str(e)}
     finally:

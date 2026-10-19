@@ -1,10 +1,13 @@
+import logging
+import time
+import uuid
+from pathlib import Path
+from typing import Any, Callable, TypeVar
+
+import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from pathlib import Path
-from typing import Any
-import uuid
-
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 from app.core.config import settings
 
@@ -13,6 +16,9 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 class Base(DeclarativeBase):
@@ -43,6 +49,26 @@ def get_supabase() -> Client:
     return _supabase
 
 
+def execute_supabase(
+    operation: Callable[[], T], attempts: int = 3, base_delay_sec: float = 0.4
+) -> T:
+    """Retry transient Supabase transport failures with a freshly built request."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except httpx.TransportError as exc:
+            if attempt == attempts:
+                raise
+            logger.warning(
+                "Supabase transport failed (%s/%s, %s); retrying",
+                attempt,
+                attempts,
+                type(exc).__name__,
+            )
+            time.sleep(base_delay_sec * attempt)
+    raise RuntimeError("Supabase retry loop ended unexpectedly")
+
+
 def _is_missing_name_column(exc: Exception) -> bool:
     message = str(exc).lower()
     return (
@@ -57,8 +83,8 @@ def _is_missing_name_column(exc: Exception) -> bool:
 
 def _fetch_user_by(column: str, value: str) -> dict[str, Any] | None:
     try:
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("users")
             .select(_USER_COLUMNS_WITH_NAME)
             .eq(column, value)
@@ -68,8 +94,8 @@ def _fetch_user_by(column: str, value: str) -> dict[str, Any] | None:
     except Exception as exc:
         if not _is_missing_name_column(exc):
             raise
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("users")
             .select(_USER_COLUMNS)
             .eq(column, value)
@@ -100,12 +126,22 @@ def create_user(email: str, hashed_password: str, name: str | None = None) -> di
         payload["name"] = name
 
     try:
-        res = get_supabase().table("users").insert(payload).execute()
+        res = execute_supabase(
+            lambda: get_supabase()
+            .table("users")
+            .upsert(payload, on_conflict="id")
+            .execute()
+        )
     except Exception as exc:
         if "name" not in payload or not _is_missing_name_column(exc):
             raise
         payload.pop("name")
-        res = get_supabase().table("users").insert(payload).execute()
+        res = execute_supabase(
+            lambda: get_supabase()
+            .table("users")
+            .upsert(payload, on_conflict="id")
+            .execute()
+        )
 
     payload.setdefault("name", None)
     if not res.data:
@@ -117,7 +153,13 @@ def create_user(email: str, hashed_password: str, name: str | None = None) -> di
 
 
 def update_user_password(user_id: str, hashed_password: str) -> None:
-    get_supabase().table("users").update({"hashed_password": hashed_password}).eq("id", user_id).execute()
+    execute_supabase(
+        lambda: get_supabase()
+        .table("users")
+        .update({"hashed_password": hashed_password})
+        .eq("id", user_id)
+        .execute()
+    )
 
 def save_attention_prediction(saved_id: str, result: dict[str, Any]) -> dict[str, Any]:
     
@@ -134,10 +176,10 @@ def save_attention_prediction(saved_id: str, result: dict[str, Any]) -> dict[str
         "total_stats": result.get("total_stats", {})
     }
     
-    res = (
-        get_supabase()
+    res = execute_supabase(
+        lambda: get_supabase()
         .table("attention_predictions")
-        .insert(payload)
+        .upsert(payload, on_conflict="id")
         .execute()
     )
     
