@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from app.core.config import settings
-from app.core.database import get_supabase
+from app.core.database import execute_supabase, get_supabase
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.growth_feedback import generate_growth_feedback
 from app.services.growth_schema import build_growth_report
@@ -36,8 +36,8 @@ def get_history(
     """발표 기록 목록. 기록은 삭제하지 않으므로 여기서 안 보이면 조회에 실패한 것이다."""
     offset = (page - 1) * limit
     try:
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("analysis_results")
             .select(_HISTORY_COLS, count="exact")
             .eq("user_id", current_user.id)
@@ -71,8 +71,8 @@ def get_growth_report(
     feedback을 AI 피드백 영역에 그대로 표시하면 된다.
     """
     try:
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("analysis_results")
             .select(_GROWTH_COLS)
             .eq("user_id", current_user.id)
@@ -107,8 +107,8 @@ def get_growth_report(
 @router.get("/{result_id}/pdf")
 def download_pdf(result_id: str, current_user: CurrentUser = Depends(get_current_user)):
     try:
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("analysis_results")
             .select("*")
             .eq("id", result_id)
@@ -143,8 +143,8 @@ def get_result(result_id: str, current_user: CurrentUser = Depends(get_current_u
     먼저 선언하면 FastAPI가 "growth"를 result_id로 받아버린다.
     """
     try:
-        res = (
-            get_supabase()
+        res = execute_supabase(
+            lambda: get_supabase()
             .table("analysis_results")
             .select("*")
             .eq("id", result_id)
