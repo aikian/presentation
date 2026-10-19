@@ -123,27 +123,10 @@ def _detect_face_with_fallback(face_mesh, face_detector, rgb: np.ndarray):
     return None, w, h
 
 
-def _gaze_score(face_landmarks, w: int, h: int) -> float:
-    """0=정면, 1=최대이탈. yaw(수평)+pitch(수직) 복합 추정."""
-    lm = face_landmarks.landmark
-    nose = lm[NOSE_TIP]
-    left = lm[LEFT_EYE_OUTER]
-    right = lm[RIGHT_EYE_OUTER]
-
-    face_cx = (left.x + right.x) / 2
-    face_cy = (left.y + right.y) / 2
-    eye_dist = max(abs(right.x - left.x), 1e-6)
-
-    yaw_dev = abs(nose.x - face_cx) / eye_dist
-    pitch_dev = abs(nose.y - face_cy) / eye_dist * 0.6  # 수직 가중치 낮춤
-    return min(max(yaw_dev, pitch_dev), 1.0)
-
-
 def _gaze_direction(face_landmarks) -> tuple[float, float]:
     """시선 방향을 부호 있는 (dx, dy)로 돌려준다. 눈 사이 거리로 정규화.
 
-    _gaze_score는 이탈 정도(크기)만 재서 히트맵을 못 그린다.
-    히트맵은 "어느 쪽을" 봤는지가 필요하므로 부호를 살린다.
+    시선 이탈률과 히트맵 모두 "어느 쪽을" 봤는지가 필요하므로 부호를 살린다.
     dx > 0 = 화면 기준 오른쪽, dy > 0 = 아래.
     """
     lm = face_landmarks.landmark
@@ -159,8 +142,18 @@ def _gaze_direction(face_landmarks) -> tuple[float, float]:
 
 
 # 시선 방향을 9분할 그리드 칸으로 바꿀 때의 경계값.
-# _gaze_score의 이탈 판정(0.35)과 같은 축이라 그 근처로 맞췄다.
 GAZE_GRID_THRESHOLD = 0.18
+GAZE_AWAY_SCORE_THRESHOLD = 0.5
+
+
+def _relative_gaze_score(dx: float, dy: float) -> float:
+    """영상의 중앙 시선 대비 편차를 0~1 점수로 반환한다.
+
+    0.5를 넘으면 히트맵의 중앙 칸을 벗어난다. 시선 이탈률과 히트맵을
+    같은 기준으로 계산해 서로 모순되는 결과가 나오지 않도록 한다.
+    """
+    distance = max(abs(dx), abs(dy))
+    return min(distance / (GAZE_GRID_THRESHOLD * 2), 1.0)
 
 # 미소: 입꼬리가 입 중심선보다 이만큼(입 너비 대비) 올라가면 미소로 본다.
 SMILE_THRESHOLD = 0.04
@@ -352,21 +345,6 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             if face_landmarks:
                 lm = face_landmarks.landmark
 
-                score = _gaze_score(face_landmarks, w, h)
-                gaze_scores.append(score)
-                gaze_timeline.append({"sec": round(frame_times[i], 1), "score": round(score, 3)})
-
-                if score > 0.35 and score > max_gaze_score:
-                    max_gaze_score = score
-                    problem_gaze_frame = {
-                        "type": "gaze",
-                        "label": "시선 이탈",
-                        "sec": round(frame_times[i], 1),
-                        "score": round(score, 3),
-                        "value": f"{score * 100:.0f}%",
-                        "image": _frame_to_b64(frame),
-                    }
-
                 left_ear = _ear(lm, LEFT_EYE_EAR, w, h)
                 right_ear = _ear(lm, RIGHT_EYE_EAR, w, h)
                 ear_values.append((left_ear + right_ear) / 2)
@@ -539,26 +517,55 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     if not gesture_states:
         gesture_event_count = None
 
-    problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
-    gaze_away_ratio = float(np.mean([s > 0.35 for s in gaze_scores])) if gaze_scores else None
-    face_detected_ratio = (len(gaze_scores) / len(frames)) if frames else 0.0
     shoulder_tilt_avg = float(np.mean(shoulder_tilts)) if shoulder_tilts else None
 
-    # EAR 기반 눈 감음 비율
-    # 시선 히트맵: 코끝-눈중심 오프셋은 얼굴형·카메라 각도에 따라 기본값이 달라서
-    # 절대 좌표로 나누면 전부 한 칸에 쏠린다 (코끝은 눈보다 항상 아래라 dy가 늘 양수다).
-    # 발표 중 가장 흔한 방향 = 정면(청중/카메라)이라고 보고, 중앙값을 기준점으로 쓴다.
+    # 코끝-눈 중심의 절대 위치는 얼굴형과 카메라 각도에 따라 달라진다. 영상별 중앙값을
+    # 기준 시선으로 잡고, 시선 이탈률과 히트맵을 모두 같은 상대 편차로 계산한다.
     gaze_grid = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
     if gaze_dirs:
-        xs = sorted(d[1] for d in gaze_dirs)
-        ys = sorted(d[2] for d in gaze_dirs)
-        mx = xs[len(xs) // 2]
-        my = ys[len(ys) // 2]
+        mx = float(np.median([direction[1] for direction in gaze_dirs]))
+        my = float(np.median([direction[2] for direction in gaze_dirs]))
         for idx, dx, dy in gaze_dirs:
-            r, c = _gaze_grid_cell(dx - mx, dy - my)
+            relative_dx = dx - mx
+            relative_dy = dy - my
+            score = _relative_gaze_score(relative_dx, relative_dy)
+            gaze_scores.append(score)
+            gaze_timeline.append({"sec": round(frame_times[idx], 1), "score": round(score, 3)})
+
+            r, c = _gaze_grid_cell(relative_dx, relative_dy)
             gaze_grid[r][c] += 1
             if video_timeline[idx].get("expression"):
                 video_timeline[idx]["expression"]["gaze_cell"] = [r, c]
+
+            if score > GAZE_AWAY_SCORE_THRESHOLD and score > max_gaze_score:
+                max_gaze_score = score
+                problem_gaze_frame = {
+                    "type": "gaze",
+                    "label": "시선 이탈",
+                    "sec": round(frame_times[idx], 1),
+                    "score": round(score, 3),
+                    "value": f"{score * 100:.0f}%",
+                    "image": _frame_to_b64(frames[idx]),
+                }
+
+    gaze_away_ratio = (
+        float(np.mean([score > GAZE_AWAY_SCORE_THRESHOLD for score in gaze_scores]))
+        if gaze_scores
+        else None
+    )
+    face_detected_ratio = (len(gaze_dirs) / len(frames)) if frames else 0.0
+    total_cells = sum(sum(row) for row in gaze_grid)
+    gaze_heatmap = (
+        {
+            "grid": [[round(value / total_cells, 3) for value in row] for row in gaze_grid],
+            "n_frames": total_cells,
+            "threshold": GAZE_GRID_THRESHOLD,
+            "baseline": "video_median",
+        }
+        if total_cells
+        else None
+    )
+    problem_frames = [frame for frame in (problem_gaze_frame, problem_pose_frame) if frame]
 
     # 표정 집계 (이보현 블록). 얼굴을 한 번도 못 잡았으면 전부 None.
     if smile_values:
@@ -567,18 +574,10 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         # 표정 변화량: 미소 지표가 프레임마다 얼마나 움직였는지.
         # 거의 안 움직이면 무표정 발표라는 뜻이다.
         expression_change_std = float(np.std(smile_values))
-        total_cells = sum(sum(row) for row in gaze_grid)
-        gaze_heatmap = {
-            "grid": [[round(v / total_cells, 3) for v in row] for row in gaze_grid],
-            "n_frames": total_cells,
-            # (1,1)=정면. 행=위/중앙/아래, 열=왼쪽/중앙/오른쪽 (화면 기준)
-            "threshold": GAZE_GRID_THRESHOLD,
-        }
     else:
         smile_ratio = None
         tension_ratio = None
         expression_change_std = None
-        gaze_heatmap = None
 
     ear_blink_ratio = float(np.mean([e < EAR_CLOSE_THRESHOLD for e in ear_values])) if ear_values else None
 

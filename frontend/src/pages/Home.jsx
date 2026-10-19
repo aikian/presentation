@@ -247,10 +247,6 @@ function SettingsModal({ user, onClose }) {
             </div>
           </form>
         </section>
-        <section className="mt-4">
-          <h3 className="mb-3 text-base font-bold text-slate-900">점수 알고리즘</h3>
-          <ScorePolicyContent />
-        </section>
       </div>
     </div>
   )

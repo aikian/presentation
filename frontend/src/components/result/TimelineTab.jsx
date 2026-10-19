@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceArea, CartesianGrid, Scatter,
@@ -43,17 +42,13 @@ function PostureChart({ timeline, postureHabits, gazeHabits }) {
     gazeSegments.map((s) => [s.start_sec, s.direction])
   )
 
-  const data = useMemo(
-    () =>
-      (timeline || []).map((t) => ({
-        sec: t.sec,
-        tilt: t.posture?.shoulder_tilt_deg ?? null,
-        gesture: t.gesture?.active ? 0 : null,
-        gaze: gazePointMap.has(t.sec) ? 0.5 : null,
-        gazeDirection: gazePointMap.get(t.sec) ?? null,
-      })),
-    [timeline, gazeHabits],
-  )
+  const data = (timeline || []).map((t) => ({
+    sec: t.sec,
+    tilt: t.posture?.shoulder_tilt_deg ?? null,
+    gesture: t.gesture?.active ? 0 : null,
+    gaze: gazePointMap.has(t.sec) ? 0.5 : null,
+    gazeDirection: gazePointMap.get(t.sec) ?? null,
+  }))
 
   const segments = postureHabits?.segments ?? []
 

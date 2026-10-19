@@ -444,6 +444,9 @@ export default function CoachingResult({ result, resultId, embedded = false }) {
           <MetricCard label="어깨 기울기" value={metrics.tilt == null ? '분석 불가' : metrics.tilt.toFixed(1)} unit={metrics.tilt == null ? '' : '도'} status={tiltStatus} />
           <MetricCard label={scores.gesture == null ? '분당 제스처 횟수 · 관찰된 데이터 기준' : '분당 제스처 횟수'} value={metrics.gesturePerMin == null ? '분석 불가' : metrics.gesturePerMin.toFixed(1)} unit={metrics.gesturePerMin == null ? '' : '회/분'} status={gestureStatus} />
         </div>
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          자세 기울기는 화면 속 어깨선을 기준으로 추정합니다. 카메라를 향해 비스듬히 서거나 카메라 자체가 기울어진 경우 실제 자세보다 크게 측정될 수 있습니다.
+        </p>
 
         <AnalysisOverview metrics={metrics} scores={scores} />
 

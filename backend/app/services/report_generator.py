@@ -344,6 +344,166 @@ def _problem_frame_cards(frames: list[dict], width: float, title_s: ParagraphSty
     return [row, Spacer(1, 0.3 * cm)]
 
 
+def _fmt_detail(value, suffix: str = "", digits: int = 1) -> str:
+    if value is None:
+        return "측정 안 됨"
+    if isinstance(value, (int, float)):
+        return f"{value:.{digits}f}{suffix}"
+    return f"{value}{suffix}"
+
+
+def _detail_table(rows: list[tuple[str, str]], width: float, body_s: ParagraphStyle):
+    data = [
+        [Paragraph(f"<b>{escape(str(label))}</b>", body_s), Paragraph(escape(str(value)), body_s)]
+        for label, value in rows
+    ]
+    table = Table(data, colWidths=[width * 0.42, width * 0.58])
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), _KR),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, _PANEL]),
+        ("BOX", (0, 0), (-1, -1), 0.6, _BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, _BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return table
+
+
+def _habit_count(section: dict, *paths: str) -> int:
+    total = 0
+    for path in paths:
+        value = section.get(path) or []
+        total += len(value) if isinstance(value, list) else 0
+    return total
+
+
+def _detail_appendix(details: dict, width: float, section_s: ParagraphStyle, body_s: ParagraphStyle):
+    """한 번의 PDF 다운로드에 결과 화면의 모든 탭 요약을 포함한다."""
+    if not isinstance(details, dict) or not details:
+        return []
+
+    summary = details.get("summary") or {}
+    audio = (details.get("audio") or {}).get("summary") or {}
+    habits = details.get("habits") or {}
+    heatmap = details.get("x_gaze_heatmap") or {}
+    rolemodel = details.get("x_rolemodel") or {}
+    flow = [PageBreak(), Paragraph("상세 분석 · 전체 탭", section_s)]
+
+    flow.append(Paragraph("시각 분석", section_s))
+    smile = summary.get("smile_ratio")
+    expression_change = summary.get("expression_change_std")
+    visual_rows = [
+        ("시선 이탈률", _fmt_detail(summary.get("gaze_away_ratio") * 100 if summary.get("gaze_away_ratio") is not None else None, "%")),
+        ("어깨 기울기 평균", _fmt_detail(summary.get("posture_tilt_avg_deg"), "도")),
+        ("제스처 빈도", _fmt_detail(summary.get("gesture_per_min"), "회/분", 2)),
+        ("미소 비율", _fmt_detail(smile * 100 if smile is not None else None, "%")),
+        ("표정 변화량", _fmt_detail(expression_change, "", 3)),
+    ]
+    flow.append(_detail_table(visual_rows, width, body_s))
+
+    grid = heatmap.get("grid")
+    if isinstance(grid, list) and len(grid) == 3 and all(isinstance(row, list) and len(row) == 3 for row in grid):
+        labels = ["좌상", "상", "우상", "좌", "기준 시선", "우", "좌하", "하", "우하"]
+        cells = []
+        for label, value in zip(labels, [item for row in grid for item in row]):
+            pct = _fmt_detail(value * 100 if isinstance(value, (int, float)) else None, "%")
+            cells.append(Paragraph(f"<b>{escape(label)}</b><br/>{escape(pct)}", body_s))
+        heatmap_table = Table([cells[:3], cells[3:6], cells[6:]], colWidths=[width / 3] * 3)
+        heatmap_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), _INDIGO_SOFT),
+            ("BACKGROUND", (1, 1), (1, 1), colors.HexColor("#c7d2fe")),
+            ("BOX", (0, 0), (-1, -1), 0.6, _BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.6, _BORDER),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        flow.extend([Spacer(1, 0.25 * cm), Paragraph("시선 히트맵", section_s), heatmap_table])
+    else:
+        flow.extend([
+            Spacer(1, 0.25 * cm),
+            Paragraph("시선 히트맵", section_s),
+            Paragraph("얼굴을 충분히 검출하지 못해 시선 히트맵을 만들 수 없습니다.", body_s),
+        ])
+
+    flow.extend([
+        Spacer(1, 0.2 * cm),
+        Paragraph(
+            "※ 자세 기울기는 카메라 화면의 어깨선을 기준으로 하므로 발표자가 비스듬히 서거나 "
+            "카메라가 기울어진 경우 실제 자세보다 크게 측정될 수 있습니다.",
+            body_s,
+        ),
+        Paragraph(
+            "※ 기준 시선은 영상 내 시선의 중앙값입니다. 한 방향만 계속 본 영상에서는 기준 자체가 "
+            "치우칠 수 있으므로 근거 장면과 함께 해석해야 합니다.",
+            body_s,
+        ),
+    ])
+
+    flow.append(PageBreak())
+    flow.append(Paragraph("음성 분석", section_s))
+    audio_rows = [
+        ("말 속도", _fmt_detail(audio.get("spm_avg"), "음절/분")),
+        ("군말", f"{audio.get('filler_count', 0)}회 ({_fmt_detail(audio.get('filler_per_min'), '회/분', 2)})"),
+        ("침묵 비율", _fmt_detail(audio.get("silence_ratio") * 100 if audio.get("silence_ratio") is not None else None, "%")),
+        ("2초 이상 끊김", f"{len((details.get('audio') or {}).get('silences') or [])}회"),
+        ("억양 폭(표준편차)", _fmt_detail(audio.get("pitch_std"), " Hz")),
+        ("억양 단조로움", _fmt_detail(audio.get("monotone_ratio") * 100 if audio.get("monotone_ratio") is not None else None, "%")),
+    ]
+    flow.append(_detail_table(audio_rows, width, body_s))
+    filler_detail = audio.get("x_filler_detail") or {}
+    filler_text = ", ".join(f"{key} {value}회" for key, value in filler_detail.items()) or "없음"
+    flow.extend([
+        Spacer(1, 0.2 * cm),
+        Paragraph(f"<b>자주 쓴 군말:</b> {escape(filler_text)}", body_s),
+        Paragraph(
+            "※ 단독 ‘그’는 ‘그 이유는’처럼 정상적인 지시어 용법과 구분하기 어려워 군말 집계에서 제외합니다.",
+            body_s,
+        ),
+    ])
+
+    gaze_habit = habits.get("gaze") or {}
+    posture_habit = habits.get("posture") or {}
+    gesture_habit = habits.get("gesture") or {}
+    filler_habit = habits.get("filler") or {}
+    monotone_habit = habits.get("monotone") or {}
+    flow.append(Paragraph("발표 습관 · 타임라인 요약", section_s))
+    habit_rows = [
+        ("반복 시선 습관", f"{_habit_count(gaze_habit.get('habits') or {}, 'repeated')}개"),
+        ("지속 시선 습관", f"{_habit_count(gaze_habit.get('habits') or {}, 'persistent')}개"),
+        ("자세 문제 구간", f"{_habit_count(posture_habit, 'segments')}개"),
+        ("제스처 부족 구간", f"{_habit_count(gesture_habit, 'segments')}개"),
+        ("반복 군말 종류", f"{_habit_count(filler_habit, 'repeated')}개"),
+        ("단조로운 억양 구간", f"{_habit_count(monotone_habit, 'persistent')}개"),
+    ]
+    flow.append(_detail_table(habit_rows, width, body_s))
+
+    metrics = rolemodel.get("metrics") or []
+    if metrics:
+        speaker = rolemodel.get("speaker") or {}
+        speaker_title = speaker.get("name") or "선택 연사"
+        flow.append(PageBreak())
+        flow.append(Paragraph(f"연사 비교 · {escape(str(speaker_title))}", section_s))
+        if speaker.get("source") or speaker.get("title"):
+            source = " · ".join(str(item) for item in (speaker.get("source"), speaker.get("title")) if item)
+            flow.append(Paragraph(escape(source), body_s))
+            flow.append(Spacer(1, 0.2 * cm))
+        role_rows = []
+        for metric in metrics:
+            label = metric.get("label") or metric.get("key") or "항목"
+            value = metric.get("value")
+            target = metric.get("target")
+            verdict = metric.get("verdict") or ""
+            role_rows.append((label, f"나 {_fmt_detail(value)} / 연사 {_fmt_detail(target)} · {verdict}"))
+        flow.append(_detail_table(role_rows, width, body_s))
+
+    return flow
+
+
 def generate_report(record: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -526,6 +686,8 @@ def generate_report(record: dict) -> bytes:
         story.append(PageBreak())
         story.append(Paragraph("근거 장면 · 부록", section_s))
         story.extend(evidence)
+
+    story.extend(_detail_appendix(record.get("details") or {}, doc.width, section_s, body_s))
 
     doc.build(story)
     buf.seek(0)

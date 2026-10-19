@@ -37,7 +37,7 @@ function GazeGrid({ heatmap }) {
                 </span>
                 {isCenter && (
                   <span className={`text-[10px] ${intensity > 0.55 ? 'text-indigo-100' : 'text-slate-500'}`}>
-                    정면(카메라)
+                    기준 시선
                   </span>
                 )}
               </div>
@@ -46,7 +46,7 @@ function GazeGrid({ heatmap }) {
         )}
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        발표 중 시선이 머문 방향의 비율입니다 (프레임 {heatmap.n_frames}장 기준, 화면에서 본 방향).
+        발표 중 시선이 머문 방향의 비율입니다 (프레임 {heatmap.n_frames}장 기준, 발표 중 중앙값 대비 방향).
       </p>
     </div>
   )
@@ -92,8 +92,9 @@ export default function VisualTab({ details }) {
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h3 className="text-lg font-bold text-slate-900">시선 히트맵</h3>
         <p className="mb-4 text-xs text-slate-500">
-          청중(카메라)을 보는 시간이 길수록 가운데 칸이 진해집니다. 특정 방향 칸이 진하면
-          대본이나 슬라이드만 보고 있었다는 뜻일 수 있습니다.
+          발표 중 가장 일반적인 시선을 기준으로 방향 변화를 표시합니다. 시선 이탈률도 같은
+          기준으로 계산되므로 두 결과가 서로 일치합니다. 촬영 내내 한쪽만 본 영상은 기준 자체가
+          치우칠 수 있으므로 근거 장면과 함께 확인해 주세요.
         </p>
         {heatmap ? <GazeGrid heatmap={heatmap} /> : <p className="text-sm text-slate-500">{EMPTY}</p>}
       </section>
