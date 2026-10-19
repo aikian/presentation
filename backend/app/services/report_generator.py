@@ -24,8 +24,14 @@ from reportlab.platypus import (
     Image as RLImage, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
-_MALGUN = Path("C:/Windows/Fonts/malgun.ttf")
-_MALGUN_BOLD = Path("C:/Windows/Fonts/malgunbd.ttf")
+_FONT_PAIRS = [
+    (Path("C:/Windows/Fonts/malgun.ttf"), Path("C:/Windows/Fonts/malgunbd.ttf")),
+    (Path("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"), Path("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf")),
+]
+_MALGUN, _MALGUN_BOLD = next(
+    ((regular, bold) for regular, bold in _FONT_PAIRS if regular.exists()),
+    _FONT_PAIRS[0],
+)
 if _MALGUN.exists():
     pdfmetrics.registerFont(TTFont("KR", str(_MALGUN)))
     if _MALGUN_BOLD.exists():
@@ -34,7 +40,7 @@ if _MALGUN.exists():
         pdfmetrics.registerFont(TTFont("KR-Bold", str(_MALGUN)))
     pdfmetrics.registerFontFamily("KR", normal="KR", bold="KR-Bold", italic="KR", boldItalic="KR-Bold")
     fm.fontManager.addfont(str(_MALGUN))
-    plt.rcParams["font.family"] = "Malgun Gothic"
+    plt.rcParams["font.family"] = fm.FontProperties(fname=str(_MALGUN)).get_name()
     _KR = "KR"
 else:
     pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
@@ -59,12 +65,12 @@ _PANEL = colors.HexColor("#f8fafc")
 _INDIGO_SOFT = colors.HexColor("#eef2ff")
 
 
-def _make_chart(gaze, tilt, gestures) -> bytes:
+def _make_chart(gaze, tilt, gestures, gesture_score=None) -> bytes:
     """지표 가로 막대. None(측정 실패)은 0으로 그리지 않고 뺀다."""
     labels = (
-        ["시선 이탈률 (%)", "어깨 기울기 (도)", "제스처 횟수 (회)"]
+        ["시선 이탈률 (%)", "어깨 기울기 (도)", "제스처 빈도 (회/분)"]
         if _KR == "KR"
-        else ["Gaze away (%)", "Shoulder tilt (deg)", "Gestures"]
+        else ["Gaze away (%)", "Shoulder tilt (deg)", "Gestures / min"]
     )
     triples = []
     if gaze is not None:
@@ -75,7 +81,9 @@ def _make_chart(gaze, tilt, gestures) -> bytes:
                         "#ef4444" if tilt > 15 else "#f59e0b" if tilt > 8 else "#22c55e"))
     if gestures is not None:
         triples.append((labels[2], gestures,
-                        "#f59e0b" if gestures < 5 or gestures > 50 else "#22c55e"))
+                        "#94a3b8" if gesture_score is None else
+                        "#22c55e" if gesture_score >= 70 else
+                        "#f59e0b" if gesture_score >= 50 else "#ef4444"))
     if not triples:
         triples = [("측정 없음" if _KR == "KR" else "N/A", 0, "#94a3b8")]
     labels = [t[0] for t in triples]
@@ -344,9 +352,9 @@ def generate_report(record: dict) -> bytes:
         topMargin=1.7 * cm, bottomMargin=1.7 * cm,
     )
 
-    title_s = ParagraphStyle("T", fontName=_KR, fontSize=22, spaceAfter=6,
+    title_s = ParagraphStyle("T", fontName=_KR, fontSize=22, leading=30, spaceAfter=10,
                               alignment=TA_CENTER, textColor=_NAVY)
-    subtitle_s = ParagraphStyle("ST", fontName=_KR, fontSize=11, spaceAfter=4,
+    subtitle_s = ParagraphStyle("ST", fontName=_KR, fontSize=11, leading=16, spaceAfter=4,
                                  alignment=TA_CENTER, textColor=_SLATE)
     section_s = ParagraphStyle("S", fontName=_KR, fontSize=15, spaceBefore=12, spaceAfter=8,
                                 textColor=_NAVY, leading=20, wordWrap="CJK")
@@ -372,7 +380,8 @@ def generate_report(record: dict) -> bytes:
 
     gaze = record.get("gaze_away_ratio", 0)
     tilt = record.get("shoulder_tilt_avg", 0)
-    gestures = record.get("gesture_count", 0)
+    gestures = ((record.get("details") or {}).get("summary") or {}).get("gesture_per_min")
+    gesture_score = record.get("score_gesture")
     coaching = record.get("coaching") or "코칭 없음"
     problem_frames = _normalize_problem_frames(record.get("problem_frames"))
     score_total = record.get("score_total")
@@ -395,8 +404,8 @@ def generate_report(record: dict) -> bytes:
     if gestures is None:
         gesture_line = "• 제스처 횟수: 측정 안 됨"
     else:
-        gesture_status = "적절함" if 5 <= gestures <= 50 else "주의"
-        gesture_line = f"• 제스처 횟수: {gestures}회  ({gesture_status})"
+        gesture_status = "점수 측정 안 됨" if gesture_score is None else "좋음" if gesture_score >= 70 else "주의" if gesture_score >= 50 else "개선 필요"
+        gesture_line = f"• 제스처 빈도: {gestures:.2f}회/분  ({gesture_status})"
 
     metrics_text = gaze_line + "<br/>" + tilt_line + "<br/>" + gesture_line
 
@@ -441,9 +450,9 @@ def generate_report(record: dict) -> bytes:
                      "측정 안 됨" if tilt is None else f"{tilt:.1f}도",
                      "warn" if tilt is None else ("good" if tilt <= 8 else "warn" if tilt <= 15 else "bad"),
                      metric_value_s, metric_label_s),
-        _metric_card("제스처 횟수",
-                     "측정 안 됨" if gestures is None else f"{gestures}회",
-                     "warn" if gestures is None else ("good" if 5 <= gestures <= 50 else "warn"),
+        _metric_card("제스처 빈도",
+                     "측정 안 됨" if gestures is None else f"{gestures:.2f}회/분",
+                     "warn" if gesture_score is None else ("good" if gesture_score >= 70 else "warn" if gesture_score >= 50 else "bad"),
                      metric_value_s, metric_label_s),
     ]], colWidths=[doc.width / 3] * 3)
     metric_cards.setStyle(TableStyle([
@@ -454,7 +463,7 @@ def generate_report(record: dict) -> bytes:
     story.append(metric_cards)
     story.append(Spacer(1, 0.35 * cm))
 
-    chart_png = _make_chart(gaze, tilt, gestures)
+    chart_png = _make_chart(gaze, tilt, gestures, gesture_score)
     chart_img = RLImage(io.BytesIO(chart_png), width=12 * cm, height=5.8 * cm)
     story.append(chart_img)
     story.append(Spacer(1, 0.2 * cm))
@@ -509,13 +518,14 @@ def generate_report(record: dict) -> bytes:
     story.append(PageBreak())
 
     # ── Page 3: AI 코칭 피드백 ───────────────────────────────────────────────
-    evidence = _problem_frame_cards(problem_frames, doc.width, card_title_s, body_s)
-    if evidence:
-        story.append(Paragraph("주요 문제 장면", section_s))
-        story.extend(evidence)
-
     story.append(Paragraph("AI 코칭 피드백", section_s))
     story.extend(_coaching_cards(coaching, doc.width, card_title_s, body_s))
+
+    evidence = _problem_frame_cards(problem_frames, doc.width, card_title_s, body_s)
+    if evidence:
+        story.append(PageBreak())
+        story.append(Paragraph("근거 장면 · 부록", section_s))
+        story.extend(evidence)
 
     doc.build(story)
     buf.seek(0)
