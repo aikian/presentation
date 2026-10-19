@@ -4,6 +4,7 @@ import { fetchSpeakers } from '../../api/client'
 import Icon from '../common/Icons'
 
 const ACCEPTED = '.mp4,.mov,.avi,.webm,.mkv'
+const MAX_UPLOAD_MB = 95
 
 const CHECKLIST = [
   { icon: 'eye', title: '시선', desc: '청중을 보는 시간과 시선이 흐트러지는 비율' },
@@ -30,10 +31,14 @@ export default function VideoUpload({ onUpload, loading }) {
   }, [])
 
   function handleFile(file) {
-    if (!file) return
+    if (!file || loading) return
     const ext = file.name.split('.').pop().toLowerCase()
     if (!['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) {
       alert('MP4, MOV, AVI, WebM, MKV 파일만 업로드할 수 있습니다.')
+      return
+    }
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      alert(`운영 서버에서는 ${MAX_UPLOAD_MB}MB 이하 영상만 업로드할 수 있습니다. 영상을 압축한 뒤 다시 시도해 주세요.`)
       return
     }
     onUpload(file, { rolemodelId: rolemodelId || null })
@@ -85,7 +90,7 @@ export default function VideoUpload({ onUpload, loading }) {
                   {['MP4', 'MOV', 'AVI', 'WebM', 'MKV'].map((f) => (
                     <span key={f} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{f}</span>
                   ))}
-                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">최대 500MB</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">최대 {MAX_UPLOAD_MB}MB</span>
                 </div>
               </>
             )}

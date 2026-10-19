@@ -9,6 +9,7 @@ import { fetchGrowth } from '../api/client'
 const SERIES = [
   { key: 'score_total', label: '총점', color: '#4f46e5' },
   { key: 'score_gaze', label: '시선', color: '#0ea5e9' },
+  { key: 'score_voice', label: '음성', color: '#8b5cf6' },
   { key: 'score_pose', label: '자세', color: '#10b981' },
   { key: 'score_gesture', label: '제스처', color: '#f59e0b' },
   { key: 'score_time', label: '시간', color: '#ec4899' },

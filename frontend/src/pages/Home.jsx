@@ -21,16 +21,18 @@ const shortcuts = [
 ]
 
 const scoreRows = [
-  { item: '시선', weight: '30%', formula: '시선 이탈률 0% = 100점, 50% 이상 = 0점' },
-  { item: '자세', weight: '25%', formula: '어깨 기울기 0도 = 100점, 20도 이상 = 0점' },
-  { item: '제스처', weight: '15%', formula: '15회가 가장 좋고, 0회 또는 50회 이상이면 낮아짐' },
-  { item: '시간', weight: '30%', formula: '목표 시간과의 오차 0% = 100점, 30% 이상 = 0점' },
+  { item: '시선', weight: '35.12%', formula: '시선 이탈률 0% = 100점, 50% 이상 = 0점' },
+  { item: '음성', weight: '35.12%', formula: '말속도 30% · 단조로움 30% · 군말 25% · 침묵 15%' },
+  { item: '자세', weight: '18.87%', formula: '어깨 기울기 0도 = 100점, 20도 이상 = 0점' },
+  { item: '제스처', weight: '10.89%', formula: '분당 2~4회 = 100점, 0회 또는 8회 이상 = 0점' },
+  { item: '시간', weight: '별도', formula: '목표 시간 설정 시 오차 0% = 100점, 30% 이상 = 0점' },
 ]
 const scorePolicies = [
-  '각 항목은 0~100점으로 환산한 뒤 가중 평균으로 최종 점수를 계산합니다.',
+  '시선·음성·자세·제스처를 0~100점으로 환산한 뒤 AHP 가중 평균으로 종합점수를 계산합니다.',
   '시선과 자세는 문제가 적을수록 높은 점수를 주고, 기준치를 넘으면 0점에 가깝게 낮춥니다.',
   '제스처는 너무 적거나 과도한 경우를 모두 감점하고, 적절한 빈도의 손 동작을 가장 높게 평가합니다.',
-  '목표 시간을 설정하지 않으면 시간 항목은 기본 80점으로 반영합니다.',
+  '측정하지 못한 항목은 0점으로 처리하지 않고 제외한 뒤, 남은 가중치를 다시 환산합니다.',
+  '시간 점수는 목표 시간을 설정한 경우에만 별도로 제공하며 종합점수에는 포함하지 않습니다.',
 ]
 function loadSettings() {
   try {
@@ -56,10 +58,12 @@ function Toggle({ checked, onChange }) {
 function ScorePolicyContent() {
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {scoreRows.map((row) => (
           <div key={row.item} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-semibold text-slate-500">가중치 {row.weight}</p>
+            <p className="text-xs font-semibold text-slate-500">
+              {row.weight === '별도' ? '종합점수와 별도' : `가중치 ${row.weight}`}
+            </p>
             <h3 className="mt-1 text-lg font-bold text-slate-950">{row.item}</h3>
             <p className="mt-2 text-xs leading-5 text-slate-600">{row.formula}</p>
           </div>
@@ -94,7 +98,7 @@ function ScorePolicyContent() {
         </div>
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-500">
-        최종 점수 = 시선 30% + 자세 25% + 제스처 15% + 시간 30%입니다. 점수는 발표자의 장단점을 빠르게 파악하기 위한 코칭 지표이며, 분석 결과 화면과 PDF 리포트에 동일한 기준으로 표시됩니다.
+        최종 점수 = 시선 35.12% + 음성 35.12% + 자세 18.87% + 제스처 10.89%입니다. 점수는 발표자의 장단점을 빠르게 파악하기 위한 코칭 지표이며, 분석 결과 화면과 PDF 리포트에 동일한 기준으로 표시됩니다.
       </p>
     </>
   )
@@ -108,7 +112,7 @@ function ScorePolicyModal({ onClose }) {
             <p className="text-sm font-semibold text-blue-600">Score Policy</p>
             <h2 className="mt-1 text-2xl font-bold text-slate-950">코칭 점수 알고리즘</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              발표 분석 결과는 시선, 자세, 제스처, 시간 네 가지 지표를 점수화한 뒤 가중 평균으로 산출합니다.
+              발표 분석 결과는 시선, 음성, 자세, 제스처 네 가지 지표를 점수화한 뒤 가중 평균으로 산출합니다. 시간 점수는 별도로 제공합니다.
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">

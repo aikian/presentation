@@ -32,7 +32,7 @@ export default function PredictAttention() {
                 ])
                 setPredictResult(prediction)
                 setSurveyResult(survey?.survey_result ?? null)
-            } catch (error) {
+            } catch {
                 setError("서버에서 예측 결과를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.")
             } finally {
                 setLoading(false)

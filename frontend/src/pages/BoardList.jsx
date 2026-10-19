@@ -35,9 +35,12 @@ export default function BoardList() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setPage(1)
-    load(1, false).finally(() => { if (!cancelled) setLoading(false) })
+    Promise.resolve().then(() => {
+      if (cancelled) return
+      setLoading(true)
+      setPage(1)
+      return load(1, false).finally(() => { if (!cancelled) setLoading(false) })
+    })
     return () => { cancelled = true }
   }, [load])
 

@@ -2,11 +2,12 @@ import { useState, useRef } from 'react'
 import Icon from '../common/Icons'
 
 const ACCEPTED = '.pdf,.pptx,.ppt'
+const MAX_UPLOAD_MB = 95
 
 const CHECKS = [
   { icon: 'video', title: '카메라와 마이크 허용', desc: '시작하면 브라우저가 권한을 물어봅니다. 허용해야 녹화됩니다.' },
   { icon: 'slides', title: '슬라이드는 키보드나 손동작으로', desc: '← → 키, 버튼, 또는 카메라 앞에서 손을 좌우로 휘두르면 넘어갑니다.' },
-  { icon: 'clock', title: '목표 시간은 시작 전에 설정', desc: '시간을 정해 두면 분석 점수에 목표 대비 시간이 반영됩니다.' },
+  { icon: 'clock', title: '목표 시간은 시작 전에 설정', desc: '시간을 정해 두면 목표 대비 시간 점수를 별도로 확인할 수 있습니다.' },
 ]
 
 // 촬영 모드 첫 화면: 슬라이드 파일 올리기 + 촬영 전 확인 사항
@@ -15,10 +16,14 @@ export default function FileUpload({ onUpload, loading }) {
   const inputRef = useRef(null)
 
   function handleFile(file) {
-    if (!file) return
+    if (!file || loading) return
     const ext = file.name.split('.').pop().toLowerCase()
     if (!['pdf', 'pptx', 'ppt'].includes(ext)) {
       alert('PDF 또는 PPTX 파일만 업로드할 수 있습니다.')
+      return
+    }
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      alert(`운영 서버에서는 ${MAX_UPLOAD_MB}MB 이하 파일만 업로드할 수 있습니다. 파일을 줄인 뒤 다시 시도해 주세요.`)
       return
     }
     onUpload(file)
@@ -70,7 +75,7 @@ export default function FileUpload({ onUpload, loading }) {
               <p className="mt-5 text-lg font-bold text-slate-900">슬라이드 파일을 여기로 끌어다 놓으세요</p>
               <p className="mt-1 text-sm text-slate-500">또는 클릭해서 파일 선택</p>
               <span className="mt-5 inline-flex rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white">파일 선택</span>
-              <p className="mt-5 text-xs text-slate-400">PDF · PPTX 지원 · 최대 500MB</p>
+              <p className="mt-5 text-xs text-slate-400">PDF · PPTX 지원 · 최대 {MAX_UPLOAD_MB}MB</p>
             </>
           )}
           <input ref={inputRef} type="file" accept={ACCEPTED} className="hidden" onChange={(e) => handleFile(e.target.files[0])} />

@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-flash-latest"
     upload_dir: str = str(BASE_DIR / "uploads")
     static_dir: str = str(BASE_DIR / "static")
-    max_upload_size_mb: int = 500
+    # 운영 프록시의 100MB 요청 제한보다 여유를 둔다.
+    max_upload_size_mb: int = 95
     frame_interval_sec: int = 2
     whisper_model: str = "small"
     enable_audio_analysis: bool = True
