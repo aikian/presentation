@@ -2,17 +2,16 @@ def get_analysis_status(valid_count: int, total_count: int) -> dict:
     """
     분석 가능한 데이터의 개수와 비율을 반환한다.
 
-    현재는 분석 가능한 데이터가 전혀 없는 경우만 구분한다.
-    데이터 부족(insufficient) 기준은 추후 검증 후 적용한다.
+    현재는 유효 데이터 존재 여부를 기준으로 상태를 구분한다.
 
     [현재 상태]
     - available: 유효 데이터가 1개 이상 존재함
     - unavailable: 유효 데이터가 전혀 없음
     - available은 데이터가 충분하다는 의미가 아님
 
-    [추후 개선]
-    - 실제 발표 영상 테스트를 통해 최소 유효 데이터 비율 검증 필요
-    - 검증 후 데이터 부족 상태(insufficient) 판정 추가 예정
+    [향후 개선 가능 사항]
+    - 최소 유효 데이터 비율 기준 검토
+    - 데이터 부족 상태(insufficient) 판정 추가 검토
     """
     valid_ratio = (
         round(valid_count / total_count, 3)

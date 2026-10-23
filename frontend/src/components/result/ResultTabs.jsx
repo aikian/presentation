@@ -88,7 +88,7 @@ export default function ResultTabs({ result, resultId }) {
             {resultId && (
               <button onClick={handleDownload} disabled={downloading}
                 className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50">
-                {downloading ? '보고서 생성 중…' : 'PDF 보고서 다운로드'}
+                {downloading ? '보고서 생성 중…' : '전체 탭 PDF 다운로드'}
               </button>
             )}
             <button
@@ -107,7 +107,7 @@ export default function ResultTabs({ result, resultId }) {
         </div>
         {downloadError && <p role="alert" className="mt-3 text-sm text-rose-700">{downloadError}</p>}
 
-        {/* 탭 바. 인쇄할 때는 숨기고 전체를 펼쳐 보여주는 게 맞지만, 그건 PDF 개편 때 같이 한다. */}
+        {/* 현재 탭 인쇄와 별도로, 서버 PDF에는 모든 탭의 요약이 한 번에 포함된다. */}
         <div className="no-print mt-6 flex gap-1 overflow-x-auto border-b border-slate-200">
           {TABS.map((tab) => (
             <button
