@@ -149,6 +149,20 @@ def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 8)
     
     return calculate_pitch_v(pitches)
 
+# 정적 중 잡히는 pitch는 제외
+def drop_pitch_in_silence(pitch_data: dict[int, float], silence_data: List[dict[str, float]]) -> dict[int, float]:
+    modified_pitch_data = dict(pitch_data)
+    
+    for silence in silence_data:
+        start_sec = int(silence["start"])
+        end_sec = int(silence["end"])
+        
+        for sec in range(start_sec, end_sec + 1):
+            if sec in modified_pitch_data:
+                modified_pitch_data[sec] = None
+                
+    return modified_pitch_data
+
 # 분단위 결과 생성
 def make_min_timeline(sec_scores: List[dict[str, Any]]) -> List[dict[str, Any]]:
     if not sec_scores:
@@ -215,6 +229,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     # 청중에게 부정적인 영향을 주는 긴 정적(정적의 길이: 4초 ~)
     silence_penalty_secs = build_silence_penalty_secs(silence_data, threshold["silence_penalty_threshold"], weight["silence_penalty_weight"], weight["silence_penalty_max_multiplier"])
     pitch_data = speech_result.get("pitch_data") or {}
+    pitch_data = drop_pitch_in_silence(pitch_data, silence_data)
     norm_db_data = speech_result.get("norm_db_data")
     
     if not seconds or not spm_data or not norm_db_data:
