@@ -145,7 +145,7 @@ def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Opti
 def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 8) -> Optional[float]:
     start = max(0, sec - window + 1)
     
-    pitches = [pitch_data[i] for i in range(start, sec + 1) if i in pitch_data and pitch_data[i] > 0]
+    pitches = [pitch_data[i] for i in range(start, sec + 1) if i in pitch_data and pitch_data[i] is not None and pitch_data[i] > 0]
     
     return calculate_pitch_v(pitches)
 
