@@ -51,8 +51,8 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     # 정적(4초 이상 지속 시 감점)
     "silence_penalty_threshold": 4.0,
     
-    # 최근 pitch의 반음(semitone) 변동 표준편차가 1.5 이하이면 단조로운 어조로 판단
-    "monotone_penalty_threshold": 1.5,
+    # 최근 pitch의 반음(semitone) 변동 표준편차가 1.2 이하이면 단조로운 어조로 판단
+    "monotone_penalty_threshold": 1.2,
     
     # 단조로움 이후 최근 pitch의 반음(semitone) 변동 표준편차가 2.2 이상이면 어조 환기로 판단
     "reengagement_pitch_threshold": 2.2,
