@@ -128,7 +128,28 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     semitones = [12 * math.log2(p / reference) for p in filtered_pitches]
     
     return statistics.stdev(semitones)
-
+    
+def count_large_pitch_changes(pitch_data: dict[int, float], sec: int, window: int = 8, threshold: float = 2.0) -> int:
+    start = max(0, sec - window + 1)
+    end = sec + 1
+    count = 0
+    
+    for current_sec in range(start+1, end):
+        current_pitch = pitch_data.get(current_sec)
+        previous_pitch = pitch_data.get(current_sec - 1)
+        
+        if current_pitch is None or previous_pitch is None:
+            continue
+        
+        if current_pitch < PITCH_MIN_HZ + 3 or previous_pitch < PITCH_MIN_HZ + 3:
+            continue
+        change = abs(12 * math.log2(current_pitch / previous_pitch))
+        
+        if change >= threshold:
+            count += 1
+            
+    return count
+    
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Optional[float]:
     start = max(0,sec - window + 1)
@@ -362,23 +383,33 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             
         # 단조로움 평가
         if pitch_v is None:
-            pass
-        
-        elif pitch_v <= monotone_threshold:
-            monotone_duration += 1
+            onotone_duration = 0
             reengagement_duration = 0
             excessive_duration = 0
-                
-            if monotone_duration >= monotone_limit:
-                penalty = weight["pitch_weight"]
-                sec_delta -= penalty
-                penalties_applied.append(f"{monotone_duration}초 연속 단조로운 어조 (-{penalty:.1f})")
-                total_stats["total_monotone_counts"] += 1
-                events_applied.append("monotone")
-                last_dip_sec = sec
-                
-                monotone_detected = True
+        
+        elif pitch_v <= monotone_threshold:
+            large_change_count = count_large_pitch_changes(pitch_data, sec, window=8, threshold=2.0)
+            
+            if large_change_count >= 3:
                 monotone_duration = 0
+                reengagement_duration = 0
+                excessive_duration = 0
+                
+            else:
+                monotone_duration += 1
+                reengagement_duration = 0
+                excessive_duration = 0
+                
+                if monotone_duration >= monotone_limit:
+                    penalty = weight["pitch_weight"]
+                    sec_delta -= penalty
+                    penalties_applied.append(f"{monotone_duration}초 연속 단조로운 어조 (-{penalty:.1f})")
+                    total_stats["total_monotone_counts"] += 1
+                    events_applied.append("monotone")
+                    last_dip_sec = sec
+                
+                    monotone_detected = True
+                    monotone_duration = 0
                     
         elif reengagement_threshold <= pitch_v < excessive_threshold:
             excessive_duration = 0
