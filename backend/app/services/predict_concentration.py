@@ -18,9 +18,9 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     
     # 말속도 관련 가중치
     "spm_penalty_weight": 0.5,
-    # 최근 20초 중 60% 이상이 빠르거나 느리면 감점
+    # 최근 20초 중 70% 이상이 빠르거나 느리면 감점
     "spm_window_sec": 20,
-    "spm_ratio_threshold": 0.6,
+    "spm_ratio_threshold": 0.7,
     "spm_penalty_cooldown_sec": 20,
     "spm_silence_count_threshold": 2, 
     
@@ -29,7 +29,7 @@ DEFAULT_WEIGHT: dict[str, Any] = {
     "silence_penalty_max_multiplier": 3.0,
     
     # 단조로움 가중치
-    "monotone_consecutive_count_limit": 10, # 10(+7)초 이상 단조로울 시 감점 
+    "monotone_consecutive_count_limit": 12, # 12(+7)초 이상 단조로울 시 감점 
     # 단조로움 이후 환기
     "reengagement_count": 2, # 2(+7)초 이상 지속 시 가점
     # 과도한 어조 변화
@@ -45,7 +45,7 @@ DEFAULT_WEIGHT: dict[str, Any] = {
 # 테스트를 통해 수정 필요
 DEFAULT_THRESHOLD: dict[str, Any] = {
     # 말속도
-    "fast_spm_threshold": 380.0,
+    "fast_spm_threshold": 400.0,
     "slow_spm_threshold": 200.0,
     
     # 정적(4초 이상 지속 시 감점)
@@ -129,7 +129,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
     return statistics.stdev(semitones)
     
-def count_large_pitch_changes(pitch_data: dict[int, float], sec: int, window: int = 8, threshold: float = 2.0) -> int:
+def count_large_pitch_changes(pitch_data: dict[int, float], sec: int, window: int = 8, threshold: float = 3.0) -> int:
     start = max(0, sec - window + 1)
     end = sec + 1
     count = 0
@@ -347,7 +347,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 has_silence = recent_silence_count >= weight["spm_silence_count_threshold"]
                 
                 if (
-                    fast_ratio >= weight["spm_ratio_threshold"] 
+                    fast_ratio > weight["spm_ratio_threshold"] 
                     and is_monotone_context
                     and not has_silence
                     and sec - last_spm_penalty_sec["fast"] >= weight["spm_penalty_cooldown_sec"]
@@ -360,7 +360,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                     last_spm_penalty_sec["fast"] = sec
                     
                 elif (
-                    slow_ratio >= weight["spm_ratio_threshold"]
+                    slow_ratio > weight["spm_ratio_threshold"]
                     and is_monotone_context
                     and has_silence
                     and sec - last_spm_penalty_sec["slow"] >= weight["spm_penalty_cooldown_sec"]
@@ -388,9 +388,9 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             excessive_duration = 0
         
         elif pitch_v <= monotone_threshold:
-            large_change_count = count_large_pitch_changes(pitch_data, sec, window=8, threshold=2.0)
+            large_change_count = count_large_pitch_changes(pitch_data, sec)
             
-            if large_change_count >= 3:
+            if large_change_count > 3:
                 monotone_duration = 0
                 reengagement_duration = 0
                 excessive_duration = 0
