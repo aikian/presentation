@@ -61,7 +61,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "excessive_pitch_threshold": 5.5,
     
     # 음량 강조
-    "db_zscore_threshold": 0.8,
+    "db_zscore_threshold": 0.9,
     
     "max_penalty_per_sec": 5.0
 }
@@ -391,7 +391,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         elif pitch_v <= monotone_threshold:
             large_change_count = count_large_pitch_changes(pitch_data, sec)
             
-            if large_change_count >= 3:
+            if large_change_count > 3:
                 monotone_duration = 0
                 reengagement_duration = 0
                 excessive_duration = 0
