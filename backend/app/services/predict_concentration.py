@@ -61,7 +61,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     "excessive_pitch_threshold": 5.5,
     
     # 음량 강조
-    "db_zscore_threshold": 1.3,
+    "db_zscore_threshold": 0.8,
     
     "max_penalty_per_sec": 5.0
 }
@@ -129,7 +129,6 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     
     return statistics.stdev(semitones)
 
-
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Optional[float]:
     start = max(0,sec - window + 1)
@@ -150,6 +149,7 @@ def get_pitch_variation(pitch_data: dict[int, float], sec: int, window: int = 8)
     
     return calculate_pitch_v(pitches)
 
+# 정적에 포함된 경우 pitch를 None으로 변경
 def drop_pitch_in_silence(pitch_data: dict[int, float], silence_data: List[dict[str, float]]) -> dict[int, float]:
     modified_pitch_data = dict(pitch_data)
     
@@ -263,7 +263,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
     sec_scores: List[dict[str, Any]] = []
     
     # 상태 변수 초기화
-    monotone_duration = 0
+    monotone_duration = 0     
     reengagement_duration = 0
     excessive_duration = 0
     monotone_detected = False
@@ -391,7 +391,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         elif pitch_v <= monotone_threshold:
             large_change_count = count_large_pitch_changes(pitch_data, sec)
             
-            if large_change_count > 3:
+            if large_change_count >= 3:
                 monotone_duration = 0
                 reengagement_duration = 0
                 excessive_duration = 0
@@ -427,7 +427,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                     boosts_applied.append(f"단조로움 이후 피치 변화 (+{boost:.1f})")
                     total_stats["total_reengagement_boost_counts"] += 1
                     events_applied.append("reengagement")
-                    
+
                     monotone_detected = False
                     reengagement_duration = 0
                     
@@ -448,7 +448,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
                 penalties_applied.append(f"{excessive_duration}초 연속 과도한 어조 변화 (-{penalty:.1f})")
                 total_stats["total_excessive_pitch_counts"] += 1
                 events_applied.append("excessive_pitch")
-
+              
                 excessive_duration = 0
                 
         else:
