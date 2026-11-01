@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 import statistics
 import logging
 import numpy as np
@@ -51,7 +51,7 @@ DEFAULT_THRESHOLD: dict[str, Any] = {
     # 정적(4초 이상 지속 시 감점)
     "silence_penalty_threshold": 4.0,
     
-    # 최근 pitch의 반음(semitone) 변동 표준편차가 1.3 이하이면 단조로운 어조로 판단
+    # 최근 pitch의 반음(semitone) 변동 표준편차가 1.2 이하이면 단조로운 어조로 판단
     "monotone_penalty_threshold": 1.2,
 
     # 단조로움 이후 최근 pitch의 반음(semitone) 변동 표준편차가 2.2 이상이면 어조 환기로 판단
@@ -116,7 +116,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     if len(valid_pitches) >= 6:
         low_cutoff, high_cutoff = np.percentile(valid_pitches, [10, 90])
         filtered_pitches = [p for p in valid_pitches if low_cutoff <= p <= high_cutoff]
-    
+            
     if len(filtered_pitches) < 5:
         return None
     
@@ -128,6 +128,7 @@ def calculate_pitch_v(pitches: List[float]) -> Optional[float]:
     semitones = [12 * math.log2(p / reference) for p in filtered_pitches]
     
     return statistics.stdev(semitones)
+
 
 # 최근 SPM 평균
 def get_average_spm(spm_data:dict[int, float], sec:int, window: int = 5) -> Optional[float]:
@@ -392,7 +393,6 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
             
             if large_change_count > 3:
                 monotone_duration = 0
-                monotone_start_sec = None
                 reengagement_duration = 0
                 excessive_duration = 0
                 
@@ -418,7 +418,7 @@ def predict_attention(speech_result: Optional[dict[str, Any]], audience_weight: 
         elif reengagement_threshold <= pitch_v < excessive_threshold:
             excessive_duration = 0
 
-            if monotone_detected:
+            if monotone_detected and pitch_data.get(sec) is not None:
                 reengagement_duration += 1
                 
                 if reengagement_duration >= reengagement_limit:
