@@ -1,3 +1,7 @@
+-- AI Presentation Coach 데이터베이스 정의.
+-- Supabase SQL Editor에서 파일 전체를 한 번에 실행한다.
+-- 모든 문장이 if not exists 패턴이라 이미 적용된 DB에 다시 실행해도 안전하다.
+
 create extension if not exists pgcrypto;
 create table if not exists public.users (
   id text primary key,

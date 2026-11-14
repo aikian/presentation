@@ -1,6 +1,6 @@
 """발표 영상 공유 게시판 API.
 
-기능_추가_제안서.hwp "기능 1. 발표 영상 공유 게시판" 대응 라우터.
+2학기에 추가한 발표 영상 공유 게시판 라우터.
 main.py에는 이미 아래 두 줄이 들어 있으므로 main.py는 수정하지 않는다.
 
     from app.routers import analysis, auth, history, slides, board

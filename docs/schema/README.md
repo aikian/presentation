@@ -15,13 +15,13 @@
 | 블록 | 주인 |
 |---|---|
 | `meta` | 기존 코드 |
-| `video_timeline[].gaze / .expression` | 이보현 |
+| `video_timeline[].expression` (smile, gaze_cell) | 안동규 |
 | `video_timeline[].posture / .gesture` | 김민서 |
 | `audio.*` | 안동규 |
-| `summary` (gaze·smile·tension) | 이보현 |
+| `summary` (gaze·smile·tension) | 안동규 |
 | `summary` (posture·gesture) | 김민서 |
 | `scores` (산식·가중치) | 김민서 |
-| `habits[]` | 김민서 |
+| `habits` (gaze, posture, gesture, filler, monotone) | 김민서 |
 | `artifacts` | 생성하는 사람 각자 |
 
 자기 필드만 쓰고, 남의 블록은 읽기 전용. 쓸 때는 기존 JSON을 읽어 자기 블록만 갱신한다.
