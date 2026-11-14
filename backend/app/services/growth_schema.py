@@ -1,6 +1,6 @@
 """발표 성장 분석(History 강화) - growth JSON 조각 빌더.
 
-기능_추가_제안서.hwp "기능 2. 발표 성장 분석" 대응 모듈.
+2학기에 추가한 발표 성장 분석용 모듈.
 여러 세션의 scores / summary / habits / audio를 읽어 스키마 v0.1 규약을 따르는
 "growth" JSON 조각을 만든다.
 
