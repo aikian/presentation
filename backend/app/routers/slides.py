@@ -1,3 +1,4 @@
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -41,5 +42,8 @@ async def upload_slides(file: UploadFile = File(...)):
 
 @router.delete("/{session_id}")
 def remove_session(session_id: str):
+    # session_id는 uuid4().hex 형식이다. 경로 조작(../)을 막기 위해 형식을 먼저 확인한다.
+    if not re.fullmatch(r"[0-9a-f]{32}", session_id):
+        raise HTTPException(400, "잘못된 session_id")
     delete_session(session_id)
     return {"ok": True}
