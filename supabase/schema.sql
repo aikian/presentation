@@ -317,13 +317,9 @@ begin
 end $$;
 
 -- =====================================================
--- [신규 추가] 발표 영상 공유 게시판 기능 (기능_추가_제안서.hwp 기능 1)
--- 위 내용은 기존 schema.sql 그대로이고, 아래부터가 새로 추가된 부분입니다.
--- 전부 if not exists 패턴이라 이미 실행된 schema.sql 뒤에 이어 붙여도 안전합니다.
--- ============================================================
-
--- [신규 추가] 발표 영상 공유 게시판 기능용 테이블
--- 기존 supabase/schema.sql 뒤에 이어서 실행한다.
+-- 발표 영상 공유 게시판 (2학기 추가)
+-- 전부 if not exists 패턴이라 이미 실행된 DB에 이어 붙여도 안전하다.
+-- =====================================================
 
 create table if not exists public.board_posts (
   id text primary key,
@@ -337,6 +333,11 @@ create table if not exists public.board_posts (
   created_at timestamptz not null default now()
 );
 
+alter table public.board_posts
+  add column if not exists author_name text,
+  add column if not exists is_public boolean not null default true,
+  add column if not exists score_total integer;
+
 create index if not exists board_posts_topic_idx on public.board_posts (topic);
 create index if not exists board_posts_tags_idx on public.board_posts using gin (tags);
 create index if not exists board_posts_created_at_idx on public.board_posts (created_at desc);
@@ -349,13 +350,50 @@ create table if not exists public.board_comments (
   created_at timestamptz not null default now()
 );
 
+alter table public.board_comments
+  add column if not exists author_name text;
+
 create index if not exists board_comments_post_id_idx on public.board_comments (post_id);
 
 alter table public.board_posts enable row level security;
 alter table public.board_comments enable row level security;
 
--- 게시글: 전체 공개 조회, 본인만 등록/삭제 (기존 users 정책 패턴과 동일)
-=======
+-- 집중도 예측 결과와 설문 결과: 본인 분석 결과에 딸린 것만 조회
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'attention_predictions' and policyname = 'attention_predictions_select_own'
+  ) then
+    create policy "attention_predictions_select_own"
+      on public.attention_predictions for select
+      using (
+        result_id in (
+          select id from public.analysis_results
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'survey_results' and policyname = 'survey_results_select_own'
+  ) then
+    create policy "survey_results_select_own"
+      on public.survey_results for select
+      using (
+        result_id in (
+          select id from public.analysis_results
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
+
+-- 게시글: 전체 공개 조회, 본인만 등록 (기존 users 정책 패턴과 동일)
 do $$
 begin
   if not exists (
@@ -365,17 +403,6 @@ begin
     create policy "board_posts_select_all"
       on public.board_posts for select
       using (true);
-    where schemaname = 'public' and tablename = 'attention_predictions' and policyname = 'attention_predictions_select_own'
-  ) then
-    create policy "attention_predictions_select_own"
-      on public.attention_predictions for select
-      using (
-        result_id in (
-          select id
-          from public.analysis_results
-          where user_id = (select auth.uid()::text)
-        )
-      );
   end if;
 end $$;
 
@@ -413,15 +440,5 @@ begin
     create policy "board_comments_insert_own"
       on public.board_comments for insert
       with check (user_id = (select auth.uid()::text));
-    where schemaname = 'public' and tablename = 'survey_results' and policyname = 'survey_results_select_own'
-  ) then
-    create policy "survey_results_select_own"
-      on public.survey_results for select
-      using (
-        result_id in (
-          select id from analysis_results
-          where user_id = (select auth.uid()::text)
-        )
-      );
   end if;
 end $$;

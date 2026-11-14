@@ -1,7 +1,6 @@
 # 분석 결과 공유 스키마 (v0.1)
 
 발표 1회 분석 = `analysis_results` 레코드 1개. 분석 결과 JSON 전체를 `analysis_results.details` (jsonb) 컬럼에 저장한다.
-전체 필드 사전은 협업 계획서 참고: https://claude.ai/code/artifact/a2496648-d191-4fe9-be27-a248aa32fc68
 
 ## sample_analysis.json 사용법
 
