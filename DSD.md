@@ -22,7 +22,7 @@
 - **별도 기능:** 청중 집중도 추정, 설문 데이터 분석 및 음성 지표 가중치 조정, 롤모델 비교, 성장 분석, 발표 영상 게시판
 - **측정 원칙:** 분석에 필요한 데이터가 충분하지 않거나 검출에 실패한 항목은 0점으로 간주하지 않고 유효성 정보를 통해 구분한다.
 
-※ API의 세부 경로·요청 필드·응답 필드는 실제 라우터와 프론트엔드 호출을 대조해 최종 확정해야 한다. 아래에서는 확인된 라우터 단위와 기능 중심으로 기술한다.
+※ 5장의 API 경로는 `backend/app/main.py`의 라우터 등록과 각 라우터 파일의 실제 선언을 기준으로 작성했다.
 
 ---
 
@@ -168,7 +168,7 @@
 | 슬라이드 변환 | PyMuPDF, LibreOffice | PDF 및 PPT 계열 파일의 이미지 변환 |
 | 데이터 분석 | NumPy, SciPy 등 사용 모듈 | 통계량 및 상관관계 계산 |
 
-※ 실제 실행 환경의 Python 버전과 배포 플랫폼은 배포 설정 및 운영 환경을 기준으로 최종 기재한다. 라이브러리 목록은 프로젝트 의존성 파일과 실제 import를 기준으로 관리한다.
+※ 실행 환경은 Python 3.11(backend/Dockerfile 기준)이며 백엔드와 프론트엔드 모두 Docker 이미지로 배포한다. 라이브러리 목록은 `backend/requirements.txt`와 `frontend/package.json`을 기준으로 관리한다.
 
 ---
 
@@ -388,7 +388,7 @@ flowchart TB
 
 얼굴 랜드마크에서 눈과 코 등의 위치를 이용해 얼굴 방향 변화 및 시선 이탈 관련 값을 계산한다. 시선 분석 결과는 전체 영상의 통계값뿐 아니라 시간에 따른 변화 데이터로 구성할 수 있다.
 
-시선 히트맵은 분석된 시선 좌표의 분포를 영상 또는 정규화된 화면 좌표에 시각화한 결과이다. 히트맵은 실제 눈동자 추적 장비와 동일한 정밀도를 보장하지 않으며 얼굴 검출, 카메라 각도 및 랜드마크 추정에 영향을 받는다.
+시선 히트맵은 프레임마다 코끝과 눈 중심의 상대 위치로 시선 방향을 가로·세로 3칸씩 9개 구역 중 하나로 분류하고, 구역별 비율을 3x3 행렬로 집계한 결과이다. 히트맵은 실제 눈동자 추적 장비와 동일한 정밀도를 보장하지 않으며 얼굴 검출, 카메라 각도 및 랜드마크 추정에 영향을 받는다.
 
 ### 3.3.4 자세 분석
 
@@ -435,8 +435,8 @@ Hands 모델을 이용해 손 랜드마크를 검출하고 영상 내 손의 등
 
 | 제스처 | 동작 |
 |---|---|
-| 왼손 주먹 | 이전 슬라이드 이동 |
-| 오른손 주먹 | 다음 슬라이드 이동 |
+| 화면 왼쪽에서 주먹을 1초 유지 | 이전 슬라이드 이동 |
+| 화면 오른쪽에서 주먹을 1초 유지 | 다음 슬라이드 이동 |
 | 핀치 | 포인터 표시 기능 |
 
 ※ 제스처의 좌우 방향과 화면 이동 방향은 실제 GestureController의 콜백 연결을 기준으로 최종 확인한다. 핀치 포인터는 시각적 포인터 기능이며, 별도 구현이 확인되지 않은 마우스 클릭 기능으로 기술하지 않는다.
@@ -685,7 +685,7 @@ AHP 쌍대 비교 행렬을 사용해 평가 항목의 상대적 중요도를 �
 | 검색 및 필터 | 제목·주제·태그 기준 검색 및 필터 |
 | 정렬 및 페이지네이션 | 정렬 조건에 따른 목록 조회 및 페이지 이동 |
 | 상세 조회 | 영상 및 분석 스냅샷 표시 |
-| 댓글 | 게시물에 댓글 작성 및 조회 |
+| 댓글 | 게시물에 댓글 작성 및 조회, 본인 댓글 삭제 |
 | 삭제 | 작성자의 게시물 삭제 |
 | 추천 | 유사 주제 및 분석 점수 등 규칙 기반 기준으로 추천 |
 
@@ -727,7 +727,7 @@ PDF 보고서 모듈은 저장된 분석 결과를 이용해 발표 분석 내�
 - 발표 날짜 및 종합 점수
 - 시선·자세·제스처·음성 등 측정 지표
 - 항목별 점수 및 차트
-- 측정 유효성 및 측정 불가 항목 안내
+- 측정하지 못한 항목은 0이 아니라 빈 값으로 두고 차트에서 제외
 - 문제 프레임 또는 근거 이미지(데이터가 있는 경우)
 - AI 코칭 및 다음 연습 우선순위
 - 롤모델 비교 등 보고서에 포함되도록 구현된 분석 항목
@@ -744,7 +744,7 @@ PDF는 백엔드에서 생성하며 현재 확인된 구현에서는 생성된 P
 
 데이터베이스는 Supabase PostgreSQL을 사용한다. 사용자 계정, 발표 세션, 분석 결과, 롤모델 정보, 청중 집중도 예측, 설문 결과, 음성 지표 가중치 및 게시판 정보를 저장한다.
 
-현재 확인된 SQL 스키마에는 다음 10개 테이블이 정의되어 있다. 실제 운영 데이터베이스에 적용된 구조와 SQL 파일의 최신 상태는 별도로 대조해야 한다.
+`supabase/schema.sql`에는 다음 10개 테이블이 정의되어 있다.
 
 ## 4.2 주요 테이블
 
@@ -753,6 +753,7 @@ PDF는 백엔드에서 생성하며 현재 확인된 구현에서는 생성된 P
 | users | 사용자 계정 정보 |
 | sessions | 발표 세션 및 슬라이드 기록 |
 | analysis_results | 영상·음성 분석 결과, 점수, 코칭 및 유효성 정보 |
+| reports | 보고서 저장 경로 (현재 미사용, PDF는 요청 시 생성해 바로 응답) |
 | reference_speakers | 롤모델 및 참조 발표자 데이터 |
 | attention_predictions | 청중 집중도 추정 결과 |
 | survey_results | 설문 CSV에서 수집한 데이터 |
@@ -760,7 +761,7 @@ PDF는 백엔드에서 생성하며 현재 확인된 구현에서는 생성된 P
 | board_posts | 발표 영상 게시물 및 공개 범위, 분석 스냅샷 |
 | board_comments | 게시물 댓글 |
 
-※ SQL 스키마에 추가 필드나 별도 테이블이 존재하는 경우 운영 DB 및 최신 schema.sql을 기준으로 반영한다. 테이블 이름만으로 실제 외래 키 관계나 RLS 정책이 정상 적용되었다고 단정하지 않는다.
+모든 테이블에 RLS를 켜고 소유자 기준 정책을 두었다. 백엔드는 service role 키로 접근하므로 실제 권한 검사는 라우터의 소유권 확인 코드가 담당한다.
 
 ## 4.2.1 핵심 데이터 관계
 
@@ -771,11 +772,11 @@ erDiagram
     users ||--o{ board_posts : writes
     users ||--o{ board_comments : writes
     board_posts ||--o{ board_comments : has
-    users ||--o{ attention_predictions : owns
-    users ||--o{ survey_results : uploads
+    analysis_results ||--o{ attention_predictions : has
+    analysis_results ||--o| survey_results : has
 ```
 
-위 ERD는 기능상 주요 데이터 소유 관계를 개념적으로 나타낸다. 실제 외래 키 관계는 운영 DB의 DDL을 확인해 최종 확정해야 한다. 기존 ER 다이어그램과 SQL 파일 사이에 테이블명·컬럼·관계 차이가 있을 수 있으므로 문서 제출 전 동기화가 필요하다.
+위 ERD는 `schema.sql`의 외래 키 선언을 기준으로 그렸다. 집중도 예측과 설문 결과는 사용자가 아니라 분석 결과(analysis_results) 한 건에 딸린다.
 
 ## 4.3 파일 저장 및 수명주기
 
@@ -836,6 +837,7 @@ Authorization: Bearer {access_token}
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
+| GET | `/api/analysis/speakers` | 비교 가능한 롤모델 연사 목록 |
 | POST | `/api/analysis/upload` | 영상 업로드 및 분석 작업 생성 |
 | GET | `/api/analysis/{job_id}` | 분석 작업 상태 및 결과 조회 |
 
@@ -859,39 +861,38 @@ Authorization: Bearer {access_token}
 |---|---|
 | 분석 기록 목록 | `/api/history` |
 | 분석 결과 상세 | `/api/history/{result_id}` |
-| 성장 분석 | `/api/history` 하위 성장 분석 라우트 |
+| 성장 분석 | `/api/history/growth` |
 | PDF 보고서 | `/api/history/{result_id}/pdf` |
-
-※ 위 표에서 하위 성장 분석 라우트의 정확한 URL은 실제 history router의 선언과 프론트엔드 호출을 대조해 기재한다. 경로를 임의로 생성하지 않는다.
 
 ## 5.6 청중 집중도 및 설문 API
 
 청중 집중도 라우터는 음성 특징 기반 집중도 추정 결과 조회 및 설문 CSV 업로드·분석 기능을 담당한다.
 
-| 기능 | 설명 |
-|---|---|
-| 집중도 예측 | 분석 결과의 음성 특징을 이용해 집중도 점수 및 시간축 결과 생성 |
-| 설문 업로드 | CSV 파일의 컬럼 및 데이터 유효성 검사 |
-| 설문 분석 | 유효한 응답 데이터의 통계 및 관계 분석 |
-| 가중치 조정 | 표본 수와 통계적 조건이 충족되는 경우 음성 특징 가중치 갱신 |
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/audience/uploadCSV` | 설문 CSV 업로드, 유효성 검사, 통계 분석 (조건이 맞으면 가중치 갱신까지 수행) |
+| GET | `/api/audience/{result_id}/survey` | 설문 분석 결과 조회 |
+| GET | `/api/audience/{result_id}/attention` | 집중도 추정 결과 조회 |
 
-정확한 엔드포인트와 필드명은 `audience` 라우터와 프론트엔드 API 호출부를 기준으로 작성한다.
+집중도 예측 자체는 별도 API가 아니라 영상 분석 작업 안에서 생성되어 `attention_predictions`에 저장된다. 가중치 조정도 CSV 업로드 처리 안에서 표본 수와 통계 조건이 충족될 때 호출되는 내부 처리다.
 
 ## 5.7 게시판 API
 
 게시판 라우터는 게시물 작성·조회·검색·삭제, 댓글 및 추천 기능을 제공한다.
 
-| 기능 | 설명 |
-|---|---|
-| 게시물 목록 | 전체 또는 사용자 본인의 게시물 조회 |
-| 게시물 검색 | 제목·주제·태그 기준 검색 |
-| 게시물 상세 | 영상 및 분석 스냅샷 조회 |
-| 게시물 작성 | Storage 영상 업로드 후 게시물 등록 |
-| 게시물 삭제 | 게시물 삭제 |
-| 댓글 | 댓글 작성 및 조회 |
-| 추천 | 주제 및 분석 정보를 이용한 규칙 기반 추천 |
+모든 게시판 API는 로그인(JWT)이 필요하다.
 
-정확한 메서드·경로·요청 모델·인증 조건은 `board` 라우터와 프론트엔드 API 클라이언트의 실제 호출을 기준으로 부록 또는 별도 API 표에 기재한다.
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/board/upload-video` | 발표 영상을 Supabase Storage에 업로드하고 저장 경로 반환 |
+| POST | `/api/board` | 게시물 등록 (제목, 주제, 태그, 공개 여부, 영상 경로, 분석 결과 스냅샷) |
+| GET | `/api/board` | 공개 게시물 목록 (검색, 정렬, 페이지네이션) |
+| GET | `/api/board/mine` | 내 게시물 목록 |
+| GET | `/api/board/{post_id}` | 게시물 상세 (서명된 영상 URL 포함) |
+| DELETE | `/api/board/{post_id}` | 내 게시물 삭제 |
+| POST | `/api/board/{post_id}/comments` | 댓글 작성 |
+| DELETE | `/api/board/{post_id}/comments/{comment_id}` | 내 댓글 삭제 |
+| GET | `/api/board/{post_id}/recommendations` | 주제·점수 기준 규칙 기반 추천 게시물 |
 
 ---
 
@@ -1035,7 +1036,8 @@ Authorization: Bearer {access_token}
 | 습관 분석 | `backend/app/services/habit_detector.py` |
 | 집중도 추정 | `backend/app/services/predict_concentration.py` |
 | 가중치 조정 | `backend/app/services/update_weight.py` |
-| AI 코칭 | `backend/app/services/rolemodel.py` 및 코칭 관련 서비스 |
+| AI 코칭 | `backend/app/services/video_analyzer.py` (Gemini 호출 및 대체 코칭) |
+| 롤모델 비교 | `backend/app/services/rolemodel.py` |
 | 롤모델 데이터 | `reference_data/speakers.json` 및 로딩 모듈 |
 | 성장 분석 | `growth_schema.py`, `growth_feedback.py` |
 | PDF 보고서 | `backend/app/services/report_generator.py` |
