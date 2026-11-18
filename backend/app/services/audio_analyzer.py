@@ -33,6 +33,96 @@ FILLER_PHRASES = {
 
 MIN_SILENCE_SEC = 2.0  # 이 이상 이어지면 "긴 침묵"으로 집계
 
+# Whisper 환각 방어.
+# 조용하거나 음악만 있는 구간에서 Whisper가 영상 아웃트로 문구를 지어내거나 같은 문장을
+# 반복하는 일이 있다(Koenecke 등, 2024). 세그먼트 신뢰도 값만으로는 잘 못 가려내므로
+# (1) 한글 없음 (2) 아웃트로 문구 (3) 같은 문장 연속 반복 (4) 한 단어가 대부분
+# (5) 신뢰도가 아주 낮음, 순서로 걸러낸다. 걸러낸 내역은 transcript_quality에 남긴다.
+HALLUCINATION_PHRASES = (
+    "시청해주셔서감사합니다", "시청해주셔서고맙습니다", "끝까지시청해주셔서",
+    "구독과좋아요", "좋아요와구독", "구독좋아요알림설정",
+    "다음영상에서만나요", "다음영상에서뵙겠습니다",
+    "자막제작", "한글자막", "자막by",
+)
+REPEAT_SEGMENT_LIMIT = 3      # 같은 문장이 이 횟수 이상 연속되면 세 번째부터 버린다
+REPEAT_WORD_RATIO = 0.6       # 세그먼트 단어의 이 비율 이상이 한 단어면 지어낸 것으로 본다
+MIN_REPEAT_WORDS = 6          # 그 판정은 단어가 이 개수 이상일 때만 한다
+NO_SPEECH_PROB_LIMIT = 0.8    # 이 값을 넘고
+AVG_LOGPROB_LIMIT = -1.0      # 이 값보다 낮으면(둘 다) 버린다. 보조 기준.
+MIN_SPEECH_RATIO = 0.05       # 걸러낸 뒤 발화가 영상 길이의 이 비율보다 적으면 음성 분석 불가
+MAX_SYLLABLES_PER_SEC = 12.0  # 사람이 낼 수 없는 속도면 전사가 깨진 것으로 본다
+
+_NORMALIZE_RE = re.compile(r"[\s.,?!~…\"'\-]")
+
+
+def _normalize_text(text: str) -> str:
+    return _NORMALIZE_RE.sub("", text)
+
+
+def _dominant_word_ratio(text: str) -> float:
+    words = text.split()
+    if len(words) < MIN_REPEAT_WORDS:
+        return 0.0
+    return max(words.count(w) for w in set(words)) / len(words)
+
+
+def _filter_hallucinations(segments: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    """환각으로 보이는 세그먼트를 버리고, 사유별 개수를 돌려준다."""
+    kept: list[dict] = []
+    dropped = {
+        "no_hangul": 0, "outro_phrase": 0, "repeated_segment": 0,
+        "repeated_word": 0, "low_confidence": 0,
+    }
+    prev_norm = None
+    repeat_run = 0
+
+    for seg in segments:
+        text = seg.get("text", "")
+        norm = _normalize_text(text)
+
+        if norm == prev_norm:
+            repeat_run += 1
+        else:
+            repeat_run = 0
+            prev_norm = norm
+
+        if not HANGUL_SYLLABLE.search(text):
+            dropped["no_hangul"] += 1
+            continue
+        if any(phrase in norm for phrase in HALLUCINATION_PHRASES):
+            dropped["outro_phrase"] += 1
+            continue
+        if repeat_run >= REPEAT_SEGMENT_LIMIT - 1:
+            dropped["repeated_segment"] += 1
+            continue
+        if _dominant_word_ratio(text) >= REPEAT_WORD_RATIO:
+            dropped["repeated_word"] += 1
+            continue
+        no_speech = seg.get("no_speech_prob")
+        logprob = seg.get("avg_logprob")
+        if (
+            no_speech is not None and logprob is not None
+            and no_speech > NO_SPEECH_PROB_LIMIT and logprob < AVG_LOGPROB_LIMIT
+        ):
+            dropped["low_confidence"] += 1
+            continue
+        kept.append(seg)
+
+    return kept, dropped
+
+
+def _speech_plausibility(segments: list[dict], duration: float) -> str | None:
+    """전사가 쓸 만한지 본다. 문제가 있으면 사유 문자열, 없으면 None."""
+    if not segments:
+        return "no_speech_after_filter"
+    speech_sec = sum(seg["end"] - seg["start"] for seg in segments)
+    if duration > 0 and speech_sec / duration < MIN_SPEECH_RATIO:
+        return "too_little_speech"
+    syllables = sum(_count_syllables(seg.get("text", "")) for seg in segments)
+    if speech_sec > 0 and syllables / speech_sec > MAX_SYLLABLES_PER_SEC:
+        return "implausible_rate"
+    return None
+
 # 이웃한 초 사이 피치 변화가 이 비율 미만이면 억양이 평평한 것으로 본다.
 MONOTONE_THRESHOLD = 0.05
 
@@ -269,11 +359,18 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
         "segments": [],
         "speech_duration_sec": 0.0,
         "duration_sec": 0.0,
+        # 전사 품질. 걸러낸 세그먼트 수와 음성 분석을 포기한 사유를 남긴다.
+        "transcript_quality": None,
     }
+
+    def unavailable(status: str, quality: dict | None = None) -> dict:
+        out = dict(empty)
+        out["transcript_quality"] = {**(quality or {}), "status": status}
+        return out
 
     wav = extract_audio(video_path)
     if wav is None:
-        return empty
+        return unavailable("no_audio_track")
 
     try:
         model = _get_model()
@@ -284,6 +381,9 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
             vad_parameters={"min_silence_duration_ms": 500},
             word_timestamps=True,
             beam_size=1,
+            # 앞 구간의 텍스트를 다음 구간 디코딩에 넣지 않는다. 한 번 지어낸 문장이
+            # 뒤로 계속 번지는 반복 환각을 막는 가장 효과적인 설정이다.
+            condition_on_previous_text=False,
         )
 
         segments: list[dict] = []
@@ -294,12 +394,24 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
                 "text": seg.text.strip(),
                 # 필러워드 타임스탬프를 만들려면 단어별 시각이 필요하다.
                 "words": [{"text": w.word, "start": w.start} for w in (seg.words or [])],
+                "no_speech_prob": getattr(seg, "no_speech_prob", None),
+                "avg_logprob": getattr(seg, "avg_logprob", None),
             })
 
-        if not segments:
-            return empty
+        raw_count = len(segments)
+        duration = float(getattr(info, "duration", 0.0)) or (segments[-1]["end"] if segments else 0.0)
 
-        duration = float(getattr(info, "duration", 0.0)) or segments[-1]["end"]
+        segments, dropped = _filter_hallucinations(segments)
+        quality = {
+            "raw_segments": raw_count,
+            "kept_segments": len(segments),
+            "dropped": dropped,
+        }
+        problem = _speech_plausibility(segments, duration)
+        if problem:
+            logger.info("음성 분석 불가 (%s): %s", problem, quality)
+            return unavailable(problem, quality)
+        quality["status"] = "ok"
         transcript = " ".join(seg["text"] for seg in segments).strip()
 
         speech_sec = sum(seg["end"] - seg["start"] for seg in segments)
@@ -344,9 +456,10 @@ def analyze_audio(video_path: Path) -> dict[str, Any]:
             ],
             "speech_duration_sec": round(speech_sec, 1),
             "duration_sec": round(duration, 1),
+            "transcript_quality": quality,
         }
     except Exception as exc:
         logger.warning("음성 분석 실패: %s", exc)
-        return empty
+        return unavailable("transcription_error")
     finally:
         wav.unlink(missing_ok=True)

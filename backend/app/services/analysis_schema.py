@@ -137,10 +137,19 @@ def build_validity(metrics: dict[str, Any]) -> dict[str, Any]:
             "message": f"발표자 얼굴이 화면에서 거의 검출되지 않았습니다 (검출률 {shown}).",
         })
     if not speech_available:
-        problems.append({
-            "code": "no_speech",
-            "message": "영상에서 말소리를 찾지 못했습니다.",
-        })
+        # 왜 못 썼는지에 따라 안내를 나눈다. 환각 필터가 걸러낸 경우는 그 개수도 알려준다.
+        quality = audio.get("transcript_quality") or {}
+        status = quality.get("status")
+        dropped = sum((quality.get("dropped") or {}).values())
+        if status == "no_audio_track":
+            message = "영상에 오디오 트랙이 없습니다."
+        elif status == "implausible_rate":
+            message = "음성 인식 결과가 비정상이라 음성 항목을 점수에서 제외했습니다."
+        elif status in ("no_speech_after_filter", "too_little_speech") and dropped:
+            message = f"말소리를 거의 찾지 못했습니다. 음성 인식이 지어낸 것으로 보이는 구간 {dropped}개는 제외했습니다."
+        else:
+            message = "영상에서 말소리를 찾지 못했습니다."
+        problems.append({"code": "no_speech", "message": message})
 
     # 얼굴도 말소리도 없으면 발표 영상이 아니라고 본다.
     if not face_ok and not speech_available:
@@ -219,4 +228,6 @@ def build_details(
         # 시선 9분할 히트맵 (이보현 블록 MVP). 3x3 비율 행렬, (1,1)=정면.
         # PNG 대신 숫자로 저장한다 — 화면이 그리면 되고 Storage가 필요 없다.
         "x_gaze_heatmap": metrics.get("gaze_heatmap"),
+        # Whisper 전사 품질. 환각으로 걸러낸 세그먼트 수와, 음성 점수를 결측으로 돌린 사유.
+        "x_transcript_quality": (metrics.get("audio_metrics") or {}).get("transcript_quality"),
     }
