@@ -181,6 +181,7 @@
 ```mermaid
 flowchart TB
     U[사용자]
+
     subgraph FE[Frontend - React]
       UI[화면 및 상태 관리]
       PM[Presentation Mode]
@@ -189,9 +190,11 @@ flowchart TB
       RESULT[분석 결과 및 대시보드]
       BOARD[게시판 및 성장 분석]
     end
+
     subgraph BE[Backend - FastAPI]
       AUTH[인증 API]
       SLIDE[슬라이드 API]
+      SLIDE_CONV[슬라이드 변환 모듈]
       ANALYSIS[분석 작업 관리]
       VIDEO[영상 분석 서비스]
       AUDIO[음성 분석 서비스]
@@ -202,18 +205,31 @@ flowchart TB
       PDF[PDF 생성]
       COMMUNITY[게시판 서비스]
     end
+
     subgraph DATA[Supabase]
       DB[(PostgreSQL)]
       STORAGE[(Storage)]
     end
+
+    subgraph LOCAL[서버 로컬 임시 저장소]
+      SLIDE_FILES[슬라이드 PNG 이미지]
+    end
+
     GEMINI[Gemini API]
     WHISPER[Faster-Whisper]
+
     U --> UI
     UI --> PM
     PM --> GR
     PM --> WR
+
     UI --> AUTH
     UI --> SLIDE
+    SLIDE --> SLIDE_CONV
+    SLIDE_CONV --> SLIDE_FILES
+    SLIDE --> PM
+    SLIDE_FILES --> PM
+
     WR --> ANALYSIS
     ANALYSIS --> VIDEO
     ANALYSIS --> AUDIO
@@ -226,18 +242,21 @@ flowchart TB
     SCORE --> DB
     COACH --> DB
     AUDIO --> WHISPER
+
     UI --> RESULT
     RESULT --> PDF
     RESULT --> GROWTH
+
     UI --> COMMUNITY
     COMMUNITY --> DB
     COMMUNITY --> STORAGE
     AUTH --> DB
-    SLIDE --> BE
-    PDF --> DB
+</mermaid>
 ```
 
-발표 중 브라우저에서는 손 제스처 인식과 영상 녹화가 수행된다. 발표가 끝나면 영상 파일이 분석 API로 전송된다. 백엔드는 영상·음성 특징을 추출하고 점수 및 코칭을 생성한 후 결과를 데이터베이스에 저장한다. 별도의 집중도 분석 기능은 음성 특징과 설문 데이터를 이용한다.
+발표 중 브라우저에서는 손 제스처 인식과 영상 녹화가 수행된다. 발표 자료 업로드 시 슬라이드 API가 파일을 전달받아 슬라이드 변환 모듈을 통해 PNG 이미지로 변환하며, 변환된 이미지는 서버 로컬 임시 저장소에 저장된다. 프론트엔드는 반환된 이미지 URL을 이용해 슬라이드를 표시한다.
+
+발표가 끝나면 녹화 영상 파일이 분석 API로 전송된다. 백엔드는 영상·음성 특징을 추출하고 점수 및 코칭을 생성한 후 결과를 데이터베이스에 저장한다. 별도의 집중도 분석 기능은 음성 특징과 설문 데이터를 이용한다.
 
 ---
 ### 2.2 계층별 역할
