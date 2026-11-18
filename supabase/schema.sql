@@ -397,18 +397,12 @@ begin
   end if;
 end $$;
 
--- 게시글: 전체 공개 조회, 본인만 등록 (기존 users 정책 패턴과 동일)
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'board_posts' and policyname = 'board_posts_select_all'
-  ) then
-    create policy "board_posts_select_all"
-      on public.board_posts for select
-      using (true);
-  end if;
-end $$;
+-- 게시글: 공개 글은 누구나, 비공개 글은 작성자만 조회. 본인만 등록.
+-- 예전 정책(using true)은 비공개 글까지 열려 있었으므로 지우고 다시 만든다.
+drop policy if exists "board_posts_select_all" on public.board_posts;
+create policy "board_posts_select_all"
+  on public.board_posts for select
+  using (is_public or user_id = auth.uid()::text);
 
 do $$
 begin

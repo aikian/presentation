@@ -45,11 +45,10 @@ def get_history(
             .range(offset, offset + limit - 1)
             .execute()
         )
-    except Exception as e:
-        # [2026-09-22 수정] 예전에는 프론트가 이 에러를 조용히 삼켜서
-        # "기록이 없습니다" 화면으로 보였다. 이제 원인이 그대로 드러난다.
+    except Exception:
+        # 원인은 서버 로그에만 남기고 사용자에게는 내부 정보를 보내지 않는다.
         logger.exception("history query failed (user=%s)", current_user.id)
-        raise HTTPException(500, f"히스토리 조회 실패: {e}")
+        raise HTTPException(500, "히스토리 조회 실패")
 
     items = res.data or []
     # total은 DB에 실제로 몇 건이 남아 있는지 보여 주는 값이다.
@@ -80,8 +79,9 @@ def get_growth_report(
             .limit(limit)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"성장 리포트 조회 실패: {e}")
+    except Exception:
+        logger.exception("성장 리포트 조회 실패")
+        raise HTTPException(500, "성장 리포트 조회 실패")
 
     sessions = res.data or []
 
@@ -115,8 +115,9 @@ def download_pdf(result_id: str, current_user: CurrentUser = Depends(get_current
             .eq("user_id", current_user.id)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"DB 조회 실패: {e}")
+    except Exception:
+        logger.exception("DB 조회 실패")
+        raise HTTPException(500, "DB 조회 실패")
 
     if not res.data:
         raise HTTPException(404, "결과를 찾을 수 없습니다.")
@@ -151,8 +152,9 @@ def get_result(result_id: str, current_user: CurrentUser = Depends(get_current_u
             .eq("user_id", current_user.id)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"결과 조회 실패: {e}")
+    except Exception:
+        logger.exception("결과 조회 실패")
+        raise HTTPException(500, "결과 조회 실패")
 
     if not res.data:
         raise HTTPException(404, "결과를 찾을 수 없습니다.")
