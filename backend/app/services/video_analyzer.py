@@ -241,12 +241,33 @@ def _lean_direction(pose_landmarks) -> str:
     return "none"
 
 
-def _extract_frames(video_path: Path, interval_sec: float | None = None):
-    if interval_sec is None:
-        interval_sec = settings.frame_interval_sec
+def _shrink_frame(frame: np.ndarray, max_side: int) -> np.ndarray:
+    """긴 변이 max_side를 넘으면 비율을 유지한 채 줄인다. 0이면 원본 유지.
+
+    MediaPipe 지표(시선, 어깨 기울기, 손목 이동)는 전부 0~1 정규화 좌표나 비율이라
+    해상도를 줄여도 값이 거의 바뀌지 않는다. 반면 연산량은 픽셀 수에 비례해 준다.
+    """
+    if not max_side:
+        return frame
+    h, w = frame.shape[:2]
+    longest = max(h, w)
+    if longest <= max_side:
+        return frame
+    scale = max_side / longest
+    return cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
+def _extract_frame_sets(video_path: Path, intervals: list[float]):
+    """영상을 한 번만 읽으면서 여러 샘플 간격의 프레임을 동시에 뽑는다.
+
+    예전에는 간격마다 영상을 처음부터 다시 디코딩했다(얼굴·자세용 2초, 손용 0.5초,
+    길이 측정용까지 세 번). 디코딩이 전체 시간의 큰 몫이라 한 번으로 합친다.
+    반환: {간격: (frames, frame_times)}, 마지막 프레임 시각(초).
+    """
+    max_side = settings.max_frame_side
 
     # OpenCV stderr 억제 (EBML/webm 파싱 경고)
-    import os, sys
+    import os
     devnull = open(os.devnull, 'w')
     old_stderr_fd = os.dup(2)
     os.dup2(devnull.fileno(), 2)
@@ -258,14 +279,13 @@ def _extract_frames(video_path: Path, interval_sec: float | None = None):
         devnull.close()
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-
     if not fps or fps < 1 or fps > 120:
         fps = None
 
-    frames = []
-    frame_times = []
+    sets = {iv: ([], []) for iv in intervals}
+    next_sample = {iv: 0.0 for iv in intervals}
     idx = 0
-    next_sample_sec = 0.0
+    last_sec = None
 
     while True:
         ret, frame = cap.read()
@@ -276,16 +296,29 @@ def _extract_frames(video_path: Path, interval_sec: float | None = None):
             current_sec = idx / fps
         else:
             current_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        last_sec = current_sec
 
-        if current_sec + 1e-6 >= next_sample_sec:
-            frames.append(frame)
-            frame_times.append(round(current_sec, 3))
-            next_sample_sec += interval_sec
+        shrunk = None
+        for iv in intervals:
+            if current_sec + 1e-6 >= next_sample[iv]:
+                if shrunk is None:
+                    shrunk = _shrink_frame(frame, max_side)
+                sets[iv][0].append(shrunk)
+                sets[iv][1].append(round(current_sec, 3))
+                next_sample[iv] += iv
 
         idx += 1
 
     cap.release()
-    return frames, frame_times
+    return sets, last_sec
+
+
+def _extract_frames(video_path: Path, interval_sec: float | None = None):
+    """단일 간격 추출. 테스트와 외부 호출 호환용으로 남겨 둔다."""
+    if interval_sec is None:
+        interval_sec = settings.frame_interval_sec
+    sets, _ = _extract_frame_sets(video_path, [interval_sec])
+    return sets[interval_sec]
 
 
 def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
@@ -294,8 +327,11 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             on_step(n)
 
     _step(1)
-    frames, frame_times = _extract_frames(video_path)
-    gesture_frames, gesture_frame_times = _extract_frames(video_path, interval_sec=0.5)
+    face_interval = float(settings.frame_interval_sec)
+    gesture_interval = 0.5
+    frame_sets, decoded_last_sec = _extract_frame_sets(video_path, [face_interval, gesture_interval])
+    frames, frame_times = frame_sets[face_interval]
+    gesture_frames, gesture_frame_times = frame_sets[gesture_interval]
 
     if not frames:
         return {
@@ -305,6 +341,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             "ear_blink_ratio": None, "silence_ratio": None,
             "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
             "error": "영상에서 프레임을 추출할 수 없습니다.",
+            "decoded_duration_sec": decoded_last_sec,
         }
 
     gaze_scores: list[float] = []
@@ -602,6 +639,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "expression_change_std": round(expression_change_std, 4) if expression_change_std is not None else None,
         "gaze_heatmap": gaze_heatmap,
         "problem_frames": problem_frames,
+        # 디코딩하면서 본 마지막 프레임 시각. 길이 측정에 영상을 다시 읽지 않기 위해 넘긴다.
+        "decoded_duration_sec": decoded_last_sec,
     }
 
 
@@ -938,8 +977,12 @@ def _fallback_coaching(metrics: dict) -> str:
         f"## 다음 연습 우선순위\n1. {priorities[0]}\n2. {priorities[1]}",
     ])
 
-def _video_duration_sec(video_path: Path) -> float | None:
-    """영상 길이(초). 스키마의 meta.duration_sec으로 나간다."""
+def _video_duration_sec(video_path: Path, decoded_last_sec: float | None = None) -> float | None:
+    """영상 길이(초). 스키마의 meta.duration_sec으로 나간다.
+
+    메타데이터로 먼저 구하고, 없으면 프레임 추출 때 본 마지막 시각을 쓴다.
+    둘 다 없을 때만 영상을 끝까지 다시 읽는다.
+    """
     cap = cv2.VideoCapture(str(video_path))
 
     try:
@@ -948,6 +991,9 @@ def _video_duration_sec(video_path: Path) -> float | None:
 
         if fps and 1 <= fps <= 120 and frame_count and frame_count >= 1:
             return round(frame_count / fps, 1)
+
+        if decoded_last_sec is not None and decoded_last_sec > 0:
+            return round(decoded_last_sec, 1)
 
         last_sec = None
 
@@ -1061,7 +1107,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         metrics["filler_habits"] = None
         metrics["monotone_habits"] = None
 
-    metrics["duration_sec"] = _video_duration_sec(video_path)
+    metrics["duration_sec"] = _video_duration_sec(video_path, metrics.pop("decoded_duration_sec", None))
 
     # 연속된 제스처 활성 구간 수를 영상 길이로 정규화하여 분당 횟수 계산
     duration_sec = metrics["duration_sec"]

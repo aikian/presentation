@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # 운영 프록시의 100MB 요청 제한보다 여유를 둔다.
     max_upload_size_mb: int = 95
     frame_interval_sec: int = 2
+    # 분석 전 프레임 긴 변을 이 크기로 줄인다. 0이면 원본 그대로(기본). CPU 서버 연산량 절감용.
+    # 점수 영향 검증이 끝날 때까지 운영에서는 켜지 않는다. .env에서 MAX_FRAME_SIDE=640 으로 켠다.
+    max_frame_side: int = 0
     whisper_model: str = "small"
     enable_audio_analysis: bool = True
     secret_key: str = "change-me-in-production"
