@@ -141,8 +141,8 @@ function SettingsModal({ user, onClose }) {
   }
   async function handlePasswordSubmit(e) {
     e.preventDefault()
-    if (passwords.newPassword.length < 6) {
-      toast('새 비밀번호는 6자 이상이어야 합니다.')
+    if (passwords.newPassword.length < 8) {
+      toast('새 비밀번호는 8자 이상이어야 합니다.')
       return
     }
     if (passwords.newPassword !== passwords.confirmPassword) {

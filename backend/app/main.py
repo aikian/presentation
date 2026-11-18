@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
+from app.core.security import check_secret_key
 # board = 발표 영상 공유 게시판, audience = 청중 집중도
 from app.routers import analysis, auth, history, slides, board, audience
 
@@ -11,6 +12,7 @@ app = FastAPI(title="PresentationCoach Presentation Analyzer")
 
 @app.on_event("startup")
 def on_startup():
+    check_secret_key()
     upload_path = Path(settings.upload_dir)
     if upload_path.exists():
         for f in upload_path.iterdir():
