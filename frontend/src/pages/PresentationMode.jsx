@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {QRCodeSVG} from 'qrcode.react'
 import FileUpload from '../components/presentation/FileUpload'
 import SlideViewer from '../components/presentation/SlideViewer'
 import SlideControls from '../components/presentation/SlideControls'
@@ -113,6 +114,64 @@ function GoalModal({ onStart }) {
   )
 }
 
+function EndChoiceModal({ onAnalyze, onSurvey }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl bg-white p-7 text-left shadow-2xl">
+        <h2 className="text-xl font-extrabold tracking-tight text-slate-950">발표 종료</h2>
+        <p className="mt-1 text-sm text-slate-500">녹화가 완료되었습니다. 다음 중 진행할 작업을 선택하세요.</p>
+        <div className="mt-6 flex flex-col gap-3">
+          <button
+            onClick={onAnalyze}
+            className="rounded-xl border border-slate-200 bg-white py-3 font-bold text-slate-900 transition hover:bg-slate-100"
+          >
+            분석 보러 가기
+          </button>
+          <button
+            onClick={onSurvey}
+            className="rounded-xl border border-slate-200 bg-white py-3 font-bold text-slate-900 transition hover:bg-slate-100"
+          >
+            설문 참여하기
+          </button>  
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SurveyQRModal({ surveyURL, onNext, onClose }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl bg-white p-7 text-left shadow-2xl">
+        <h2 className="text-xl font-extrabold tracking-tight text-slate-950">설문 참여</h2>
+        <p className="mt-1 text-sm text-slate-500">아래 QR 코드를 스캔하여 설문에 참여하세요.</p>
+
+        <div className="mx-auto my-7 flex justify-center rounded-2xl border border-slate-200 bg-white p-6">
+          <QRCodeSVG value={surveyURL} size={200} level="H" includeMargin={true} />
+        </div>
+
+        <p className="break-all text-sm text-slate-500">{surveyURL}</p>
+
+        <div className="mt-6 flex flex-col gap-3">
+          <button
+            onClick={onNext}
+            className="rounded-xl border border-slate-200 bg-white py-3 font-bold text-slate-900 transition hover:bg-slate-100"
+          >
+            설문 종료 및 발표 분석 시작
+          </button>
+
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-white py-3 font-bold text-slate-900 transition hover:bg-slate-100"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 async function saveToFolder(blob, folderHandle) {
   try {
     const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')
@@ -144,6 +203,12 @@ export default function PresentationMode() {
   const slideLogRef = useRef([])          // [{slide: 0, duration: 3.2}, ...]
   const slideStartRef = useRef(null)       // 현재 슬라이드가 표시된 시각(ms)
   const currentRef = useRef(0)            // setCurrent와 동기화용
+  
+  const [showEndChoice, setShowEndChoice] = useState(false) // 발표 후 분석 또는 QR 설문 선택 모달 표시
+  const [showSurveyQR, setShowSurveyQR] = useState(false) // 설문 QR 코드 표시
+  const [surveyURL, setSurveyURL] = useState('') // 설문 URL
+  const [recordedBlob, setRecordedBlob] = useState(null) // 녹화된 영상 Blob
+
   useEffect(() => () => clearInterval(timerRef.current), [])
   function _recordCurrentSlide() {
     if (slideStartRef.current !== null) {
@@ -176,32 +241,73 @@ export default function PresentationMode() {
     slideStartRef.current = Date.now()
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000)
   }
+  
   async function handleExit() {
     if (exiting) return
+
     clearInterval(timerRef.current)
     _recordCurrentSlide()  // 마지막 슬라이드 체류 시간 기록
     setExiting(true)
-    if (session) await deleteSlides(session.sessionId).catch(() => {})
+
     try {
       const blob = await webcamRef.current?.stop()
-      if (blob && blob.size > 0) {
-        if (folderHandleRef.current) {
-          await saveToFolder(blob, folderHandleRef.current)
-        }
-        const file = new File([blob], 'webcam_recording.webm', { type: blob.type })
-        const { job_id } = await uploadVideo(file, {
-          goal_sec: goalSec,
-          elapsed_sec: elapsed,
-          slide_log: slideLogRef.current,
-        })
-        navigate('/analysis', { state: { jobId: job_id } })
+      if (!blob || blob.size == 0) {
+        setShowEndChoice(false)
+        setShowSurveyQR(false)
+        navigate('/') // 녹화가 없으면 바로 홈으로
         return
       }
-    } catch {
+
+      setRecordedBlob(blob) // 녹화 영상 보관
+
+      if (folderHandleRef.current) {
+        await saveToFolder(blob, folderHandleRef.current)
+      }
+
+      setShowEndChoice(true) // 분석 또는 설문 선택 모달 표시
+ 
+    } catch (e) {
       toast('녹화 업로드에 실패했습니다.', 'error')
+    } finally {
+      setExiting(false)
     }
-    navigate('/')
   }
+
+  async function handleAnalyze() {
+    if (exiting || !recordedBlob) return
+
+    setExiting(true)
+    setShowEndChoice(false)
+    setShowSurveyQR(false)
+
+    try {
+      const file = new File([recordedBlob], 'webcam_recording.webm', { type: recordedBlob.type })
+      const { job_id } = await uploadVideo(file, {
+        goal_sec: goalSec,
+        elapsed_sec: elapsed,
+        slide_log: slideLogRef.current,
+      })
+
+      if (session) await deleteSlides(session.sessionId).catch(() => {})
+
+      navigate('/analysis', { state: { jobId: job_id } })
+
+    } catch (e) {
+      toast('분석 업로드에 실패했습니다.', 'error')
+      setExiting(false)
+    }
+  }
+
+  async function handleShowSurvey() {
+    if (!session || !recordedBlob) return
+
+    // 설문 URL 생성
+    const surveyURL = `${window.location.origin}/survey/${session.sessionId}`
+    setSurveyURL(surveyURL)
+    setShowEndChoice(false)
+    setShowSurveyQR(true)
+  }
+
   const prev = useCallback(() => {
     _recordCurrentSlide()
     setCurrent((c) => {
@@ -251,6 +357,27 @@ export default function PresentationMode() {
         <GestureController stream={webcamStream} onLeft={prev} onRight={next} />
       )}
       {showGoal && <GoalModal onStart={handleStart} />}
+
+      {/* 발표 종료 후 작업 선택 */}
+      {showEndChoice && (
+        <EndChoiceModal
+          onAnalyze={handleAnalyze}
+          onSurvey={handleShowSurvey}
+          onCancel={() => setShowEndChoice(false)}
+        />
+      )}
+
+      {/* 설문 QR 코드 표시 */}
+      {showSurveyQR && (
+        <SurveyQRModal 
+          surveyURL={surveyURL} 
+          onNext={handleAnalyze} 
+          onClose={() => {
+            setShowSurveyQR(false) 
+            setShowEndChoice(true)
+          }}  
+        />
+      )}
       {exiting && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
           <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white border-t-transparent" />
