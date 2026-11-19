@@ -19,6 +19,12 @@ from app.services.audio_features import analyze_audio_features
 from app.services.predict_concentration import analyze_audience
 
 logger = logging.getLogger(__name__)
+ALLOWED_PRESENTATION_TYPES = {
+    "general",
+    "academic",
+    "pitch",
+    "interview",
+}
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
@@ -36,6 +42,7 @@ def _run_job(
     elapsed_sec: float | None,
     slide_log: list | None,
     rolemodel_id: str | None = None,
+    presentation_type: str = "general",
 ):
     def update_step(step: int):
         _jobs[job_id]["step"] = step
@@ -45,6 +52,8 @@ def _run_job(
 
         if elapsed_sec is not None:
             result["elapsed_sec"] = elapsed_sec
+
+        result["presentation_type"] = presentation_type
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
@@ -222,8 +231,14 @@ async def upload_video(
     elapsed_sec: float | None = Form(None),
     slide_log: str | None = Form(None),
     rolemodel_id: str | None = Form(None),
+    presentation_type: str = Form("general"),
     current_user: CurrentUser = Depends(get_current_user),
 ):
+    if presentation_type not in ALLOWED_PRESENTATION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="지원하지 않는 발표 유형입니다.",
+        )
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"지원 형식: MP4, MOV, AVI, WebM. 받은 형식: {suffix}")
@@ -259,6 +274,7 @@ async def upload_video(
         _executor, _run_job,
         job_id, tmp_path, current_user.id, goal_sec, elapsed_sec, parsed_log,
         rolemodel_id or None,
+        presentation_type,
     )
 
     return JSONResponse({"job_id": job_id})

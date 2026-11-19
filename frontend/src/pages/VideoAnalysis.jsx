@@ -5,6 +5,7 @@ import AnalysisProgress from '../components/analysis/AnalysisProgress'
 import ResultTabs from '../components/result/ResultTabs'
 import { useToast } from '../components/common/Toast'
 import { uploadVideo, pollAnalysis } from '../api/client'
+
 const POLL_INTERVAL = 2000
 export default function VideoAnalysis() {
   const location = useLocation()
@@ -16,11 +17,18 @@ export default function VideoAnalysis() {
   const [stepHint, setStepHint] = useState(0)
   const jobIdRef = useRef(null)
   const timerRef = useRef(null)
+
+  // 분석 결과를 주기적으로 확인
   const startPolling = useCallback((jobId) => {
+    clearInterval(timerRef.current)
     timerRef.current = setInterval(async () => {
       try {
         const data = await pollAnalysis(jobId)
-        if (data.step !== undefined) setStepHint(data.step)
+        
+        if (data.step !== undefined) {
+          setStepHint(data.step)
+        }
+
         if (data.status === 'done') {
           clearInterval(timerRef.current)
           setResult(data.result)
@@ -38,6 +46,7 @@ export default function VideoAnalysis() {
       }
     }, POLL_INTERVAL)
   }, [])
+
   // 발표 모드에서 넘어온 job_id 자동 처리
   useEffect(() => {
     const jobId = location.state?.jobId
@@ -50,12 +59,19 @@ export default function VideoAnalysis() {
     }
     return () => clearInterval(timerRef.current)
   }, [location.state?.jobId, startPolling])
+
+  // 영상 업로드 및 분석 시작
   async function handleUpload(file, options = {}) {
     setStage('progress')
     setStepHint(0)
     setError(null)
+
     try {
-      const { job_id } = await uploadVideo(file, { rolemodel_id: options.rolemodelId })
+      const { job_id } = await uploadVideo(file, {
+        rolemodel_id: options.rolemodelId,
+        presentation_type: options.presentationType || 'general',
+      })
+
       jobIdRef.current = job_id
       startPolling(job_id)
     } catch (e) {
@@ -65,15 +81,39 @@ export default function VideoAnalysis() {
       setStage('error')
     }
   }
-  if (stage === 'upload') return <VideoUpload onUpload={handleUpload} loading={false} />
-  if (stage === 'progress') return <AnalysisProgress stepHint={stepHint} />
-  if (stage === 'result') return <ResultTabs result={result} resultId={resultId} />
+
+  if (stage === 'upload') {
+    return (
+      <VideoUpload
+        onUpload={handleUpload}
+        loading={false}
+      />
+    )
+  }
+
+  if (stage === 'progress') {
+    return <AnalysisProgress stepHint={stepHint} />
+  }
+
+  if (stage === 'result') {
+    return <ResultTabs result={result} resultId={resultId} />
+  }
+
   return (
     <main className="mx-auto w-full max-w-lg px-5 py-20 text-left">
       <div className="rounded-3xl border border-rose-200 bg-white p-8 text-center">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-xl font-bold text-rose-600">!</span>
-        <h1 className="mt-4 text-xl font-extrabold text-slate-950">분석하지 못했어요</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">{error}</p>
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-xl font-bold text-rose-600">
+          !
+        </span>
+
+        <h1 className="mt-4 text-xl font-extrabold text-slate-950">
+          분석하지 못했어요
+        </h1>
+
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          {error}
+        </p>
+
         <button
           onClick={() => setStage('upload')}
           className="mt-6 rounded-xl bg-blue-600 px-6 py-2.5 font-semibold text-white transition hover:bg-blue-700"

@@ -55,34 +55,30 @@ def _calculate_gesture_score(gesture_per_min: float | None, gesture_valid_ratio:
     )
 
 
-def calculate_voice_detail(audio_metrics: dict | None) -> dict | None:
-    """음성 점수와 판정 근거를 함께 만든다.
-
-    기준과 가중치의 근거는 rolemodel.VOICE_BASELINE 주석에 적어뒀다.
-    요약하면 명연사 6명 7편의 실측 범위를 기준선으로 쓰고, 같은 연사의 다른 강연에서
-    값이 덜 흔들리는 지표에 더 무게를 뒀다.
-
-    말속도 30% · 단조로움 30% · 군말 25% · 침묵 15%
-    """
+def calculate_voice_detail(audio_metrics: dict | None, presentation_type: str = "general",) -> dict | None:
+    """발표 유형별 음성 점수와 판정 근거를 함께 만든다."""
     if not audio_metrics or not audio_metrics.get("speech_available"):
         return None
 
-    block = build_audio_block(audio_metrics, audio_metrics.get("duration_sec"))
+    block = build_audio_block(
+        audio_metrics,
+        audio_metrics.get("duration_sec"),
+    )
     if not block:
         return None
 
-    return voice_score_detail(block.get("summary"))
+    return voice_score_detail(
+        block.get("summary"),
+        presentation_type,
+    )
 
-
-def _calculate_voice_score(audio_metrics: dict | None) -> int | None:
-    """음성 분석 결과를 0~100점으로 변환한다.
-
-    측정하지 못한 지표는 빼고 남은 가중치로 다시 나눈다.
-    하나도 못 재면 None이라서 종합점수 계산에서 제외된다.
-    """
-    detail = calculate_voice_detail(audio_metrics)
+def _calculate_voice_score(audio_metrics: dict | None, presentation_type: str = "general",) -> int | None:
+    """발표 유형별 음성 분석 결과를 0~100점으로 변환한다."""
+    detail = calculate_voice_detail(
+        audio_metrics,
+        presentation_type,
+    )
     return detail["score"] if detail else None
-
 
 def _calculate_time_score(elapsed_sec: float | None, goal_sec: float | None) -> int | None:
     """목표 시간이 설정된 경우에만 시간 준수 점수를 계산한다."""
@@ -159,7 +155,12 @@ def calculate_scores(metrics: dict, goal_sec: float | None = None) -> dict:
         gesture_valid_ratio=metrics.get("gesture_valid_ratio"),
     )
 
-    voice = _calculate_voice_score(metrics.get("audio_metrics"))
+    presentation_type = metrics.get("presentation_type", "general")
+
+    voice = _calculate_voice_score(
+        metrics.get("audio_metrics"),
+        presentation_type,
+    )
 
     time_score = _calculate_time_score(
         metrics.get("elapsed_sec"),
