@@ -450,7 +450,7 @@ end $$;
 -- 설문 링크
 create table if not exists public.survey_links (
   token text primary key,
-  result_id uuid references public.analysis_results(id) on delete cascade,
+  result_id text references public.analysis_results(id) on delete cascade,
   user_id text not null,
   is_open boolean not null default true,
   expires_at timestamptz not null,
@@ -460,7 +460,7 @@ create table if not exists public.survey_links (
 -- 설문 응답
 create table if not exists public.survey_responses (
   id uuid primary key default gen_random_uuid(),
-  result_id uuid references public.analysis_results(id) on delete cascade,
+  result_id text references public.analysis_results(id) on delete cascade,
   link_token text references public.survey_links(token) on delete cascade,
   participant_id text not null,
   spm smallint not null check (spm between 1 and 5),
