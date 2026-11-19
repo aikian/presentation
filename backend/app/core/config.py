@@ -19,8 +19,11 @@ class Settings(BaseSettings):
     supabase_key: str = ""
     supabase_service_role_key: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    # 발표 영상 공유 게시판 / 성장 분석
+    
+    # 청중 설문 QR 링크의 프론트 주소 (배포 주소로 변경 필요)
+    frontend_base_url: str = "http://localhost:5173"
+    
+    # [신규 추가] 발표 영상 공유 게시판 / 성장 분석
     board_video_bucket: str = "presentation-videos"  # Supabase Storage 버킷 이름
     board_max_video_mb: int = 50                     # 게시판 영상 최대 크기
     growth_ai_enabled: bool = True                   # false면 성장 피드백에 AI 호출 안 함
