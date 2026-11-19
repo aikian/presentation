@@ -446,3 +446,55 @@ begin
       with check (user_id = (select auth.uid()::text));
   end if;
 end $$;
+
+-- 설문 링크
+create table if not exists public.survey_links (
+  token text primary key,
+  result_id uuid references public.analysis_results(id) on delete cascade,
+  is_open boolean not null default true,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+-- 설문 응답
+create table if not exists public.survey_responses (
+  id uuid primary key default gen_random_uuid(),
+  result_id uuid references public.analysis_results(id) on delete cascade,
+  link_token text references public.survey_links(token) on delete cascade,
+  participant_id text not null,
+  spm smallint not null check (spm between 1 and 5),
+  pitch_variation smallint not null check (pitch_variation between 1 and 5),
+  db smallint not null check (db between 1 and 5),
+  silence smallint not null check (silence between 1 and 5),
+  attention_score smallint not null check (attention_score between 0 and 100),
+  feedback text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_survey_responses_id on public.survey_responses (result_id);
+
+create unique index if not exists uq_survey_responses_link_participant
+  on public.survey_responses (link_token, participant_id)
+  where link_token is not null;
+
+alter table public.survey_links enable row level security;
+alter table public.survey_responses enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'survey_responses'
+      and policyname = 'survey_responses_select_own'
+  ) then
+    create policy "survey_responses_select_own"
+      on public.survey_responses for select
+      using (
+        result_id in (
+          select id from public.analysis_results
+          where user_id = (select auth.uid()::text)
+        )
+      );
+  end if;
+end $$;
