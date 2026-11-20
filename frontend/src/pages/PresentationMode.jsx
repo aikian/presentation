@@ -8,7 +8,7 @@ import WebcamRecorder from '../components/presentation/WebcamRecorder'
 import GestureController from '../components/presentation/GestureController'
 import NavBar from '../components/common/NavBar'
 import { useToast } from '../components/common/Toast'
-import { uploadSlides, deleteSlides, uploadVideo } from '../api/client'
+import { uploadSlides, deleteSlides, uploadVideo, createSurveyLink, closeSurveyLink } from '../api/client'
 const SUPPORTS_FOLDER = typeof window !== 'undefined' && 'showDirectoryPicker' in window
 const SETTINGS_KEY = 'presentationcoach.settings'
 function loadPresentationSettings() {
@@ -207,6 +207,9 @@ export default function PresentationMode() {
   const [showEndChoice, setShowEndChoice] = useState(false) // 발표 후 분석 또는 QR 설문 선택 모달 표시
   const [showSurveyQR, setShowSurveyQR] = useState(false) // 설문 QR 코드 표시
   const [surveyURL, setSurveyURL] = useState('') // 설문 URL
+  const [surveyToken, setSurveyToken] = useState(null)
+  const [surveyClosed, setSurveyClosed] = useState(false)
+  const [surveyLoading, setSurveyLoading] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState(null) // 녹화된 영상 Blob
 
   useEffect(() => () => clearInterval(timerRef.current), [])
@@ -281,11 +284,17 @@ export default function PresentationMode() {
     setShowSurveyQR(false)
 
     try {
+      if (surveyToken && !surveyClosed) {
+        await closeSurveyLink(surveyToken).catch(() => {})
+        setSurveyClosed(true)
+      }
+
       const file = new File([recordedBlob], 'webcam_recording.webm', { type: recordedBlob.type })
       const { job_id } = await uploadVideo(file, {
         goal_sec: goalSec,
         elapsed_sec: elapsed,
         slide_log: slideLogRef.current,
+        survey_token: surveyToken
       })
 
       if (session) await deleteSlides(session.sessionId).catch(() => {})
@@ -295,17 +304,38 @@ export default function PresentationMode() {
     } catch (e) {
       toast('분석 업로드에 실패했습니다.', 'error')
       setExiting(false)
+      setShowEndChoice(true)
     }
   }
 
   async function handleShowSurvey() {
-    if (!session || !recordedBlob) return
+    if (surveyLoading) return
 
-    // 설문 URL 생성
-    const surveyURL = `${window.location.origin}/survey/${session.sessionId}`
-    setSurveyURL(surveyURL)
-    setShowEndChoice(false)
-    setShowSurveyQR(true)
+    // 이미 열려 있는 설문이 있으면 새로 만들지 않고 같은 QR을 다시 보여줌
+    if (surveyToken && !surveyClosed) {
+      setShowEndChoice(false)
+      setShowSurveyQR(true)
+      return
+    }
+
+    if (surveyToken && surveyClosed) {
+      toast('이미 종료된 설문입니다.', 'error')
+      return
+    }
+
+    setSurveyLoading(true)
+    try {
+      const { token } = await createSurveyLink()   // 버튼 누른 시점부터 30분
+      setSurveyToken(token)
+      setSurveyClosed(false)
+      setSurveyURL(`${window.location.origin}/survey/${token}`)
+      setShowEndChoice(false)
+      setShowSurveyQR(true)
+    } catch (e) {
+      toast('설문 링크를 만들지 못했습니다.', 'error')
+    } finally {
+      setSurveyLoading(false)
+    }
   }
 
   const prev = useCallback(() => {
