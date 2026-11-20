@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { uploadSurveyCsv } from '../../api/client'
 
-export default function CsvUpload({ resultId, onUploaded }) {
+export default function CsvUpload({ resultId, onUploaded, disabled = false }) {
     const inputRef = useRef(null)
 
     const [file, setFile] = useState(null)
@@ -25,6 +25,7 @@ export default function CsvUpload({ resultId, onUploaded }) {
         if (!isCsv) {
             setFile(null)
             setMessage('CSV 파일만 업로드할 수 있습니다.')
+            e.target.value = ''
             return
         }
 
@@ -52,9 +53,9 @@ export default function CsvUpload({ resultId, onUploaded }) {
 
     return(
         <div>
-            <input ref={inputRef} type="file" accept=".csv, text/csv" onChange={handleFileChange} disabled={loading} className="hidden"/>
+            <input ref={inputRef} type="file" accept=".csv, text/csv" onChange={handleFileChange} disabled={loading || disabled} className="hidden"/>
 
-            <button type="button" onClick={openFilePicker} disabled={loading} className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={openFilePicker} disabled={loading || disabled} className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {loading ? '업로드 중...' : 'CSV 파일 선택'}
             </button> 
 
