@@ -76,6 +76,7 @@ export async function uploadVideo(file, metadata = {}) {
   if (metadata.slide_log?.length) form.append('slide_log', JSON.stringify(metadata.slide_log))
   // 따라 하고 싶은 연사를 고른 경우. 안 고르면 연사 전체 범위를 기준으로 쓴다.
   if (metadata.rolemodel_id) form.append('rolemodel_id', metadata.rolemodel_id)
+  if (metadata.survey_token) form.append('survey_token', metadata.survey_token)
   const { data } = await api.post('/analysis/upload', form)
   return data // { job_id }
 }
@@ -204,4 +205,34 @@ export async function fetchResult(resultId) {
 export async function fetchSpeakers() {
   const { data } = await api.get('/analysis/speakers')
   return data.speakers ?? []
+}
+
+// QR 설문
+export async function createSurveyLink() {
+  const { data } = await api.post('/survey/links')
+  return data
+}
+
+export async function closeSurveyLink(token) {
+  const { data } = await api.post(`/survey/${token}/close`)
+  return data
+}
+
+export async function importSurveyResponses (resultId) {
+  try {
+    const { data } = await api.post(`/audience/${resultId}/survey/import`)
+    return data
+  } catch (error) {
+    throw new Error(error.response?.data?.detail ?? '설문 결과를 불러오지 못했습니다.')
+  }
+}
+
+export async function submitSurveyResponse(token, payload) {
+  try {
+    const { data } = await api.post(`/survey/${token}/responses`, payload)
+    return data
+  } catch (error) {
+    const detail = error.response?.data?.detail
+    throw new Error(typeof detail === 'string' ? detail : '설문 제출에 실패했습니다.')
+  }
 }
