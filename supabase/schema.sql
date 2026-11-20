@@ -481,6 +481,8 @@ create unique index if not exists uq_survey_responses_link_participant
 alter table public.survey_links enable row level security;
 alter table public.survey_responses enable row level security;
 
+create unique index if not exists survey_results_result_id_key on survey_results (result_id);
+
 do $$
 begin
   if not exists (
