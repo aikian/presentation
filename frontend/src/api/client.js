@@ -218,9 +218,9 @@ export async function closeSurveyLink(token) {
   return data
 }
 
-export async function importSurveyResponses (resultId) {
+export async function importSurveyResponses(resultId) {
   try {
-    const { data } = await api.post(`/audience/${resultId}/survey/import`)
+    const { data } = await api.post(`/survey/results/${resultId}/analyze`)
     return data
   } catch (error) {
     throw new Error(error.response?.data?.detail ?? '설문 결과를 불러오지 못했습니다.')
