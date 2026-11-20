@@ -24,7 +24,7 @@ export default function AnalysisProgress({ stepHint = 0, queuePosition = 0 }) {
 
         {queuePosition > 0 && (
           <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            앞에 {queuePosition}건이 분석 중이에요. 순서대로 시작되니 조금만 기다려 주세요.
+            대기 중입니다. 앞선 분석 {queuePosition}건이 끝나면 자동으로 시작됩니다.
           </p>
         )}
 
