@@ -25,6 +25,8 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
 MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
 
 _jobs: dict[str, dict] = {}
+# job_id -> 올린 사용자 id. 결과 조회 때 본인 것만 보여주기 위해 따로 둔다.
+_job_owners: dict[str, str] = {}
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
@@ -187,8 +189,14 @@ def _run_job(
         else:
             completed_job["save_error"] = "analysis_result_not_persisted"
         _jobs[job_id] = completed_job
-    except Exception as e:
-        _jobs[job_id] = {"status": "error", "step": _jobs[job_id].get("step", 0), "error": str(e)}
+    except Exception:
+        # 예외 내용은 로그에만 남긴다. 사용자에게 내부 경로나 라이브러리 메시지를 보내지 않는다.
+        logger.exception("분석 실패 (job %s)", job_id)
+        _jobs[job_id] = {
+            "status": "error",
+            "step": _jobs[job_id].get("step", 0),
+            "error": "분석 중 오류가 발생했습니다. 다른 영상으로 다시 시도해 주세요.",
+        }
     finally:
         video_path.unlink(missing_ok=True)
 
@@ -242,9 +250,10 @@ async def upload_video(
                 f.write(chunk)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         tmp_path.unlink(missing_ok=True)
-        raise HTTPException(500, str(e))
+        logger.exception("업로드 파일 저장 실패 (job %s)", job_id)
+        raise HTTPException(500, "업로드 파일을 저장하지 못했습니다.")
 
     parsed_log = None
     if slide_log:
@@ -254,6 +263,7 @@ async def upload_video(
             pass
 
     _jobs[job_id] = {"status": "pending", "step": 0}
+    _job_owners[job_id] = current_user.id
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         _executor, _run_job,
@@ -265,8 +275,10 @@ async def upload_video(
 
 
 @router.get("/{job_id}")
-def get_job(job_id: str):
+def get_job(job_id: str, current_user: CurrentUser = Depends(get_current_user)):
+    # 결과에는 자막 전문과 발표자 얼굴 캡처가 들어 있으므로 올린 사람만 볼 수 있다.
+    # 남의 job은 존재 여부도 알려주지 않기 위해 404로 답한다.
     job = _jobs.get(job_id)
-    if job is None:
+    if job is None or _job_owners.get(job_id) != current_user.id:
         raise HTTPException(404, "job을 찾을 수 없습니다")
     return JSONResponse(job)
