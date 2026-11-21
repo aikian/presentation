@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import execute_supabase, get_supabase, save_attention_prediction
+from app.core.survey_db import attach_survey_to_result, get_survey_link
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_audio_block, build_details
 from app.services.rolemodel import compare
@@ -40,6 +41,7 @@ def _run_job(
     elapsed_sec: float | None,
     slide_log: list | None,
     rolemodel_id: str | None = None,
+    survey_token: str | None = None
 ):
     def update_step(step: int):
         _jobs[job_id]["step"] = step
@@ -152,7 +154,18 @@ def _run_job(
             )
             if sb_res.data:
                 saved_id = sb_res.data[0]["id"]
-
+                
+                # QR 설문 응답을 이 발표에 연결 (내 토큰일 때만)
+                if survey_token:
+                    try:
+                        link = get_survey_link(survey_token)
+                        if link and link.get("user_id") == user_id:
+                            attach_survey_to_result(survey_token, saved_id)
+                        else:
+                            logger.warning("설문 연결 건너뜀: 토큰이 없거나 소유자가 다릅니다")
+                    except Exception:
+                        logger.warning("설문 연결 실패", exc_info=True)
+                        
                 if slide_log and goal_sec is not None:
                     try:
                         session_id = uuid.uuid4().hex
@@ -232,6 +245,7 @@ async def upload_video(
     elapsed_sec: float | None = Form(None),
     slide_log: str | None = Form(None),
     rolemodel_id: str | None = Form(None),
+    survey_token: str | None = Form(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     suffix = Path(file.filename).suffix.lower()
@@ -272,6 +286,7 @@ async def upload_video(
         _executor, _run_job,
         job_id, tmp_path, current_user.id, goal_sec, elapsed_sec, parsed_log,
         rolemodel_id or None,
+        survey_token or None
     )
 
     return JSONResponse({"job_id": job_id})

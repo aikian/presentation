@@ -15,6 +15,7 @@ import BoardWrite from './pages/BoardWrite'
 import BoardDetail from './pages/BoardDetail'
 import PredictAttention from './pages/PredictAttention'
 import ResultDetail from './pages/ResultDetail'
+import SurveyPage from './pages/SurveyPage'
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) return null
@@ -54,6 +55,8 @@ function AppRoutes() {
       <Route path="/board" element={<PrivateRoute><Shell><BoardList /></Shell></PrivateRoute>} />
       <Route path="/board/new" element={<PrivateRoute><Shell><BoardWrite /></Shell></PrivateRoute>} />
       <Route path="/board/:postId" element={<PrivateRoute><Shell><BoardDetail /></Shell></PrivateRoute>} />
+      {/* 설문 페이지 */}
+      <Route path="/survey/:token" element={<SurveyPage />} />
     </Routes>
   )
 }

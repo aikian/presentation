@@ -39,7 +39,6 @@ SURVEY_COLUMNS = [
    
 # 숫자로 변환할 컬럼
 NUMERIC_COLUMNS = [
-    "participant_id",
     "spm",
     "pitch_variation",
     "db",
@@ -164,10 +163,7 @@ async def analyze_survey_csv(file: UploadFile, result_id: str, api_key: str) -> 
         )
         
     # 숫자여야 하는 컬럼의 SURVEY_COLUMNS 내 위치
-    required_positions = [
-        SURVEY_COLUMNS.index("participant_id"),
-        SURVEY_COLUMNS.index("attention_score")
-    ]
+    required_positions = [SURVEY_COLUMNS.index("attention_score")]
     first_row_numeric = pd.to_numeric(df.iloc[0, required_positions], errors="coerce")
     if first_row_numeric.isna().any():
         df = df.drop(0).reset_index(drop=True)

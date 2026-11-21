@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.security import check_secret_key
-# board = 발표 영상 공유 게시판, audience = 청중 집중도
-from app.routers import analysis, auth, history, slides, board, audience
+# board = 발표 영상 공유 게시판, audience = 청중 집중도, survey = QR 설문
+from app.routers import analysis, auth, history, slides, board, audience, survey
 
 app = FastAPI(title="PresentationCoach Presentation Analyzer")
 
@@ -40,6 +40,8 @@ app.include_router(history.router, prefix="/api/history", tags=["history"])
 app.include_router(board.router, prefix="/api/board", tags=["board"])
 # 청중 집중도 대시보드
 app.include_router(audience.router, prefix="/api/audience", tags=["audience"])
+# QR 설문 페이지
+app.include_router(survey.router, prefix="/api/survey", tags=["survey-link"])
 
 @app.get("/api/health")
 def health():
