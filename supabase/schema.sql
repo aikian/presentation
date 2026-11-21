@@ -397,18 +397,12 @@ begin
   end if;
 end $$;
 
--- 게시글: 전체 공개 조회, 본인만 등록 (기존 users 정책 패턴과 동일)
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'board_posts' and policyname = 'board_posts_select_all'
-  ) then
-    create policy "board_posts_select_all"
-      on public.board_posts for select
-      using (true);
-  end if;
-end $$;
+-- 게시글: 공개 글은 누구나, 비공개 글은 작성자만 조회. 본인만 등록.
+-- 예전 정책(using true)은 비공개 글까지 열려 있었으므로 지우고 다시 만든다.
+drop policy if exists "board_posts_select_all" on public.board_posts;
+create policy "board_posts_select_all"
+  on public.board_posts for select
+  using (is_public or user_id = auth.uid()::text);
 
 do $$
 begin
@@ -444,5 +438,60 @@ begin
     create policy "board_comments_insert_own"
       on public.board_comments for insert
       with check (user_id = (select auth.uid()::text));
+  end if;
+end $$;
+
+-- 설문 링크
+create table if not exists public.survey_links (
+  token text primary key,
+  result_id text references public.analysis_results(id) on delete cascade,
+  user_id text not null,
+  is_open boolean not null default true,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+-- 설문 응답
+create table if not exists public.survey_responses (
+  id uuid primary key default gen_random_uuid(),
+  result_id text references public.analysis_results(id) on delete cascade,
+  link_token text references public.survey_links(token) on delete cascade,
+  participant_id text not null,
+  spm smallint not null check (spm between 1 and 5),
+  pitch_variation smallint not null check (pitch_variation between 1 and 5),
+  db smallint not null check (db between 1 and 5),
+  silence smallint not null check (silence between 1 and 5),
+  attention_score smallint not null check (attention_score between 0 and 100),
+  feedback text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_survey_responses_id on public.survey_responses (result_id);
+
+create unique index if not exists uq_survey_responses_link_participant
+  on public.survey_responses (link_token, participant_id)
+  where link_token is not null;
+
+alter table public.survey_links enable row level security;
+alter table public.survey_responses enable row level security;
+
+create unique index if not exists survey_results_result_id_key on survey_results (result_id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'survey_responses'
+      and policyname = 'survey_responses_select_own'
+  ) then
+    create policy "survey_responses_select_own"
+      on public.survey_responses for select
+      using (
+        result_id in (
+          select id from public.analysis_results
+          where user_id = (select auth.uid()::text)
+        )
+      );
   end if;
 end $$;

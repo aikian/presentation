@@ -262,6 +262,74 @@ VOICE_BASELINE = {
     "silence_ratio": ("침묵 비율", 0.135, 0.250, 0.15, None),
 }
 
+# 발표 유형별 음성 평가 정책
+# tolerance: 기준 범위 허용 폭 배율
+# weights: 지표별 점수 반영 비율
+PRESENTATION_PROFILES = {
+    "general": {
+        "name": "일반 발표",
+        "tolerance": {
+            "spm_avg": 1.0,
+            "monotone_ratio": 1.0,
+            "filler_per_min": 1.0,
+            "silence_ratio": 1.0,
+        },
+        "weights": {
+            "spm_avg": 0.30,
+            "monotone_ratio": 0.30,
+            "filler_per_min": 0.25,
+            "silence_ratio": 0.15,
+        },
+    },
+
+    "academic": {
+        "name": "학술 발표",
+        "tolerance": {
+            "spm_avg": 1.25,
+            "monotone_ratio": 1.15,
+            "filler_per_min": 1.0,
+            "silence_ratio": 1.50,
+        },
+        "weights": {
+            "spm_avg": 0.20,
+            "monotone_ratio": 0.20,
+            "filler_per_min": 0.30,
+            "silence_ratio": 0.30,
+        },
+    },
+
+    "pitch": {
+        "name": "IR 피칭",
+        "tolerance": {
+            "spm_avg": 1.15,
+            "monotone_ratio": 1.25,
+            "filler_per_min": 1.0,
+            "silence_ratio": 1.15,
+        },
+        "weights": {
+            "spm_avg": 0.25,
+            "monotone_ratio": 0.35,
+            "filler_per_min": 0.25,
+            "silence_ratio": 0.15,
+        },
+    },
+
+    "interview": {
+        "name": "면접·자기소개",
+        "tolerance": {
+            "spm_avg": 1.10,
+            "monotone_ratio": 1.10,
+            "filler_per_min": 1.0,
+            "silence_ratio": 1.20,
+        },
+        "weights": {
+            "spm_avg": 0.25,
+            "monotone_ratio": 0.25,
+            "filler_per_min": 0.35,
+            "silence_ratio": 0.15,
+        },
+    },
+}
 
 def _metric_score(value: float, lo: float, hi: float, lower_is_better: bool | None) -> int:
     """지표 하나를 0~100점으로 만든다.
@@ -296,60 +364,104 @@ def _metric_score(value: float, lo: float, hi: float, lower_is_better: bool | No
 
     return int(max(0, min(100, round(100 - 100 * distance / width))))
 
-
-def voice_score_detail(summary: dict[str, Any] | None) -> dict[str, Any] | None:
-    """음성 요약 지표를 점수와 판정 근거로 바꾼다.
-
-    점수 하나만 돌려주지 않고 지표별 점수와 판정 이유를 함께 담는다.
-    "왜 이 점수인가"를 화면과 코칭에서 그대로 보여줄 수 있어야 한다.
-
-    측정되지 않은 지표(None)는 빼고 남은 가중치로 다시 나눈다.
-    하나도 못 재면 None이다(0점이 아니다. 0점은 "말을 못했다"는 뜻이 된다).
+def voice_score_detail(
+    summary: dict[str, Any] | None,
+    presentation_type: str = "general",
+) -> dict[str, Any] | None:
     """
+    발표 유형별 음성 점수를 계산한다.
+
+    측정되지 않은 지표는 제외하고 남은 가중치로 재정규화한다.
+    모든 지표가 측정되지 않으면 None을 반환한다.
+    """
+
     if not summary:
         return None
 
+    # 잘못된 유형이 들어오면 일반 발표 기준 적용
+    profile = PRESENTATION_PROFILES.get(
+        presentation_type,
+        PRESENTATION_PROFILES["general"],
+    )
+
     metrics = []
-    for key, (label, lo, hi, weight, lower_is_better) in VOICE_BASELINE.items():
+
+    for key, (label, lo, hi, _, lower_is_better) in VOICE_BASELINE.items():
+
         value = summary.get(key)
+
+        # 측정 실패 지표는 계산에서 제외
         if value is None:
             continue
 
         value = float(value)
-        score = _metric_score(value, lo, hi, lower_is_better)
 
-        if lo <= value <= hi:
-            position, verdict = "within", "명연사 범위 안"
-        elif value < lo:
+        # 유형별 허용 범위 조정
+        tolerance = profile["tolerance"].get(key, 1.0)
+
+        center = (lo + hi) / 2
+        half_width = (hi - lo) / 2 * tolerance
+
+        adjusted_lo = center - half_width
+        adjusted_hi = center + half_width
+
+        # 유형별 가중치
+        weight = profile["weights"][key]
+
+        score = _metric_score(
+            value,
+            adjusted_lo,
+            adjusted_hi,
+            lower_is_better,
+        )
+
+        if adjusted_lo <= value <= adjusted_hi:
+            position = "within"
+            verdict = "선택한 발표 유형의 기준 범위 안"
+
+        elif value < adjusted_lo:
             position = "below"
-            verdict = "명연사보다 좋음" if lower_is_better is True else "기준보다 낮음"
+            verdict = (
+                "기준보다 낮지만 양호"
+                if lower_is_better is True
+                else "기준보다 낮음"
+            )
+
         else:
             position = "above"
-            verdict = "기준보다 높음" if lower_is_better is not False else "명연사보다 좋음"
+            verdict = (
+                "기준보다 높음"
+                if lower_is_better is not False
+                else "기준보다 높지만 양호"
+            )
 
         metrics.append({
             "key": key,
             "label": label,
             "value": round(value, 3),
-            "reference_min": lo,
-            "reference_max": hi,
+            "reference_min": round(adjusted_lo, 3),
+            "reference_max": round(adjusted_hi, 3),
             "position": position,
             "score": score,
             "weight": weight,
             "verdict": verdict,
-            # 점수를 깎은 항목만 개선 대상으로 본다. 범위를 벗어났어도
-            # 좋은 쪽으로 벗어난 것은 고칠 게 없다.
             "concern": score < 100,
         })
 
     if not metrics:
         return None
 
+    # 측정된 지표만으로 가중치 재정규화
     weight_sum = sum(m["weight"] for m in metrics)
-    total = round(sum(m["score"] * m["weight"] for m in metrics) / weight_sum)
 
-    # 개선 우선순위: 가중치까지 반영해 총점을 가장 많이 깎은 항목이 먼저다.
-    # 점수만 보면 가중치 15%인 침묵이 30%인 말 속도보다 앞설 수 있다.
+    if weight_sum <= 0:
+        return None
+
+    total = round(
+        sum(m["score"] * m["weight"] for m in metrics)
+        / weight_sum
+    )
+
     concerns = sorted(
         (m for m in metrics if m["concern"]),
         key=lambda m: (100 - m["score"]) * m["weight"],
@@ -357,15 +469,26 @@ def voice_score_detail(summary: dict[str, Any] | None) -> dict[str, Any] | None:
     )
 
     return {
-        "baseline_version": VOICE_BASELINE_VERSION,
+        "presentation_type": presentation_type,
+        "presentation_name": profile["name"],
+        "baseline_version": (
+            f"{VOICE_BASELINE_VERSION}-{presentation_type}"
+        ),
         "score": total,
         "metrics": metrics,
         "priority": [m["key"] for m in concerns],
         "measured_weight": round(weight_sum, 2),
     }
 
+def voice_score(
+    summary: dict[str, Any] | None,
+    presentation_type: str = "general",
+) -> int | None:
+    """발표 유형별 음성 종합점수 반환."""
 
-def voice_score(summary: dict[str, Any] | None) -> int | None:
-    """음성 종합점수만 꺼낸다. 근거까지 필요하면 voice_score_detail을 쓴다."""
-    detail = voice_score_detail(summary)
+    detail = voice_score_detail(
+        summary,
+        presentation_type,
+    )
+
     return detail["score"] if detail else None

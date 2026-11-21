@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AttentionResult from "../components/attention/AttentionResult"
 import CsvUpload from "../components/attention/CsvUpload"
-import { fetchAttentionResult, fetchSurveyResult } from "../api/client"
+import { fetchAttentionResult, fetchSurveyResult, importSurveyResponses } from "../api/client"
 
 const FEATURE_LABELS = {
     spm: "말속도 적절성",
@@ -21,6 +21,8 @@ export default function PredictAttention() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [surveyError, setSurveyError] = useState(null)
+
+    const [importing, setImporting] = useState(false)
 
     // 집중도 분석 결과 + 이전에 저장된 설문 결과 가져오기
     useEffect(() => {
@@ -42,6 +44,19 @@ export default function PredictAttention() {
         loadData()
     }, [id])
 
+    const handleImportSurvey = async () => {
+        setImporting(true)
+        setSurveyError(null)
+
+        try {
+            const data = await importSurveyResponses(id)
+            handleSurveyUploaded(data)
+        } catch (e) {
+            setSurveyError(e.message || "설문 결과를 불러오지 못했습니다.")
+        } finally {
+            setImporting(false)
+        }
+    }
     const handleSurveyUploaded = (data) => {
 
         const result = data?.analysis_result ?? data?.survey_result ?? null
@@ -141,7 +156,7 @@ export default function PredictAttention() {
                             <p className="text-sm leading-6 text-gray-500">
                                 다음 설문 문항을 참고하여 청중 설문을 진행한 후
                                 <br/>
-                                응답 결과를 CSV 파일로 업로드해주세요.
+                                QR 응답을 불러오거나 CSV 파일로 업로드해주세요.
                             </p>
                         </div>
 
@@ -192,22 +207,36 @@ export default function PredictAttention() {
                             </div>
                         </details>
 
-                        {/* CSV 업로드 */}
+                        {/* 설문 결과 입력: 불러오기 또는 CSV 업로드 */}
                         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
                             <h3 className="mb-2 text-sm font-semibold text-gray-800">
-                                설문 결과 CSV 업로드
+                                설문 결과 가져오기
                             </h3>
-                            <CsvUpload 
-                                resultId={id}
-                                onUploaded={handleSurveyUploaded}
-                            />
+                            <div className="flex flex-col items-start justify-center gap-3 sm:flex-row sm:justify-center">
+                                <CsvUpload 
+                                    resultId={id}
+                                    onUploaded={handleSurveyUploaded}
+                                    disabled={importing}
+                                />
 
-                            {surveyError && (
-                                <p className="mt-2 text-sm text-red-500">
-                                    {surveyError}
-                                </p>
-                            )}
+                                <button
+                                    onClick={handleImportSurvey}
+                                    disabled={importing}
+                                    className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                                    {importing ? "불러오는 중..." : "불러오기"}
+                                </button>
+                            </div>
                         </div>
+
+                        <p className="mt-3 text-xs leading-5 text-gray-500">
+                            QR/링크로 받은 응답은 [불러오기]로, 직접 만든 설문은 CSV로 업로드하세요.
+                        </p> 
+
+                        {surveyError && (
+                            <p className="mt-2 text-sm text-red-500">
+                                {surveyError}
+                            </p>
+                        )}
                     </div>
                 ) : (
                     <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-8">

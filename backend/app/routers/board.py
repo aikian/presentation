@@ -17,6 +17,7 @@ main.py에는 이미 아래 두 줄이 들어 있으므로 main.py는 수정하�
 - DELETE /api/board/{post_id}/comments/{comment_id}   댓글 삭제 (댓글 작성자 또는 글 작성자)
 - GET    /api/board/{post_id}/recommendations         같은 주제의 AI 점수 상위 사례 추천
 """
+import logging
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -30,6 +31,7 @@ from app.core.database import get_supabase
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.board_schema import build_board_post
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # 브라우저 <video>로 바로 재생 가능한 형식만 허용한다.
@@ -125,8 +127,9 @@ def _upload_to_storage(local_path: Path, storage_path: str, content_type: str) -
 def _get_post_or_404(post_id: str, current_user: CurrentUser) -> dict:
     try:
         res = get_supabase().table("board_posts").select("*").eq("id", post_id).limit(1).execute()
-    except Exception as e:
-        raise HTTPException(500, f"게시글 조회 실패: {e}")
+    except Exception:
+        logger.exception("게시글 조회 실패")
+        raise HTTPException(500, "게시글 조회 실패")
 
     if not res.data:
         raise HTTPException(404, "게시글을 찾을 수 없습니다.")
@@ -170,8 +173,9 @@ async def upload_video(
 
         try:
             await run_in_threadpool(_upload_to_storage, tmp_path, storage_path, content_type)
-        except Exception as e:
-            raise HTTPException(500, f"영상 업로드 실패: {e}")
+        except Exception:
+            logger.exception("영상 업로드 실패")
+            raise HTTPException(500, "영상 업로드 실패")
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -197,8 +201,9 @@ def create_post(body: CreatePostRequest, current_user: CurrentUser = Depends(get
             .eq("user_id", current_user.id)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"분석 결과 조회 실패: {e}")
+    except Exception:
+        logger.exception("분석 결과 조회 실패")
+        raise HTTPException(500, "분석 결과 조회 실패")
 
     if not res.data:
         raise HTTPException(404, "본인의 분석 결과만 게시할 수 있습니다.")
@@ -218,8 +223,9 @@ def create_post(body: CreatePostRequest, current_user: CurrentUser = Depends(get
 
     try:
         insert_res = get_supabase().table("board_posts").insert(payload).execute()
-    except Exception as e:
-        raise HTTPException(500, f"게시글 등록 실패: {e}")
+    except Exception:
+        logger.exception("게시글 등록 실패")
+        raise HTTPException(500, "게시글 등록 실패")
 
     return insert_res.data[0]
 
@@ -251,8 +257,9 @@ def list_posts(
             query = query.order("created_at", desc=True)
 
         res = query.range(offset, offset + limit - 1).execute()
-    except Exception as e:
-        raise HTTPException(500, f"게시글 목록 조회 실패: {e}")
+    except Exception:
+        logger.exception("게시글 목록 조회 실패")
+        raise HTTPException(500, "게시글 목록 조회 실패")
 
     return {"items": res.data, "page": page, "limit": limit, "total": getattr(res, "count", None)}
 
@@ -275,8 +282,9 @@ def list_my_posts(
             .range(offset, offset + limit - 1)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"내 게시글 조회 실패: {e}")
+    except Exception:
+        logger.exception("내 게시글 조회 실패")
+        raise HTTPException(500, "내 게시글 조회 실패")
     return {"items": res.data, "page": page, "limit": limit}
 
 
@@ -294,8 +302,9 @@ def get_post(post_id: str, current_user: CurrentUser = Depends(get_current_user)
             .order("created_at")
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"댓글 조회 실패: {e}")
+    except Exception:
+        logger.exception("댓글 조회 실패")
+        raise HTTPException(500, "댓글 조회 실패")
 
     post["comments"] = comments_res.data
     post["video_signed_url"] = _signed_url(post.get("video_url"))
@@ -311,8 +320,9 @@ def delete_post(post_id: str, current_user: CurrentUser = Depends(get_current_us
 
     try:
         get_supabase().table("board_posts").delete().eq("id", post_id).execute()  # 댓글은 FK cascade
-    except Exception as e:
-        raise HTTPException(500, f"게시글 삭제 실패: {e}")
+    except Exception:
+        logger.exception("게시글 삭제 실패")
+        raise HTTPException(500, "게시글 삭제 실패")
 
     # 영상 파일 삭제는 실패해도 글 삭제 결과에는 영향을 주지 않는다.
     try:
@@ -339,8 +349,9 @@ def add_comment(post_id: str, body: CommentRequest, current_user: CurrentUser = 
     }
     try:
         res = get_supabase().table("board_comments").insert(payload).execute()
-    except Exception as e:
-        raise HTTPException(500, f"댓글 등록 실패: {e}")
+    except Exception:
+        logger.exception("댓글 등록 실패")
+        raise HTTPException(500, "댓글 등록 실패")
     return res.data[0]
 
 
@@ -356,8 +367,9 @@ def delete_comment(post_id: str, comment_id: str, current_user: CurrentUser = De
             .eq("post_id", post_id)
             .execute()
         )
-    except Exception as e:
-        raise HTTPException(500, f"댓글 조회 실패: {e}")
+    except Exception:
+        logger.exception("댓글 조회 실패")
+        raise HTTPException(500, "댓글 조회 실패")
 
     if not res.data:
         raise HTTPException(404, "댓글을 찾을 수 없습니다.")
@@ -366,8 +378,9 @@ def delete_comment(post_id: str, comment_id: str, current_user: CurrentUser = De
 
     try:
         get_supabase().table("board_comments").delete().eq("id", comment_id).execute()
-    except Exception as e:
-        raise HTTPException(500, f"댓글 삭제 실패: {e}")
+    except Exception:
+        logger.exception("댓글 삭제 실패")
+        raise HTTPException(500, "댓글 삭제 실패")
     return {"ok": True}
 
 
@@ -405,7 +418,8 @@ def recommend_similar(
             seen = {row["id"] for row in items}
             filler = [row for row in _top(None, limit + len(items)) if row["id"] not in seen]
             items += filler[: limit - len(items)]
-    except Exception as e:
-        raise HTTPException(500, f"추천 조회 실패: {e}")
+    except Exception:
+        logger.exception("추천 조회 실패")
+        raise HTTPException(500, "추천 조회 실패")
 
     return {"items": items}
