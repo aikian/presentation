@@ -14,6 +14,7 @@ export default function VideoAnalysis() {
   const [result, setResult] = useState(null)
   const [resultId, setResultId] = useState(null)
   const [stepHint, setStepHint] = useState(0)
+  const [queuePosition, setQueuePosition] = useState(0)
   const jobIdRef = useRef(null)
   const timerRef = useRef(null)
   const startPolling = useCallback((jobId) => {
@@ -21,6 +22,7 @@ export default function VideoAnalysis() {
       try {
         const data = await pollAnalysis(jobId)
         if (data.step !== undefined) setStepHint(data.step)
+        setQueuePosition(data.queue_position ?? 0)
         if (data.status === 'done') {
           clearInterval(timerRef.current)
           setResult(data.result)
@@ -66,7 +68,7 @@ export default function VideoAnalysis() {
     }
   }
   if (stage === 'upload') return <VideoUpload onUpload={handleUpload} loading={false} />
-  if (stage === 'progress') return <AnalysisProgress stepHint={stepHint} />
+  if (stage === 'progress') return <AnalysisProgress stepHint={stepHint} queuePosition={queuePosition} />
   if (stage === 'result') return <ResultTabs result={result} resultId={resultId} />
   return (
     <main className="mx-auto w-full max-w-lg px-5 py-20 text-left">

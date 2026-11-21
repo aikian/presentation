@@ -27,6 +27,8 @@ MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
 _jobs: dict[str, dict] = {}
 # job_id -> 올린 사용자 id. 결과 조회 때 본인 것만 보여주기 위해 따로 둔다.
 _job_owners: dict[str, str] = {}
+# 접수 순서. 분석 스레드가 2개라 세 번째부터는 기다리는데, 몇 번째인지 알려주기 위해 둔다.
+_job_order: list[str] = []
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
@@ -264,6 +266,7 @@ async def upload_video(
 
     _jobs[job_id] = {"status": "pending", "step": 0}
     _job_owners[job_id] = current_user.id
+    _job_order.append(job_id)
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         _executor, _run_job,
@@ -281,4 +284,19 @@ def get_job(job_id: str, current_user: CurrentUser = Depends(get_current_user)):
     job = _jobs.get(job_id)
     if job is None or _job_owners.get(job_id) != current_user.id:
         raise HTTPException(404, "job을 찾을 수 없습니다")
-    return JSONResponse(job)
+    return JSONResponse({**job, "queue_position": _queue_position(job_id)})
+
+
+def _queue_position(job_id: str) -> int:
+    """내 앞에서 아직 시작도 못 한 작업 수. 0이면 바로 진행 중이거나 끝난 것."""
+    job = _jobs.get(job_id)
+    if not job or job.get("status") != "pending" or job.get("step", 0) > 0:
+        return 0
+    ahead = 0
+    for other in _job_order:
+        if other == job_id:
+            break
+        o = _jobs.get(other)
+        if o and o.get("status") == "pending" and o.get("step", 0) == 0:
+            ahead += 1
+    return ahead

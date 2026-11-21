@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
@@ -37,7 +38,9 @@ async def upload_slides(
                     raise HTTPException(413, "파일 크기 초과")
                 f.write(chunk)
 
-        session_id, slides = convert_to_slides(tmp_path, file.filename)
+        # LibreOffice 변환은 최대 2분 걸린다. async 함수 안에서 그대로 부르면 그동안
+        # 서버의 다른 요청이 전부 멈추므로 스레드풀로 넘긴다.
+        session_id, slides = await run_in_threadpool(convert_to_slides, tmp_path, file.filename)
     except ValueError as e:
         # 지원하지 않는 형식처럼 사용자가 고칠 수 있는 안내만 그대로 보낸다.
         raise HTTPException(422, str(e))

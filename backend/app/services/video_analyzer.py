@@ -241,12 +241,37 @@ def _lean_direction(pose_landmarks) -> str:
     return "none"
 
 
-def _extract_frames(video_path: Path, interval_sec: float | None = None):
-    if interval_sec is None:
-        interval_sec = settings.frame_interval_sec
+def _shrink_frame(frame: np.ndarray, max_side: int) -> np.ndarray:
+    """긴 변이 max_side를 넘으면 비율을 유지한 채 줄인다. 0이면 원본 유지.
+
+    MediaPipe 지표(시선, 어깨 기울기, 손목 이동)는 전부 0~1 정규화 좌표나 비율이라
+    해상도를 줄여도 값이 거의 바뀌지 않는다. 반면 연산량은 픽셀 수에 비례해 준다.
+    """
+    if not max_side:
+        return frame
+    h, w = frame.shape[:2]
+    longest = max(h, w)
+    if longest <= max_side:
+        return frame
+    scale = max_side / longest
+    return cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
+def _iter_sampled_frames(video_path: Path, intervals: list[float], info: dict | None = None):
+    """영상을 한 번만 읽으면서 (시각, 프레임, 해당 간격들)을 순서대로 낸다.
+
+    예전에는 간격마다 영상을 처음부터 다시 디코딩하고(얼굴·자세용 2초, 손용 0.5초,
+    길이 측정용까지 세 번) 뽑은 프레임을 전부 리스트에 쌓았다. 1080p 15분 영상이면
+    원본 프레임 2천 장이 메모리에 올라가 10GB가 넘고, 낮은 사양 서버에서는 스왑 때문에
+    느려진다. 이제 한 번 읽으면서 프레임을 바로 넘기고 쌓지 않는다.
+
+    info 딕셔너리를 주면 fps, frame_count, duration_hint(메타데이터 기준 길이),
+    last_sec(실제로 읽은 마지막 시각)를 채운다.
+    """
+    max_side = settings.max_frame_side
 
     # OpenCV stderr 억제 (EBML/webm 파싱 경고)
-    import os, sys
+    import os
     devnull = open(os.devnull, 'w')
     old_stderr_fd = os.dup(2)
     os.dup2(devnull.fileno(), 2)
@@ -258,34 +283,62 @@ def _extract_frames(video_path: Path, interval_sec: float | None = None):
         devnull.close()
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-
     if not fps or fps < 1 or fps > 120:
         fps = None
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    if info is not None:
+        info["fps"] = fps
+        info["frame_count"] = frame_count
+        info["duration_hint"] = (frame_count / fps) if (fps and frame_count and frame_count >= 1) else None
+        info["last_sec"] = None
 
-    frames = []
-    frame_times = []
+    next_sample = {iv: 0.0 for iv in intervals}
     idx = 0
-    next_sample_sec = 0.0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        if fps is not None:
-            current_sec = idx / fps
-        else:
-            current_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            if fps is not None:
+                current_sec = idx / fps
+            else:
+                current_sec = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            if info is not None:
+                info["last_sec"] = current_sec
 
-        if current_sec + 1e-6 >= next_sample_sec:
-            frames.append(frame)
-            frame_times.append(round(current_sec, 3))
-            next_sample_sec += interval_sec
+            matched = tuple(iv for iv in intervals if current_sec + 1e-6 >= next_sample[iv])
+            if matched:
+                for iv in matched:
+                    next_sample[iv] += iv
+                yield current_sec, _shrink_frame(frame, max_side), matched
 
-        idx += 1
+            idx += 1
+    finally:
+        cap.release()
 
-    cap.release()
-    return frames, frame_times
+
+def _extract_frame_sets(video_path: Path, intervals: list[float]):
+    """여러 샘플 간격의 프레임을 리스트로 모아 돌려준다. 짧은 영상이나 테스트용.
+
+    반환: {간격: (frames, frame_times)}, 마지막 프레임 시각(초).
+    """
+    sets = {iv: ([], []) for iv in intervals}
+    info: dict = {}
+    for sec, frame, matched in _iter_sampled_frames(video_path, intervals, info):
+        for iv in matched:
+            sets[iv][0].append(frame)
+            sets[iv][1].append(round(sec, 3))
+    return sets, info.get("last_sec")
+
+
+def _extract_frames(video_path: Path, interval_sec: float | None = None):
+    """단일 간격 추출. 테스트와 외부 호출 호환용으로 남겨 둔다."""
+    if interval_sec is None:
+        interval_sec = settings.frame_interval_sec
+    sets, _ = _extract_frame_sets(video_path, [interval_sec])
+    return sets[interval_sec]
 
 
 def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
@@ -294,18 +347,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
             on_step(n)
 
     _step(1)
-    frames, frame_times = _extract_frames(video_path)
-    gesture_frames, gesture_frame_times = _extract_frames(video_path, interval_sec=0.5)
-
-    if not frames:
-        return {
-            "gaze_away_ratio": None, "face_detected_ratio": 0.0,
-            "shoulder_tilt_avg": None, "gesture_count": 0,
-            "gesture_active_ratio": None, "gesture_valid_ratio": None, "gesture_event_count": None,
-            "ear_blink_ratio": None, "silence_ratio": None,
-            "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
-            "error": "영상에서 프레임을 추출할 수 없습니다.",
-        }
+    face_interval = float(settings.frame_interval_sec)
+    gesture_interval = 0.5
 
     gaze_scores: list[float] = []
     gaze_timeline: list[dict] = []
@@ -326,9 +369,17 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     prev_wrist_positions = []
     gesture_timeline = []
 
-    video_timeline = [{"sec": round(frame_times[i], 1), "posture": None, "gesture": None, "expression": None} for i in range(len(frames))]
+    # 얼굴 간격 프레임의 시각과 시간축. 프레임 자체는 쌓지 않고 JPEG 바이트만 남긴다.
+    # 시선 이탈 문제 장면은 영상 전체 중앙값을 안 뒤에 고르므로 이미지를 나중에 꺼내야 한다.
+    frame_times: list[float] = []
+    video_timeline: list[dict] = []
+    face_jpegs: list[bytes] = []
 
-    # Step 2: 시선 + EAR + 입 분석 (FaceMesh)
+    decode_info: dict = {}
+    progress_marks = {3: False, 4: False}
+
+    # Step 2~4: 한 번의 디코딩으로 얼굴(시선·표정), 자세, 손을 같은 루프에서 처리한다.
+    # 모델은 static_image_mode라 프레임 간 상태가 없으므로 따로 돌릴 때와 결과가 같다.
     _step(2)
     with mp_face_mesh.FaceMesh(
         static_image_mode=True,
@@ -338,114 +389,141 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
     ) as face_mesh, mp_face_detection.FaceDetection(
         model_selection=1,
         min_detection_confidence=0.3,
-    ) as face_detector:
-        for i, frame in enumerate(frames):
+    ) as face_detector, mp_pose.Pose(
+        static_image_mode=True, min_detection_confidence=0.5,
+    ) as pose, mp_hands.Hands(
+        static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5,
+    ) as hands:
+        for sec, frame, matched in _iter_sampled_frames(video_path, [face_interval, gesture_interval], decode_info):
+            # 진행 단계 표시. 예전에는 시선→자세→제스처 순서였지만 이제 동시에 돌아가므로
+            # 영상 길이의 1/3, 2/3 지점에서 단계를 올린다.
+            hint = decode_info.get("duration_hint")
+            if hint:
+                for mark, ratio in ((3, 1 / 3), (4, 2 / 3)):
+                    if not progress_marks[mark] and sec >= hint * ratio:
+                        progress_marks[mark] = True
+                        _step(mark)
+
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            face_landmarks, w, h = _detect_face_with_fallback(face_mesh, face_detector, rgb)
-            if face_landmarks:
-                lm = face_landmarks.landmark
 
-                left_ear = _ear(lm, LEFT_EYE_EAR, w, h)
-                right_ear = _ear(lm, RIGHT_EYE_EAR, w, h)
-                ear_values.append((left_ear + right_ear) / 2)
+            if face_interval in matched:
+                i = len(frame_times)
+                frame_times.append(round(sec, 3))
+                video_timeline.append({"sec": round(sec, 1), "posture": None, "gesture": None, "expression": None})
+                _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                face_jpegs.append(jpeg.tobytes())
 
-                mar_values.append(_mar(lm, w, h))
+                # 시선 + EAR + 입 분석 (FaceMesh)
+                face_landmarks, w, h = _detect_face_with_fallback(face_mesh, face_detector, rgb)
+                if face_landmarks:
+                    lm = face_landmarks.landmark
 
-                # 시선 방향은 일단 모아두고, 영상 전체의 중앙값을 기준으로
-                # 그리드를 나눈다 (아래 집계 부분 참고).
-                dx, dy = _gaze_direction(face_landmarks)
-                gaze_dirs.append((i, dx, dy))
+                    left_ear = _ear(lm, LEFT_EYE_EAR, w, h)
+                    right_ear = _ear(lm, RIGHT_EYE_EAR, w, h)
+                    ear_values.append((left_ear + right_ear) / 2)
 
-                # 표정: 미소(입꼬리)와 긴장(눈썹) 지표
-                smile = _smile_metric(lm)
-                smile_values.append(smile)
-                brow_gaps.append(_brow_gap(lm))
+                    mar_values.append(_mar(lm, w, h))
 
-                # 시간축에도 표정을 넣는다 (video_timeline 규약: 측정 실패는 None)
-                video_timeline[i]["expression"] = {
-                    "smile": round(smile, 3),
-                    "gaze_cell": None,  # 아래에서 중앙값 기준으로 채운다
-                }
+                    # 시선 방향은 일단 모아두고, 영상 전체의 중앙값을 기준으로
+                    # 그리드를 나눈다 (아래 집계 부분 참고).
+                    dx, dy = _gaze_direction(face_landmarks)
+                    gaze_dirs.append((i, dx, dy))
 
-    # Step 3: 자세 분석 (Pose)
-    _step(3)
-    with mp_pose.Pose(static_image_mode=True, min_detection_confidence=0.5) as pose:
-        for i, frame in enumerate(frames):
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = pose.process(rgb)
-            if result.pose_landmarks:
-                tilt = _shoulder_tilt(result.pose_landmarks)
-                shoulder_tilts.append(tilt)
+                    # 표정: 미소(입꼬리)와 긴장(눈썹) 지표
+                    smile = _smile_metric(lm)
+                    smile_values.append(smile)
+                    brow_gaps.append(_brow_gap(lm))
 
-                lean_dir = _lean_direction(result.pose_landmarks)
-                
-                video_timeline[i]["posture"] = {
-                    "shoulder_tilt_deg": round(tilt, 1),
-                    "lean_dir": lean_dir,
-                    "score": None,
-                }
-                if tilt > 10 and tilt > max_pose_tilt:
-                    max_pose_tilt = tilt
-                    problem_pose_frame = {
-                        "type": "pose",
-                        "label": "자세 기울어짐",
-                        "sec": round(frame_times[i], 1),
-                        "score": round(tilt, 2),
-                        "value": f"{tilt:.1f}도",
-                        "image": _frame_to_b64(frame),
+                    # 시간축에도 표정을 넣는다 (video_timeline 규약: 측정 실패는 None)
+                    video_timeline[i]["expression"] = {
+                        "smile": round(smile, 3),
+                        "gaze_cell": None,  # 아래에서 중앙값 기준으로 채운다
                     }
 
-    # Step 4: 제스처 분석 (Hands)
-    _step(4)
-    with mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
-        for i, frame in enumerate(gesture_frames):
-            current_sec = gesture_frame_times[i]
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = hands.process(rgb)
-            hands_visible = bool(result.multi_hand_landmarks)
-            
-            gesture_timeline.append({
-                "sec": round(current_sec, 1),
-                "active": None,
-                "hands_visible": hands_visible,
-            })
+                # 자세 분석 (Pose)
+                result = pose.process(rgb)
+                if result.pose_landmarks:
+                    tilt = _shoulder_tilt(result.pose_landmarks)
+                    shoulder_tilts.append(tilt)
 
-            current_wrist_positions = []
+                    lean_dir = _lean_direction(result.pose_landmarks)
 
-            if result.multi_hand_landmarks:
-                gesture_count += len(result.multi_hand_landmarks)
+                    video_timeline[i]["posture"] = {
+                        "shoulder_tilt_deg": round(tilt, 1),
+                        "lean_dir": lean_dir,
+                        "score": None,
+                    }
+                    if tilt > 10 and tilt > max_pose_tilt:
+                        max_pose_tilt = tilt
+                        problem_pose_frame = {
+                            "type": "pose",
+                            "label": "자세 기울어짐",
+                            "sec": round(sec, 1),
+                            "score": round(tilt, 2),
+                            "value": f"{tilt:.1f}도",
+                            "image": _frame_to_b64(frame),
+                        }
 
-                for hand_landmarks in result.multi_hand_landmarks:
-                    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
-                    current_wrist_positions.append(np.array([wrist.x, wrist.y]))
+            if gesture_interval in matched:
+                # 제스처 분석 (Hands)
+                current_sec = round(sec, 3)
+                result = hands.process(rgb)
+                hands_visible = bool(result.multi_hand_landmarks)
 
-                if prev_wrist_positions:
-                    remaining_prev = prev_wrist_positions.copy()
-                    movements = []
+                gesture_timeline.append({
+                    "sec": round(current_sec, 1),
+                    "active": None,
+                    "hands_visible": hands_visible,
+                })
 
-                    for current in current_wrist_positions:
-                        if not remaining_prev:
-                            break
+                current_wrist_positions = []
 
-                        distances = [float(np.linalg.norm(current - prev)) for prev in remaining_prev]
-                        min_idx = int(np.argmin(distances))
-                        movements.append(distances[min_idx])
-                        remaining_prev.pop(min_idx)
+                if result.multi_hand_landmarks:
+                    gesture_count += len(result.multi_hand_landmarks)
 
-                    if movements:
-                        movement_max = max(movements)
+                    for hand_landmarks in result.multi_hand_landmarks:
+                        wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+                        current_wrist_positions.append(np.array([wrist.x, wrist.y]))
 
-                        # 손목 이동 거리 임계값 0.085는 발표 영상 테스트를 통해 설정한 경험적 기준이다.
-                        active = movement_max >= 0.085
+                    if prev_wrist_positions:
+                        remaining_prev = prev_wrist_positions.copy()
+                        movements = []
 
-                        gesture_timeline[-1]["active"] = active
+                        for current in current_wrist_positions:
+                            if not remaining_prev:
+                                break
+
+                            distances = [float(np.linalg.norm(current - prev)) for prev in remaining_prev]
+                            min_idx = int(np.argmin(distances))
+                            movements.append(distances[min_idx])
+                            remaining_prev.pop(min_idx)
+
+                        if movements:
+                            movement_max = max(movements)
+
+                            # 손목 이동 거리 임계값 0.085는 발표 영상 테스트를 통해 설정한 경험적 기준이다.
+                            active = movement_max >= 0.085
+
+                            gesture_timeline[-1]["active"] = active
 
 
-                prev_wrist_positions = current_wrist_positions
+                    prev_wrist_positions = current_wrist_positions
 
-            else:
-                prev_wrist_positions = []
+                else:
+                    prev_wrist_positions = []
 
+    decoded_last_sec = decode_info.get("last_sec")
+
+    if not frame_times:
+        return {
+            "gaze_away_ratio": None, "face_detected_ratio": 0.0,
+            "shoulder_tilt_avg": None, "gesture_count": 0,
+            "gesture_active_ratio": None, "gesture_valid_ratio": None, "gesture_event_count": None,
+            "ear_blink_ratio": None, "silence_ratio": None,
+            "gaze_timeline": [], "video_timeline": [], "problem_frames": [],
+            "error": "영상에서 프레임을 추출할 수 없습니다.",
+            "decoded_duration_sec": decoded_last_sec,
+        }
 
     # 0.5초 간격 제스처 분석 결과를 기존 video_timeline 구간에 집계
     for item in video_timeline:
@@ -545,7 +623,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
                     "sec": round(frame_times[idx], 1),
                     "score": round(score, 3),
                     "value": f"{score * 100:.0f}%",
-                    "image": _frame_to_b64(frames[idx]),
+                    "image": base64.b64encode(face_jpegs[idx]).decode(),
                 }
 
     gaze_away_ratio = (
@@ -553,7 +631,7 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         if gaze_scores
         else None
     )
-    face_detected_ratio = (len(gaze_dirs) / len(frames)) if frames else 0.0
+    face_detected_ratio = (len(gaze_dirs) / len(frame_times)) if frame_times else 0.0
     total_cells = sum(sum(row) for row in gaze_grid)
     gaze_heatmap = (
         {
@@ -602,6 +680,8 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
         "expression_change_std": round(expression_change_std, 4) if expression_change_std is not None else None,
         "gaze_heatmap": gaze_heatmap,
         "problem_frames": problem_frames,
+        # 디코딩하면서 본 마지막 프레임 시각. 길이 측정에 영상을 다시 읽지 않기 위해 넘긴다.
+        "decoded_duration_sec": decoded_last_sec,
     }
 
 
@@ -938,8 +1018,12 @@ def _fallback_coaching(metrics: dict) -> str:
         f"## 다음 연습 우선순위\n1. {priorities[0]}\n2. {priorities[1]}",
     ])
 
-def _video_duration_sec(video_path: Path) -> float | None:
-    """영상 길이(초). 스키마의 meta.duration_sec으로 나간다."""
+def _video_duration_sec(video_path: Path, decoded_last_sec: float | None = None) -> float | None:
+    """영상 길이(초). 스키마의 meta.duration_sec으로 나간다.
+
+    메타데이터로 먼저 구하고, 없으면 프레임 추출 때 본 마지막 시각을 쓴다.
+    둘 다 없을 때만 영상을 끝까지 다시 읽는다.
+    """
     cap = cv2.VideoCapture(str(video_path))
 
     try:
@@ -948,6 +1032,9 @@ def _video_duration_sec(video_path: Path) -> float | None:
 
         if fps and 1 <= fps <= 120 and frame_count and frame_count >= 1:
             return round(frame_count / fps, 1)
+
+        if decoded_last_sec is not None and decoded_last_sec > 0:
+            return round(decoded_last_sec, 1)
 
         last_sec = None
 
@@ -1061,7 +1148,7 @@ def run_full_analysis(video_path: Path, api_key: str, on_step=None) -> dict[str,
         metrics["filler_habits"] = None
         metrics["monotone_habits"] = None
 
-    metrics["duration_sec"] = _video_duration_sec(video_path)
+    metrics["duration_sec"] = _video_duration_sec(video_path, metrics.pop("decoded_duration_sec", None))
 
     # 연속된 제스처 활성 구간 수를 영상 길이로 정규화하여 분당 횟수 계산
     duration_sec = metrics["duration_sec"]
