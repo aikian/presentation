@@ -15,3 +15,5 @@ backend/static/slides/
 # 영상은 각자 유튜브에서 받고(speakers.json에 URL 있음), 스크립트와 연사 정보는 공유한다.
 reference_data/videos/
 reference_data/frames/
+
+.vs/
