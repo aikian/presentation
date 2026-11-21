@@ -71,9 +71,7 @@ export async function deleteSlides(sessionId) {
 export async function uploadVideo(file, metadata = {}) {
   const form = new FormData()
   form.append('file', file)
-  if (options.presentation_type) {
-      formData.append('presentation_type', options.presentation_type)
-  }
+  if (metadata.presentation_type) form.append('presentation_type', metadata.presentation_type)
   if (metadata.goal_sec != null) form.append('goal_sec', metadata.goal_sec)
   if (metadata.elapsed_sec != null) form.append('elapsed_sec', metadata.elapsed_sec)
   if (metadata.slide_log?.length) form.append('slide_log', JSON.stringify(metadata.slide_log))
