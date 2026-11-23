@@ -11,10 +11,11 @@ growth_schema.build_growth_report()가 만든 compare_with_previous를 표준화
 기존 코칭(video_analyzer)이 Gemini REST를 쓰고 있어 같은 방식·같은 설정(gemini_api_key, gemini_model)을 따른다.
 """
 import json
+import time
 import logging
 from collections import OrderedDict
 from typing import Any
-from urllib import request as urlrequest
+from urllib import error as urlerror, request as urlrequest
 
 from app.core.config import settings
 from app.services.growth_schema import VERDICT_LABEL
@@ -26,7 +27,8 @@ _cache: "OrderedDict[tuple, str]" = OrderedDict()
 
 def _model_candidates() -> list[str]:
     configured = settings.gemini_model.strip().removeprefix("models/")
-    candidates = [configured, "gemini-flash-latest", "gemini-2.5-flash"]
+    # gemini-2.5-flash는 2026-11 기준 퇴역해 404가 난다. 버전을 고정한 안정화 모델만 둔다.
+    candidates = [configured, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
     return list(dict.fromkeys(model for model in candidates if model))
 
 def build_growth_prompt(compare: dict[str, Any]) -> str:
@@ -106,13 +108,20 @@ def generate_growth_feedback(cache_key: tuple, compare: dict[str, Any]) -> str |
 
     prompt = build_growth_prompt(compare)
     for model_name in _model_candidates():
-        try:
-            text = _call_gemini(model_name, prompt)
-        # [2026-09-22 수정] 예외 종류를 한정하지 않는다. 실패하면 다음 모델,
-        # 전부 실패하면 None을 돌려주고 호출한 쪽이 규칙 기반 피드백을 그대로 쓴다.
-        except Exception as exc:
-            logger.warning("Gemini growth feedback failed with %s: %s", model_name, exc)
-            continue
+        text = ""
+        for attempt in range(2):
+            try:
+                text = _call_gemini(model_name, prompt)
+                break
+            # [2026-09-22 수정] 예외 종류를 한정하지 않는다. 실패하면 다음 모델,
+            # 전부 실패하면 None을 돌려주고 호출한 쪽이 규칙 기반 피드백을 그대로 쓴다.
+            # [2026-11-24 수정] 503(혼잡)만 2초 뒤 같은 모델로 한 번 더 시도한다.
+            except Exception as exc:
+                logger.warning("Gemini growth feedback failed with %s: %s", model_name, exc)
+                if isinstance(exc, urlerror.HTTPError) and exc.code == 503 and attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
         if text:
             _cache[cache_key] = text
             while len(_cache) > _CACHE_MAX:
