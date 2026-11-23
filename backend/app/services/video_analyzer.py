@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 import logging
 import math
 from pathlib import Path
@@ -688,7 +689,10 @@ def analyze_video(video_path: Path, on_step=None) -> dict[str, Any]:
 
 def _gemini_model_candidates() -> list[str]:
     configured = settings.gemini_model.strip().removeprefix("models/")
-    candidates = [configured, "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+    # gemini-2.5-flash, gemini-2.0-flash는 2026-11 기준 퇴역해 404가 난다.
+    # "-latest" 별칭은 연결 모델이 바뀌고 혼잡(503)이 잦아 버전을 고정한 안정화 모델만 둔다.
+    # 세 모델 모두 2026-11-24 운영 키로 200 응답을 확인했다.
+    candidates = [configured, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
     return list(dict.fromkeys(model for model in candidates if model))
 
 
@@ -828,12 +832,20 @@ def _gemini_coaching(metrics: dict, api_key: str) -> str:
 
     prompt = _build_coaching_prompt(metrics)
     for model_name in _gemini_model_candidates():
-        try:
-            text = _generate_gemini_content(model_name, api_key, prompt)
-            if text:
-                return text
-        except (urlerror.HTTPError, urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            logger.warning("Gemini REST coaching failed with %s: %s", model_name, exc)
+        # 503(혼잡)은 2초 뒤 같은 모델로 한 번 더 시도한다.
+        # 404(퇴역), 429(한도), 시간 초과 등 그 외 오류는 바로 다음 모델로 넘어간다.
+        for attempt in range(2):
+            try:
+                text = _generate_gemini_content(model_name, api_key, prompt)
+                if text:
+                    return text
+                break
+            except (urlerror.HTTPError, urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                logger.warning("Gemini REST coaching failed with %s: %s", model_name, exc)
+                if isinstance(exc, urlerror.HTTPError) and exc.code == 503 and attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
 
     return _fallback_coaching(metrics)
 
