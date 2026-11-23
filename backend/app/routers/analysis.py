@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import execute_supabase, get_supabase, save_attention_prediction
+from app.core.survey_db import attach_survey_to_result, get_survey_link
 from app.middleware.auth import CurrentUser, get_current_user
 from app.services.analysis_schema import build_audio_block, build_details
 from app.services.rolemodel import compare
@@ -19,12 +20,22 @@ from app.services.audio_features import analyze_audio_features
 from app.services.predict_concentration import analyze_audience
 
 logger = logging.getLogger(__name__)
+ALLOWED_PRESENTATION_TYPES = {
+    "general",
+    "academic",
+    "pitch",
+    "interview",
+}
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
 MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
 
 _jobs: dict[str, dict] = {}
+# job_id -> 올린 사용자 id. 결과 조회 때 본인 것만 보여주기 위해 따로 둔다.
+_job_owners: dict[str, str] = {}
+# 접수 순서. 분석 스레드가 2개라 세 번째부터는 기다리는데, 몇 번째인지 알려주기 위해 둔다.
+_job_order: list[str] = []
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
@@ -36,6 +47,8 @@ def _run_job(
     elapsed_sec: float | None,
     slide_log: list | None,
     rolemodel_id: str | None = None,
+    survey_token: str | None = None,
+    presentation_type: str = "general",
 ):
     def update_step(step: int):
         _jobs[job_id]["step"] = step
@@ -45,6 +58,8 @@ def _run_job(
 
         if elapsed_sec is not None:
             result["elapsed_sec"] = elapsed_sec
+
+        result["presentation_type"] = presentation_type
 
         scores = calculate_scores(result, goal_sec)
         result.update(scores)
@@ -148,7 +163,18 @@ def _run_job(
             )
             if sb_res.data:
                 saved_id = sb_res.data[0]["id"]
-
+                
+                # QR 설문 응답을 이 발표에 연결 (내 토큰일 때만)
+                if survey_token:
+                    try:
+                        link = get_survey_link(survey_token)
+                        if link and link.get("user_id") == user_id:
+                            attach_survey_to_result(survey_token, saved_id)
+                        else:
+                            logger.warning("설문 연결 건너뜀: 토큰이 없거나 소유자가 다릅니다")
+                    except Exception:
+                        logger.warning("설문 연결 실패", exc_info=True)
+                        
                 if slide_log and goal_sec is not None:
                     try:
                         session_id = uuid.uuid4().hex
@@ -187,8 +213,14 @@ def _run_job(
         else:
             completed_job["save_error"] = "analysis_result_not_persisted"
         _jobs[job_id] = completed_job
-    except Exception as e:
-        _jobs[job_id] = {"status": "error", "step": _jobs[job_id].get("step", 0), "error": str(e)}
+    except Exception:
+        # 예외 내용은 로그에만 남긴다. 사용자에게 내부 경로나 라이브러리 메시지를 보내지 않는다.
+        logger.exception("분석 실패 (job %s)", job_id)
+        _jobs[job_id] = {
+            "status": "error",
+            "step": _jobs[job_id].get("step", 0),
+            "error": "분석 중 오류가 발생했습니다. 다른 영상으로 다시 시도해 주세요.",
+        }
     finally:
         video_path.unlink(missing_ok=True)
 
@@ -222,8 +254,15 @@ async def upload_video(
     elapsed_sec: float | None = Form(None),
     slide_log: str | None = Form(None),
     rolemodel_id: str | None = Form(None),
+    survey_token: str | None = Form(None),
+    presentation_type: str = Form("general"),
     current_user: CurrentUser = Depends(get_current_user),
 ):
+    if presentation_type not in ALLOWED_PRESENTATION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="지원하지 않는 발표 유형입니다.",
+        )
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"지원 형식: MP4, MOV, AVI, WebM. 받은 형식: {suffix}")
@@ -242,9 +281,10 @@ async def upload_video(
                 f.write(chunk)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         tmp_path.unlink(missing_ok=True)
-        raise HTTPException(500, str(e))
+        logger.exception("업로드 파일 저장 실패 (job %s)", job_id)
+        raise HTTPException(500, "업로드 파일을 저장하지 못했습니다.")
 
     parsed_log = None
     if slide_log:
@@ -254,19 +294,40 @@ async def upload_video(
             pass
 
     _jobs[job_id] = {"status": "pending", "step": 0}
+    _job_owners[job_id] = current_user.id
+    _job_order.append(job_id)
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         _executor, _run_job,
         job_id, tmp_path, current_user.id, goal_sec, elapsed_sec, parsed_log,
         rolemodel_id or None,
+        survey_token or None,
+        presentation_type,
     )
 
     return JSONResponse({"job_id": job_id})
 
 
 @router.get("/{job_id}")
-def get_job(job_id: str):
+def get_job(job_id: str, current_user: CurrentUser = Depends(get_current_user)):
+    # 결과에는 자막 전문과 발표자 얼굴 캡처가 들어 있으므로 올린 사람만 볼 수 있다.
+    # 남의 job은 존재 여부도 알려주지 않기 위해 404로 답한다.
     job = _jobs.get(job_id)
-    if job is None:
+    if job is None or _job_owners.get(job_id) != current_user.id:
         raise HTTPException(404, "job을 찾을 수 없습니다")
-    return JSONResponse(job)
+    return JSONResponse({**job, "queue_position": _queue_position(job_id)})
+
+
+def _queue_position(job_id: str) -> int:
+    """내 앞에서 아직 시작도 못 한 작업 수. 0이면 바로 진행 중이거나 끝난 것."""
+    job = _jobs.get(job_id)
+    if not job or job.get("status") != "pending" or job.get("step", 0) > 0:
+        return 0
+    ahead = 0
+    for other in _job_order:
+        if other == job_id:
+            break
+        o = _jobs.get(other)
+        if o and o.get("status") == "pending" and o.get("step", 0) == 0:
+            ahead += 1
+    return ahead

@@ -8,7 +8,7 @@ const STEPS = [
   { title: 'AI 코칭 생성', desc: '결과를 모아 개선할 점을 정리합니다' },
 ]
 
-export default function AnalysisProgress({ stepHint = 0 }) {
+export default function AnalysisProgress({ stepHint = 0, queuePosition = 0 }) {
   const pct = Math.round((Math.min(stepHint, STEPS.length) / STEPS.length) * 100)
 
   return (
@@ -21,6 +21,12 @@ export default function AnalysisProgress({ stepHint = 0 }) {
             <p className="mt-1 text-sm text-slate-500">보통 1~3분 걸립니다. 이 화면을 열어 두면 끝나는 즉시 결과가 나타납니다.</p>
           </div>
         </div>
+
+        {queuePosition > 0 && (
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            대기 중입니다. 앞선 분석 {queuePosition}건이 끝나면 자동으로 시작됩니다.
+          </p>
+        )}
 
         <div className="mt-7">
           <div className="mb-2 flex justify-between text-xs font-semibold text-slate-500">
